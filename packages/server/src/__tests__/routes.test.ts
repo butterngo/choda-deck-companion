@@ -13,6 +13,28 @@ const makeApp = (artifactsDir: string, dbPath: string) => {
   return app;
 };
 
+async function readUntil(res: Response, needle: string, timeoutMs = 3000): Promise<string> {
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    const result = await Promise.race<{ value?: Uint8Array; done?: boolean } | "timeout">([
+      reader.read(),
+      new Promise<"timeout">((r) => setTimeout(() => r("timeout"), remaining)),
+    ]);
+    if (result === "timeout") break;
+    if ((result as { done?: boolean }).done) break;
+    const value = (result as { value?: Uint8Array }).value;
+    if (value) buf += decoder.decode(value, { stream: true });
+    if (buf.includes(needle)) break;
+  }
+  await reader.cancel().catch(() => undefined);
+  return buf;
+}
+
 async function readChunk(res: Response, timeoutMs = 1500): Promise<string> {
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
@@ -117,6 +139,41 @@ describe("GET /api/queue/live", () => {
       const chunk = await readChunk(res);
       expect(chunk).toContain("event: run.active");
       expect(chunk).toContain("1000000000000-aaa");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("emits run.active mid-stream when active queue appears after connect", async () => {
+    const { mkdir, mkdtemp, rm, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = await mkdtemp(join(tmpdir(), "sse-midstream-"));
+    try {
+      const app = makeApp(dir, "/fake/db.db");
+
+      // Connect with no active queue present
+      const res = await app.request("/api/queue/live");
+
+      // Create the queue dir 100ms after connect to simulate mid-stream arrival
+      setTimeout(() => {
+        const queueDir = join(dir, "queue-2000000000000-bbb");
+        mkdir(queueDir).then(() =>
+          writeFile(
+            join(queueDir, "queue.jsonl"),
+            JSON.stringify({
+              event: "task.started",
+              queueRunId: "2000000000000-bbb",
+              taskId: "TASK-002",
+              taskIndex: 1,
+            }) + "\n",
+          ),
+        );
+      }, 100);
+
+      const chunk = await readUntil(res, "run.active", 3000);
+      expect(chunk).toContain("event: run.active");
+      expect(chunk).toContain("2000000000000-bbb");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
