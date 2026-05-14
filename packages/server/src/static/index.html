@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Companion · choda-deck</title>
+
+  <!-- Tailwind CDN with typography plugin, darkMode via prefers-color-scheme -->
+  <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+  <script>tailwind.config = { darkMode: 'media' };</script>
+
+  <!-- Tabler outline icons — NEVER -filled suffix -->
+  <link rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.40.0/tabler-icons.min.css" />
+
+  <!-- marked.js pinned post Gate A -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
+
+  <!-- DOMPurify for XSS sanitize chain: marked.parse → DOMPurify.sanitize -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.3/purify.min.js"></script>
+
+  <style>
+    :root { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .mono { font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace; }
+  </style>
+</head>
+<body class="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 min-h-screen">
+
+<!-- Tab strip — sticky 48px -->
+<header class="sticky top-0 z-30 bg-white/95 dark:bg-zinc-900/95 backdrop-blur border-b border-zinc-200 dark:border-zinc-700">
+  <div class="max-w-4xl mx-auto px-4 md:px-6">
+    <nav class="flex items-center h-12 gap-1" role="tablist">
+      <a id="tab-queue" href="#/queue" role="tab"
+         class="inline-flex items-center gap-1 h-12 px-3 text-sm border-b-2 border-transparent text-zinc-500">
+        <i class="ti ti-list text-base" aria-hidden="true"></i>Queue
+      </a>
+      <a id="tab-tasks" href="#/tasks" role="tab"
+         class="inline-flex items-center gap-1 h-12 px-3 text-sm border-b-2 border-transparent text-zinc-500">
+        <i class="ti ti-checklist text-base" aria-hidden="true"></i>Tasks
+      </a>
+    </nav>
+  </div>
+</header>
+
+<!-- Content area — max-w-4xl, page-level scroll only -->
+<main id="view" class="max-w-4xl mx-auto px-4 md:px-6 py-4 md:py-6" aria-live="polite"></main>
+
+<script>
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function esc(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function statusIcon(status) {
+  const k = String(status ?? '').toUpperCase().replace(/-/g, '_');
+  const m = {
+    TODO:        { i: 'ti-clock',       c: 'text-zinc-500' },
+    QUEUED:      { i: 'ti-clock',       c: 'text-zinc-500' },
+    READY:       { i: 'ti-check',       c: 'text-zinc-500' },
+    IN_PROGRESS: { i: 'ti-player-play', c: 'text-blue-600 dark:text-blue-400' },
+    RUNNING:     { i: 'ti-player-play', c: 'text-blue-600 dark:text-blue-400' },
+    DONE:        { i: 'ti-check',       c: 'text-green-600 dark:text-green-400' },
+    FINISHED:    { i: 'ti-check',       c: 'text-green-600 dark:text-green-400' },
+    CANCELLED:   { i: 'ti-x',           c: 'text-zinc-400' },
+    FAILED:      { i: 'ti-x',           c: 'text-red-600 dark:text-red-400' },
+  };
+  const d = m[k] ?? { i: 'ti-clock', c: 'text-zinc-500' };
+  return `<i class="ti ${d.i} ${d.c} text-base leading-none flex-shrink-0" aria-hidden="true"></i>`;
+}
+
+function relativeTime(ts) {
+  if (!ts) return '';
+  const diffMs  = Date.now() - new Date(ts).getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return 'just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr  = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 2) return 'yesterday';
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return new Date(ts).toISOString().slice(0, 10);
+}
+
+function priorityDot(priority) {
+  const p = String(priority ?? '').toLowerCase();
+  const colors = { critical: 'bg-red-500', high: 'bg-amber-500', medium: 'bg-zinc-400' };
+  const cls = colors[p];
+  return cls
+    ? `<span class="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${cls}" aria-hidden="true"></span>`
+    : '';
+}
+
+function labelPills(labelsRaw) {
+  if (!labelsRaw) return '';
+  const labels = String(labelsRaw).split(',').map(l => l.trim()).filter(Boolean);
+  if (!labels.length) return '';
+  const pillCls = 'text-[12px] px-2 py-px rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300';
+  const visible = labels.slice(0, 2).map(l => `<span class="${pillCls}">${esc(l)}</span>`);
+  const extra = labels.length - 2;
+  if (extra > 0) visible.push(`<span class="${pillCls}">+${extra}</span>`);
+  return visible.join(' ');
+}
+
+function renderMarkdown(md) {
+  const html = window.marked ? window.marked.parse(String(md ?? '')) : esc(md ?? '');
+  return window.DOMPurify
+    ? window.DOMPurify.sanitize(html, { USE_PROFILES: { html: true } })
+    : html;
+}
+
+function errorMsg(msg) {
+  return `<p class="py-8 text-sm text-center text-zinc-500 dark:text-zinc-400">${esc(msg)}</p>`;
+}
+
+function formatDuration(ms) {
+  if (!ms || ms < 0) return '';
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
+}
+
+// XSS sanitize assertion — zero <script> tags + zero onerror attrs after render
+function __assertSanitize__() {
+  if (!window.DOMPurify || !window.marked) return;
+  const raw = '<script>alert(1)<\/script><img src=x onerror=alert(1)>';
+  const html = DOMPurify.sanitize(marked.parse(raw), { USE_PROFILES: { html: true } });
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  console.assert(
+    tmp.querySelectorAll('script').length === 0 &&
+    tmp.querySelectorAll('[onerror]').length === 0,
+    '[companion] XSS sanitize check failed — review DOMPurify version'
+  );
+}
+
+// ── Tab strip active state ───────────────────────────────────────────────────
+
+const TAB_ACTIVE   = 'border-zinc-900 dark:border-zinc-100 font-medium text-zinc-900 dark:text-zinc-100';
+const TAB_INACTIVE = 'border-transparent text-zinc-500';
+
+function setActiveTab(name) {
+  ['queue', 'tasks'].forEach(id => {
+    const el = document.getElementById('tab-' + id);
+    if (!el) return;
+    if (id === name) {
+      TAB_INACTIVE.split(' ').forEach(c => el.classList.remove(c));
+      TAB_ACTIVE.split(' ').forEach(c => el.classList.add(c));
+    } else {
+      TAB_ACTIVE.split(' ').forEach(c => el.classList.remove(c));
+      TAB_INACTIVE.split(' ').forEach(c => el.classList.add(c));
+    }
+  });
+}
+
+// ── Queue views ──────────────────────────────────────────────────────────────
+
+async function showQueueList() {
+  setActiveTab('queue');
+  document.title = 'Companion · Queue';
+  const view = document.getElementById('view');
+  view.innerHTML = errorMsg('Loading...');
+
+  let runs;
+  try {
+    const res = await fetch('/api/queue');
+    if (!res.ok) throw new Error(await res.text());
+    runs = await res.json();
+  } catch (e) {
+    view.innerHTML = errorMsg(`Cannot read queue. ${e.message}`);
+    return;
+  }
+
+  if (!runs.length) {
+    view.innerHTML = errorMsg('No queue runs yet.');
+    return;
+  }
+
+  const rows = runs.map(r => `
+    <a href="#/queue/${esc(r.id)}"
+       class="flex items-center gap-3 px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 last:border-0 hover:bg-zinc-50 dark:hover:bg-zinc-800 no-underline">
+      ${statusIcon(r.status)}
+      <span class="mono text-[13px] text-zinc-600 dark:text-zinc-400 w-52 truncate flex-shrink-0">${esc(r.id)}</span>
+      <span class="flex items-center gap-2 flex-1 min-w-0 text-[12px] text-zinc-500">
+        ${r.totalCostUsd ? `<span class="mono">$${Number(r.totalCostUsd).toFixed(2)}</span>` : ''}
+        ${r.durationMs ? `<span>${esc(formatDuration(r.durationMs))}</span>` : ''}
+        <span>${r.taskCount} task${r.taskCount !== 1 ? 's' : ''}</span>
+      </span>
+      <span class="text-[12px] text-zinc-400 flex-shrink-0">${esc(relativeTime(r.finishedAt))}</span>
+      <i class="ti ti-chevron-right text-zinc-400 flex-shrink-0" aria-hidden="true"></i>
+    </a>`).join('');
+
+  view.innerHTML = `<div class="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden">${rows}</div>`;
+}
+
+async function showQueueDetail(id) {
+  setActiveTab('queue');
+  document.title = `Companion · ${id}`;
+  const view = document.getElementById('view');
+  view.innerHTML = errorMsg('Loading...');
+
+  let data;
+  try {
+    const res = await fetch(`/api/queue/${encodeURIComponent(id)}`);
+    if (!res.ok) throw new Error(await res.text());
+    data = await res.json();
+  } catch (e) {
+    view.innerHTML = errorMsg(`Cannot read ${id}. ${e.message}`);
+    return;
+  }
+
+  const meta = data.meta ?? {};
+  const status = meta.halted ? 'failed' : (meta.endedAt ? 'finished' : 'running');
+  const cost = meta.totalCostUsd ? `$${Number(meta.totalCostUsd).toFixed(2)}` : '';
+  const startMs = meta.startedAt ? new Date(meta.startedAt).getTime() : 0;
+  const endMs   = meta.endedAt   ? new Date(meta.endedAt).getTime()   : Date.now();
+  const dur = formatDuration(endMs - startMs);
+
+  view.innerHTML = `
+    <a href="#/queue"
+       class="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 mb-4 no-underline">
+      <i class="ti ti-chevron-left" aria-hidden="true"></i> Queue
+    </a>
+    <div class="flex items-center gap-3 mb-6 flex-wrap">
+      ${statusIcon(status)}
+      <span class="mono text-sm font-medium">${esc(id)}</span>
+      ${cost ? `<span class="mono text-[12px] text-zinc-500">${esc(cost)}</span>` : ''}
+      ${dur  ? `<span class="text-[12px] text-zinc-500">${esc(dur)}</span>` : ''}
+      <span class="text-[12px] text-zinc-400 ml-auto">${esc(relativeTime(meta.endedAt || meta.startedAt))}</span>
+    </div>
+    ${data.report
+      ? `<div class="prose prose-sm dark:prose-invert max-w-none">${renderMarkdown(data.report)}</div>`
+      : errorMsg('No report available.')}`;
+}
+
+// ── Tasks views ──────────────────────────────────────────────────────────────
+
+const ALL_STATUSES   = ['IN-PROGRESS', 'READY', 'TODO', 'FAILED', 'DONE', 'CANCELLED'];
+const DEFAULT_FILTER = ['READY', 'IN-PROGRESS', 'TODO', 'FAILED'];
+const STATUS_ORDER   = { 'IN-PROGRESS': 0, READY: 1, TODO: 2, FAILED: 3, DONE: 4, CANCELLED: 5 };
+const PRIORITY_ORD   = { critical: 0, high: 1, medium: 2, low: 3 };
+
+let activeFilter = [...DEFAULT_FILTER];
+
+function filterChipStrip() {
+  return `<div class="flex gap-2 flex-wrap mb-4" role="group" aria-label="Filter by status">
+    ${ALL_STATUSES.map(s => {
+      const on = activeFilter.includes(s);
+      const cls = on
+        ? 'px-3 py-1 rounded-full text-[12px] font-medium cursor-pointer select-none bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900'
+        : 'px-3 py-1 rounded-full text-[12px] cursor-pointer select-none bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700';
+      return `<button class="${cls}" data-status="${esc(s)}" type="button">${esc(s.toLowerCase().replace('-', ' '))}</button>`;
+    }).join('')}
+  </div>`;
+}
+
+function wireChips() {
+  document.getElementById('view').querySelectorAll('button[data-status]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const s = btn.dataset.status;
+      activeFilter = activeFilter.includes(s)
+        ? activeFilter.filter(x => x !== s)
+        : [...activeFilter, s];
+      // pushState + manual render — avoids hashchange double-fire
+      history.pushState(null, '', `#/tasks?status=${activeFilter.join(',')}`);
+      showTasksList(null);
+    });
+  });
+}
+
+async function showTasksList(params) {
+  setActiveTab('tasks');
+  document.title = 'Companion · Tasks';
+  const view = document.getElementById('view');
+
+  if (params && params.status) {
+    activeFilter = params.status.split(',').map(s => s.trim()).filter(Boolean);
+  }
+
+  view.innerHTML = filterChipStrip() + errorMsg('Loading...');
+  wireChips();
+
+  let tasks;
+  try {
+    const res = await fetch(`/api/tasks?status=${encodeURIComponent(activeFilter.join(','))}`);
+    if (!res.ok) {
+      if (res.status === 503) {
+        view.innerHTML = filterChipStrip() + errorMsg('Database busy. Retrying...');
+        wireChips();
+        setTimeout(() => showTasksList(null), 3000);
+        return;
+      }
+      throw new Error(await res.text());
+    }
+    tasks = await res.json();
+  } catch (e) {
+    view.innerHTML = filterChipStrip() + errorMsg('Server error. See log.');
+    wireChips();
+    return;
+  }
+
+  // Sort: group order → priority desc → updatedAt desc
+  tasks.sort((a, b) => {
+    const go = (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99);
+    if (go) return go;
+    const po = (PRIORITY_ORD[(a.priority ?? '').toLowerCase()] ?? 99)
+             - (PRIORITY_ORD[(b.priority ?? '').toLowerCase()] ?? 99);
+    if (po) return po;
+    return (b.updated_at ?? '').localeCompare(a.updated_at ?? '');
+  });
+
+  if (!tasks.length) {
+    view.innerHTML = filterChipStrip() + errorMsg('No tasks. Adjust filters.');
+    wireChips();
+    return;
+  }
+
+  const rows = tasks.map(t => {
+    const title = String(t.title ?? t.id ?? '');
+    const trunc = title.slice(0, 60);
+    return `
+      <a href="#/tasks/${esc(t.id)}"
+         class="flex items-center gap-3 px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 last:border-0 hover:bg-zinc-50 dark:hover:bg-zinc-800 no-underline">
+        ${statusIcon(t.status)}
+        <span class="mono text-[13px] text-zinc-600 dark:text-zinc-400 w-24 truncate flex-shrink-0">${esc(t.id)}</span>
+        <span class="flex-1 text-[14px] truncate">${esc(trunc)}${title.length > 60 ? '…' : ''}</span>
+        <span class="flex items-center gap-1.5 flex-shrink-0">
+          ${labelPills(t.labels)}${priorityDot(t.priority)}
+        </span>
+        <span class="text-[12px] text-zinc-400 flex-shrink-0">${esc(relativeTime(t.updated_at || t.created_at))}</span>
+        <i class="ti ti-chevron-right text-zinc-400 flex-shrink-0" aria-hidden="true"></i>
+      </a>`;
+  }).join('');
+
+  view.innerHTML = filterChipStrip()
+    + `<div class="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden">${rows}</div>`;
+  wireChips();
+}
+
+async function showTaskDetail(id) {
+  setActiveTab('tasks');
+  document.title = `Companion · ${id}`;
+  const view = document.getElementById('view');
+  view.innerHTML = errorMsg('Loading...');
+
+  let task;
+  try {
+    const res = await fetch(`/api/tasks/${encodeURIComponent(id)}`);
+    if (res.status === 404) throw new Error(`Task not found: ${id}`);
+    if (!res.ok) throw new Error(await res.text());
+    task = await res.json();
+  } catch (e) {
+    view.innerHTML = errorMsg(`Cannot read ${id}. ${e.message}`);
+    return;
+  }
+
+  view.innerHTML = `
+    <a href="#/tasks"
+       class="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 mb-4 no-underline">
+      <i class="ti ti-chevron-left" aria-hidden="true"></i> Tasks
+    </a>
+    <div class="flex items-center gap-3 mb-6 flex-wrap">
+      ${statusIcon(task.status)}
+      <span class="mono text-sm font-medium">${esc(task.id)}</span>
+      ${task.title ? `<span class="text-sm flex-1 min-w-0 truncate">${esc(task.title.slice(0, 80))}</span>` : ''}
+      ${priorityDot(task.priority)}
+      ${labelPills(task.labels)}
+      <span class="text-[12px] text-zinc-400 ml-auto">${esc(relativeTime(task.updated_at))}</span>
+    </div>
+    ${task.body
+      ? `<div class="prose prose-sm dark:prose-invert max-w-none">${renderMarkdown(task.body)}</div>`
+      : errorMsg('No body.')}`;
+}
+
+// ── Router ───────────────────────────────────────────────────────────────────
+
+function parseRoute(hash) {
+  const h = String(hash || '#/queue').replace(/^#\/?/, '');
+  const [pathPart = '', qs = ''] = h.split('?');
+  const parts = pathPart.split('/').filter(Boolean);
+  const params = Object.fromEntries(
+    qs.split('&').filter(Boolean).map(p => {
+      const eq = p.indexOf('=');
+      const k  = eq >= 0 ? p.slice(0, eq) : p;
+      const v  = eq >= 0 ? p.slice(eq + 1) : '';
+      return [decodeURIComponent(k), decodeURIComponent(v)];
+    })
+  );
+  return { parts, params };
+}
+
+function route() {
+  const { parts, params } = parseRoute(window.location.hash);
+  const [tab, id] = parts;
+  if (tab === 'tasks') {
+    id ? showTaskDetail(id) : showTasksList(params);
+  } else {
+    // 'queue' or empty → queue
+    id ? showQueueDetail(id) : showQueueList();
+  }
+}
+
+window.addEventListener('hashchange', route);
+window.addEventListener('popstate',   route);
+
+window.addEventListener('DOMContentLoaded', () => {
+  __assertSanitize__();
+  if (!window.location.hash || window.location.hash === '#') {
+    history.replaceState(null, '', '#/queue');
+  }
+  route();
+});
+</script>
+</body>
+</html>
