@@ -1,0 +1,24 @@
+{
+  "name": "choda-deck-companion",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Thin clients on top of choda-deck filesystem artifacts (queue.jsonl per ADR-019). Phase 1: ntfy notifier.",
+  "packageManager": "pnpm@11.0.9",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "test": "pnpm -r --filter=./packages/* run test",
+    "typecheck": "pnpm -r --filter=./packages/* run typecheck"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@types/node": "^22.10.0",
+    "eslint": "^9.18.0",
+    "globals": "^15.14.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.20.0"
+  }
+}

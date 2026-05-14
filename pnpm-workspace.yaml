@@ -1,0 +1,7 @@
+packages:
+  - "packages/*"
+
+# esbuild ships prebuilt binaries via its postinstall — needed by vitest's
+# transformer. Trusted: pinned versions from pnpm-lock.yaml.
+allowBuilds:
+  esbuild: true
