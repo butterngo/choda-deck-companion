@@ -15,3 +15,10 @@ tsconfig.tsbuildinfo
 *.tsbuildinfo
 
 .notifier-state/
+
+# graphify: keep the human-facing artifacts (graph.json, graph.html,
+# GRAPH_REPORT.md) but ignore the local cache + manifest + cost tracker.
+graphify-out/cache/
+graphify-out/cost.json
+graphify-out/manifest.json
+.graphify_*
