@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { handleQueueGet, handleQueueList } from "./routes/queue.js";
+import { handleQueueGet, handleQueueList, handleQueueLive } from "./routes/queue.js";
 import { handleTaskGet, handleTasksList } from "./routes/tasks.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -91,6 +91,8 @@ app.get("/static/index.html", async (c) => {
 app.get("/api/health", (c) => c.json({ ok: true }));
 
 app.get("/api/queue", (c) => handleQueueList(c, artifactsDir));
+
+app.get("/api/queue/live", (c) => handleQueueLive(c, artifactsDir));
 
 app.get("/api/queue/:id", (c) => handleQueueGet(c, artifactsDir));
 

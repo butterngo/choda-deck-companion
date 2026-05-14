@@ -138,6 +138,132 @@ function __assertSanitize__() {
   );
 }
 
+// ── SSE live state ───────────────────────────────────────────────────────────
+//
+// Single active run at a time (UI.md). State is mutated by EventSource handlers
+// and read by activeRunCard() + setTitle(). When sseState.active is non-null,
+// document.title is prefixed `(1) Companion`.
+
+const sseState = {
+  active: null,         // { queueRunId, taskCount, startedAt, totalCostUsd, tasks: Map }
+  eventSource: null,
+};
+
+let currentTitleSuffix = '';
+
+function setTitle(suffix) {
+  currentTitleSuffix = suffix || '';
+  const base = sseState.active ? '(1) Companion' : 'Companion';
+  document.title = currentTitleSuffix ? `${base} · ${currentTitleSuffix}` : base;
+}
+
+function applySseEvent(evt) {
+  if (!sseState.active) return;
+  if (evt.event === 'task.started') {
+    sseState.active.tasks.set(evt.taskId, {
+      status: 'IN-PROGRESS',
+      startedAt: Date.now(),
+    });
+  } else if (evt.event === 'task.finished') {
+    const prev = sseState.active.tasks.get(evt.taskId) ?? {};
+    sseState.active.tasks.set(evt.taskId, {
+      ...prev,
+      status: evt.outcome || 'DONE',
+      costUsd: (prev.costUsd || 0) + (evt.costUsd || 0),
+      durationMs: evt.durationMs,
+    });
+    sseState.active.totalCostUsd =
+      (sseState.active.totalCostUsd || 0) + (evt.costUsd || 0);
+  } else if (evt.event === 'run.finished' || evt.event === 'run.failed') {
+    sseState.active = null;
+  }
+}
+
+function activeRunCard() {
+  if (!sseState.active) return '';
+  const { queueRunId, totalCostUsd, startedAt, tasks } = sseState.active;
+  const elapsedMs = Date.now() - new Date(startedAt).getTime();
+  const taskRows = [...tasks.entries()].map(([taskId, t]) => `
+    <div class="flex items-center gap-3 px-4 py-2 border-t border-blue-200/60 dark:border-blue-800/40">
+      ${statusIcon(t.status)}
+      <span class="mono text-[13px] text-zinc-700 dark:text-zinc-300 truncate flex-1">${esc(taskId)}</span>
+      ${t.costUsd != null ? `<span class="mono text-[12px] text-zinc-500">$${Number(t.costUsd).toFixed(2)}</span>` : ''}
+      ${t.durationMs ? `<span class="text-[12px] text-zinc-500">${esc(formatDuration(t.durationMs))}</span>` : ''}
+    </div>`).join('');
+
+  return `
+    <div data-active-run="${esc(queueRunId)}"
+         class="rounded-lg border-2 border-blue-500/60 dark:border-blue-400/50 bg-blue-50/40 dark:bg-blue-900/10 mb-4 overflow-hidden">
+      <div class="flex items-center gap-3 px-4 py-3">
+        <i class="ti ti-player-play text-blue-600 dark:text-blue-400 text-base flex-shrink-0" aria-hidden="true"></i>
+        <span class="mono text-[13px] font-medium truncate">${esc(queueRunId)}</span>
+        <span class="text-[12px] text-blue-700 dark:text-blue-300 px-2 py-px rounded-full bg-blue-100 dark:bg-blue-900/40 flex-shrink-0">active</span>
+        <span class="flex-1"></span>
+        <span class="mono text-[12px] text-zinc-500 flex-shrink-0">$${Number(totalCostUsd || 0).toFixed(2)}</span>
+        <span class="text-[12px] text-zinc-500 flex-shrink-0">${esc(formatDuration(elapsedMs))}</span>
+      </div>
+      ${taskRows}
+    </div>`;
+}
+
+function rerenderActiveIfQueueList() {
+  const hash = window.location.hash || '';
+  const isQueueList = hash === '' || hash === '#' || hash === '#/queue' || hash === '#/';
+  if (!isQueueList) return;
+
+  const view = document.getElementById('view');
+  if (!view) return;
+  const existing = view.querySelector('[data-active-run]');
+  const html = activeRunCard();
+
+  if (existing && html) {
+    existing.outerHTML = html;
+  } else if (existing && !html) {
+    existing.remove();
+  } else if (!existing && html) {
+    view.insertAdjacentHTML('afterbegin', html);
+  }
+}
+
+function startSse() {
+  if (sseState.eventSource) return;
+  const es = new EventSource('/api/queue/live');
+  sseState.eventSource = es;
+
+  es.addEventListener('run.active', (e) => {
+    let data;
+    try { data = JSON.parse(e.data); } catch { return; }
+    sseState.active = {
+      queueRunId: data.queueRunId,
+      taskCount: data.taskCount,
+      startedAt: data.startedAt,
+      totalCostUsd: 0,
+      tasks: new Map(),
+    };
+    setTitle(currentTitleSuffix);
+    rerenderActiveIfQueueList();
+  });
+
+  es.addEventListener('tick', (e) => {
+    let evt;
+    try { evt = JSON.parse(e.data); } catch { return; }
+    const wasActive = !!sseState.active;
+    applySseEvent(evt);
+    setTitle(currentTitleSuffix);
+    if (wasActive && !sseState.active) {
+      // terminal — refresh full Queue list if on it
+      const hash = window.location.hash || '';
+      const isQueueList = hash === '' || hash === '#' || hash === '#/queue' || hash === '#/';
+      if (isQueueList) showQueueList();
+    } else {
+      rerenderActiveIfQueueList();
+    }
+  });
+
+  // EventSource auto-reconnects natively (~3s). Silent per UI.md — no toast/banner.
+  es.addEventListener('error', () => {});
+}
+
 // ── Tab strip active state ───────────────────────────────────────────────────
 
 const TAB_ACTIVE   = 'border-zinc-900 dark:border-zinc-100 font-medium text-zinc-900 dark:text-zinc-100';
@@ -161,9 +287,9 @@ function setActiveTab(name) {
 
 async function showQueueList() {
   setActiveTab('queue');
-  document.title = 'Companion · Queue';
+  setTitle('Queue');
   const view = document.getElementById('view');
-  view.innerHTML = errorMsg('Loading...');
+  view.innerHTML = activeRunCard() + errorMsg('Loading...');
 
   let runs;
   try {
@@ -171,16 +297,20 @@ async function showQueueList() {
     if (!res.ok) throw new Error(await res.text());
     runs = await res.json();
   } catch (e) {
-    view.innerHTML = errorMsg(`Cannot read queue. ${e.message}`);
+    view.innerHTML = activeRunCard() + errorMsg(`Cannot read queue. ${e.message}`);
     return;
   }
 
-  if (!runs.length) {
-    view.innerHTML = errorMsg('No queue runs yet.');
+  // Active run renders as the top expanded card — drop it from the list below.
+  const activeId = sseState.active?.queueRunId;
+  const filtered = activeId ? runs.filter(r => r.id !== activeId) : runs;
+
+  if (!filtered.length) {
+    view.innerHTML = activeRunCard() + (sseState.active ? '' : errorMsg('No queue runs yet.'));
     return;
   }
 
-  const rows = runs.map(r => `
+  const rows = filtered.map(r => `
     <a href="#/queue/${esc(r.id)}"
        class="flex items-center gap-3 px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 last:border-0 hover:bg-zinc-50 dark:hover:bg-zinc-800 no-underline">
       ${statusIcon(r.status)}
@@ -194,12 +324,13 @@ async function showQueueList() {
       <i class="ti ti-chevron-right text-zinc-400 flex-shrink-0" aria-hidden="true"></i>
     </a>`).join('');
 
-  view.innerHTML = `<div class="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden">${rows}</div>`;
+  view.innerHTML = activeRunCard()
+    + `<div class="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden">${rows}</div>`;
 }
 
 async function showQueueDetail(id) {
   setActiveTab('queue');
-  document.title = `Companion · ${id}`;
+  setTitle(id);
   const view = document.getElementById('view');
   view.innerHTML = errorMsg('Loading...');
 
@@ -274,7 +405,7 @@ function wireChips() {
 
 async function showTasksList(params) {
   setActiveTab('tasks');
-  document.title = 'Companion · Tasks';
+  setTitle('Tasks');
   const view = document.getElementById('view');
 
   if (params && params.status) {
@@ -343,7 +474,7 @@ async function showTasksList(params) {
 
 async function showTaskDetail(id) {
   setActiveTab('tasks');
-  document.title = `Companion · ${id}`;
+  setTitle(id);
   const view = document.getElementById('view');
   view.innerHTML = errorMsg('Loading...');
 
@@ -413,6 +544,7 @@ window.addEventListener('DOMContentLoaded', () => {
     history.replaceState(null, '', '#/queue');
   }
   route();
+  startSse();
 });
 </script>
 </body>
