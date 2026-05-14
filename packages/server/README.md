@@ -59,6 +59,21 @@ curl "http://127.0.0.1:8080/api/tasks?status=READY,IN-PROGRESS"
 # [{...},{...}]
 ```
 
+10. **SSE live indicator** — with the server running and a Chrome tab open at `/static/index.html#/queue`, kick a real queue in a separate terminal (queue must run against `--workspace main` or another choda-deck-tracked workspace):
+
+```sh
+node C:\dev\choda-deck\dist\cli.cjs queue start --workspace main --max-tasks 1
+```
+
+Watch the browser:
+- Title flips to `(1) Companion · Queue` within ~1 second of `run.active`.
+- An expanded blue-bordered row appears at the top of the Queue tab with the active `queueRunId`, accumulated cost ticker, elapsed duration.
+- Per-task rows append inside the card as `task.started` / `task.finished` events arrive.
+- On `run.finished` (or `run.failed`) the card collapses out and the full Queue list refreshes; title returns to `Companion · Queue`.
+- DevTools → Network panel shows exactly **one** long-running `EventStream` connection to `/api/queue/live` (no rapid retry rows).
+
+Edge: if no queue is active when the browser connects, only periodic `: keep-alive` comment lines flow on the SSE stream — no `run.active` event. When you then kick a queue, the client picks it up on the next reconnect cycle (EventSource auto-retries on stream close).
+
 ## Token auth (LAN mode)
 
 When `--bind 0.0.0.0`, a token is auto-generated and printed once at startup. Pass it via:
