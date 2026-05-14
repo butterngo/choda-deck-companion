@@ -49,15 +49,22 @@ export function handleQueueLive(c: Context, artifactsDir: string) {
 
   return streamSSE(c, async (stream) => {
     try {
-      const active = await pickActiveQueueDir(artifactsDir);
+      let active = await pickActiveQueueDir(artifactsDir);
+      let lastKeepalive = Date.now();
 
-      if (!active) {
-        while (!stream.aborted) {
+      while (!active && !stream.aborted) {
+        const now = Date.now();
+        if (now - lastKeepalive >= KEEPALIVE_MS) {
           await stream.write(": keep-alive\n\n");
-          await stream.sleep(KEEPALIVE_MS);
+          lastKeepalive = Date.now();
         }
-        return;
+        await stream.sleep(POLL_MS);
+        if (!stream.aborted) {
+          active = await pickActiveQueueDir(artifactsDir);
+        }
       }
+
+      if (!active || stream.aborted) return;
 
       await stream.writeSSE({
         event: "run.active",
@@ -69,7 +76,7 @@ export function handleQueueLive(c: Context, artifactsDir: string) {
       });
 
       let lineIndex = resumeFrom;
-      let lastKeepalive = Date.now();
+      lastKeepalive = Date.now();
       let terminal = false;
 
       while (!stream.aborted && !terminal) {
