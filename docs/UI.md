@@ -147,7 +147,8 @@ Threshold table:
 - Tables → native HTML `<table>`
 - AC checkbox `- [ ] item` = readonly text (Phase 2). KHÔNG tappable.
 - File pointers (paths in body) = display only Phase 2 (Phase 3 add copy-button)
-- Sanitize: yes, escape HTML inside MD defensively
+- Sanitize: chain `marked.parse(md)` → `DOMPurify.sanitize(html, { USE_PROFILES: { html: true } })`. Both via CDN (`cdn.jsdelivr.net/npm/marked`, `cdn.jsdelivr.net/npm/dompurify`), versions pinned post Gate A.
+- Gate A AC includes XSS test fixture: markdown body chứa `<script>alert(1)</script>` + `<img src=x onerror=alert(1)>` → render xong DOM không có `<script>` tag và không có `onerror` attribute. Threat model: Butter paste prompt nguy hiểm vào task body / commit message → `renderQueueReport` copy vào `report.md` → companion render = XSS.
 
 ### Filter chip strip
 
@@ -257,16 +258,35 @@ NEVER include: task title, diff content, AC text, prompt text.
 - Read-only (all writes deferred Phase 3)
 - Inbox + Knowledge tabs DROPPED (defer Phase 4+ if pain confirmed)
 
+### Data sources
+
+**SQLite reader (Tasks tab):**
+
+- Library: `better-sqlite3` với `readonly: true` ở Database constructor.
+- Defensive PRAGMAs ở startup:
+  - `PRAGMA query_only = 1` — block writes ngay cả nếu readonly bypass.
+  - `PRAGMA journal_mode` — read-only assert: phải trả `wal` (core dùng WAL: `.db`, `.db-shm`, `.db-wal`). Khác → fail loud với hint "DB mode mismatch — core đã đổi journal mode?".
+- Path config (mirror Phase 1 notifier pattern):
+  - CLI flag: `--db-path <path>`
+  - Env: `CHODA_DB_PATH`
+  - Default: `C:\dev\choda-deck\data\database\choda-deck.db`
+- Schema lock-in: read `schema_version` table ở startup, assert range supported. Khác → fail loud với hint "DB schema version <vX> unsupported (companion needs <vY>–<vZ>). Run `choda-deck migrate` first.". Nếu core chưa có `schema_version` table → block companion start với hint "Core needs schema_version table — file core task".
+
+**Filesystem reader (Queue tab):**
+
+- Artifacts dir resolution: `--artifacts-dir <path>` flag, `CHODA_ARTIFACTS_DIR` env, default `<dirname(dbPath)>/../artifacts/`.
+- `queue.jsonl` reader assumes ADR-019 event schema từ TASK-741 (post-task-ship). Pre-ship: `/api/queue/live` returns empty stream + UI shows "Waiting for first event" placeholder.
+
 ### Server endpoints (Hono)
 
 | Route | Behavior |
 |---|---|
 | `GET /` | Redirect `/queue` |
 | `GET /static/index.html` | Serve PWA shell |
-| `GET /api/queue` | List queue runs via fs scan `data/artifacts/queue-*/` |
-| `GET /api/queue/:id` | Return `report.md` content + `queue-run.json` meta |
-| `GET /api/queue/live` | SSE tail `queue.jsonl` (newest active run) |
-| `GET /api/tasks?status=...` | List tasks SQLite readonly with status filter (OR-semantics multi-value) |
+| `GET /api/queue` | List queue runs via fs scan `<artifactsDir>/queue-*/` |
+| `GET /api/queue/:id` | Return `report.md` content + `queue-run.json` meta (finished runs only — active drill xem Blocker 1 patch post-TASK-741) |
+| `GET /api/queue/live` | SSE tail `<artifactsDir>/queue-*/queue.jsonl` newest active run (post-TASK-741) |
+| `GET /api/tasks?status=...` | List tasks SQLite readonly với status filter (OR-semantics multi-value) — xem **Data sources** cho path/WAL/schema config |
 | `GET /api/tasks/:id` | Single task body + meta |
 | `GET /api/health` | Liveness check (200 OK) |
 
@@ -283,9 +303,9 @@ NEVER include: task title, diff content, AC text, prompt text.
 ### Tasks tab
 
 - List row using component catalog spec
-- Sort: group by status (IN-PROGRESS → READY → TODO → DONE → CANCELLED), within group priority desc → updatedAt desc
+- Sort: group by status (IN-PROGRESS → READY → TODO → FAILED → DONE → CANCELLED), within group priority desc → updatedAt desc. FAILED đặt trước DONE vì needs attention (Butter retry hoặc archive).
 - Filter chip strip top, multi-select toggle
-- **Default: hide DONE + CANCELLED** (focus on active work)
+- **Default: hide DONE + CANCELLED, show FAILED** (focus on active work + failures cần triage)
 - Click row → drill `#/tasks/<id>` (markdown render task body)
 - AC checkbox readonly (consistent với Phase 2 read-only scope)
 
@@ -352,7 +372,8 @@ Khi revisit, IA cho phép extension: tab strip extends from 2 to 3 hoặc 4, no 
 - **ADR-008** — choda-deck core "no UI" identity statement (companion KHÔNG breach vì repo riêng)
 - **ADR-019** — queue.jsonl event schema (Phase 1 consume, Phase 2 SSE)
 - **TASK-726** (DONE) — `renderQueueReport()` output → Phase 2 markdown source
-- **TASK-728** (DONE) — `queue start` worktree + queue.jsonl writer
+- **TASK-728** (DONE) — `queue start` worktree (queue.jsonl writer phần này **chưa ship** — xem TASK-741)
+- **TASK-741** (READY, core) — `queue.jsonl` per-event writer trong `queue-lifecycle-service.ts` per ADR-019 schema. Blocks Phase 2 active-run UX (Blockers 1/2). Conv: CONV-1778740082707-1.
 
 ## Maintenance
 
