@@ -49,6 +49,7 @@ export function handleQueueLive(c: Context, artifactsDir: string) {
 
   return streamSSE(c, async (stream) => {
     try {
+      await stream.write(": connected\n\n");
       let active = await pickActiveQueueDir(artifactsDir);
       let lastKeepalive = Date.now();
 

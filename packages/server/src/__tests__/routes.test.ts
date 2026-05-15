@@ -63,6 +63,28 @@ async function readChunk(res: Response, timeoutMs = 1500): Promise<string> {
   return buf;
 }
 
+async function readChunksUntil(res: Response, needle: string, timeoutMs = 2000): Promise<string> {
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    const racePromise = Promise.race<{ value?: Uint8Array; done?: boolean } | "timeout">([
+      reader.read(),
+      new Promise((r) => setTimeout(() => r("timeout"), remaining)),
+    ]);
+    const result = await racePromise;
+    if (result === "timeout") break;
+    if (result.done) break;
+    if (result.value) buf += decoder.decode(result.value, { stream: true });
+    if (buf.includes(needle)) break;
+  }
+  await reader.cancel().catch(() => undefined);
+  return buf;
+}
+
 describe("GET /api/health", () => {
   it("returns 200 { ok: true }", async () => {
     const app = makeApp("/fake/artifacts", "/fake/db.db");
@@ -186,7 +208,7 @@ describe("GET /api/queue/live", () => {
 
       const app = makeApp(dir, "/fake/db.db");
       const res = await app.request("/api/queue/live");
-      const chunk = await readChunk(res);
+      const chunk = await readChunksUntil(res, "event: run.active");
       expect(chunk).toContain("event: run.active");
       expect(chunk).toContain("1000000000000-aaa");
     } finally {
