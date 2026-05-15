@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
+import { handleConversationGet, handleConversationList } from "../routes/conversations.js";
 import { handleQueueList, handleQueueLive } from "../routes/queue.js";
 import { handleInboxGet, handleInboxList } from "../routes/inbox.js";
 import { handleTasksList } from "../routes/tasks.js";
@@ -13,6 +14,8 @@ const makeApp = (artifactsDir: string, dbPath: string) => {
   app.get("/api/tasks", (c) => handleTasksList(c, dbPath));
   app.get("/api/inbox", (c) => handleInboxList(c, dbPath));
   app.get("/api/inbox/:id", (c) => handleInboxGet(c, dbPath));
+  app.get("/api/conversations", (c) => handleConversationList(c, dbPath));
+  app.get("/api/conversations/:id", (c) => handleConversationGet(c, dbPath));
   return app;
 };
 
@@ -119,10 +122,32 @@ describe("GET /api/inbox", () => {
   });
 });
 
+describe("GET /api/conversations", () => {
+  it("returns 500 when DB missing", async () => {
+    const app = makeApp("/fake/artifacts", "/nonexistent/db.db");
+    const res = await app.request("/api/conversations");
+    expect(res.status).toBe(500);
+  });
+
+  it("returns 500 with status filter when DB missing", async () => {
+    const app = makeApp("/fake/artifacts", "/nonexistent/db.db");
+    const res = await app.request("/api/conversations?status=open,decided");
+    expect(res.status).toBe(500);
+  });
+});
+
 describe("GET /api/inbox/:id", () => {
   it("returns 500 when DB missing", async () => {
     const app = makeApp("/fake/artifacts", "/nonexistent/db.db");
     const res = await app.request("/api/inbox/INBOX-001");
+    expect(res.status).toBe(500);
+  });
+});
+
+describe("GET /api/conversations/:id", () => {
+  it("returns 500 when DB missing", async () => {
+    const app = makeApp("/fake/artifacts", "/nonexistent/db.db");
+    const res = await app.request("/api/conversations/CONV-123");
     expect(res.status).toBe(500);
   });
 });
