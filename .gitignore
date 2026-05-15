@@ -16,6 +16,9 @@ tsconfig.tsbuildinfo
 
 .notifier-state/
 
+# claude.ai/design handoff bundles — reference inputs, not source
+docs/handoff-design/
+
 # graphify: keep the human-facing artifacts (graph.json, graph.html,
 # GRAPH_REPORT.md) but ignore the local cache + manifest + cost tracker.
 graphify-out/cache/
