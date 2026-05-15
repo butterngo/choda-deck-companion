@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleQueueGet, handleQueueList, handleQueueLive } from "./routes/queue.js";
+import { handleInboxGet, handleInboxList } from "./routes/inbox.js";
 import { handleTaskGet, handleTasksList } from "./routes/tasks.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -99,6 +100,10 @@ app.get("/api/queue/:id", (c) => handleQueueGet(c, artifactsDir));
 app.get("/api/tasks", (c) => handleTasksList(c, dbPath));
 
 app.get("/api/tasks/:id", (c) => handleTaskGet(c, dbPath));
+
+app.get("/api/inbox", (c) => handleInboxList(c, dbPath));
+
+app.get("/api/inbox/:id", (c) => handleInboxGet(c, dbPath));
 
 // --- Start ---
 

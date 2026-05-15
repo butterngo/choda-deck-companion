@@ -1,15 +1,15 @@
 import type { Context } from "hono";
-import { DbBusyError, DbSchemaError, getTask, queryTasks } from "../data/sqlite.js";
+import { DbBusyError, DbSchemaError, getInboxItem, queryInboxItems } from "../data/sqlite.js";
 
-export function handleTasksList(c: Context, dbPath: string) {
+export function handleInboxList(c: Context, dbPath: string) {
   const statusParam = c.req.query("status") ?? "";
   const statuses = statusParam
     ? statusParam.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
 
   try {
-    const tasks = queryTasks(dbPath, statuses);
-    return c.json(tasks);
+    const items = queryInboxItems(dbPath, statuses);
+    return c.json(items);
   } catch (err) {
     if (err instanceof DbBusyError) {
       return c.text(err.message, 503);
@@ -21,14 +21,14 @@ export function handleTasksList(c: Context, dbPath: string) {
   }
 }
 
-export function handleTaskGet(c: Context, dbPath: string) {
+export function handleInboxGet(c: Context, dbPath: string) {
   const id = c.req.param("id")!;
   try {
-    const task = getTask(dbPath, id);
-    if (!task) {
-      return c.text(`Task not found: ${id}`, 404);
+    const item = getInboxItem(dbPath, id);
+    if (!item) {
+      return c.text(`Inbox item not found: ${id}`, 404);
     }
-    return c.json(task);
+    return c.json(item);
   } catch (err) {
     if (err instanceof DbBusyError) {
       return c.text(err.message, 503);
