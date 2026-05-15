@@ -13,7 +13,7 @@ import { FilterChips } from '@/components/filter-chips';
 import { ListRow } from '@/components/list-row';
 import { ScreenHeader } from '@/components/screen-header';
 import type { IconName } from '@/components/icon';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, withProjectId } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { usePalette } from '@/lib/theme';
 import { useState } from 'react';
@@ -46,9 +46,12 @@ export default function InboxScreen() {
   const filterCsv = Array.from(filter).join(',');
 
   const q = useQuery({
-    queryKey: ['inbox', auth?.serverUrl, filterCsv],
+    queryKey: ['inbox', auth?.serverUrl, auth?.projectId, filterCsv],
     queryFn: () =>
-      apiFetch<InboxRow[]>(auth!, `/api/inbox?status=${encodeURIComponent(filterCsv)}`),
+      apiFetch<InboxRow[]>(
+        auth!,
+        withProjectId(`/api/inbox?status=${encodeURIComponent(filterCsv)}`, auth!.projectId),
+      ),
     enabled: !!auth && filter.size > 0,
   });
 

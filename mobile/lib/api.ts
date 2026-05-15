@@ -101,3 +101,23 @@ export type InboxRow = {
   created_at?: string;
   updated_at?: string;
 };
+
+export type ProjectRow = {
+  id: string;
+  name: string;
+  cwd: string;
+};
+
+export type WorkspaceRow = {
+  id: string;
+  project_id: string;
+  label: string;
+  cwd: string;
+  archived_at?: string | null;
+};
+
+export function withProjectId(path: string, projectId?: string): string {
+  if (!projectId) return path;
+  const sep = path.includes('?') ? '&' : '?';
+  return `${path}${sep}projectId=${encodeURIComponent(projectId)}`;
+}

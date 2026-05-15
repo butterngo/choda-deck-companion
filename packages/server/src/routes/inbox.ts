@@ -6,9 +6,10 @@ export function handleInboxList(c: Context, dbPath: string) {
   const statuses = statusParam
     ? statusParam.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
+  const projectId = c.req.query("projectId") || undefined;
 
   try {
-    const items = queryInboxItems(dbPath, statuses);
+    const items = queryInboxItems(dbPath, statuses, projectId);
     return c.json(items);
   } catch (err) {
     if (err instanceof DbBusyError) {

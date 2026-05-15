@@ -3,8 +3,23 @@ import Database from "better-sqlite3";
 const SUPPORTED_SCHEMA_MIN = 1;
 const SUPPORTED_SCHEMA_MAX = 999;
 
+export interface ProjectRow {
+  id: string;
+  name: string;
+  cwd: string;
+}
+
+export interface WorkspaceRow {
+  id: string;
+  project_id: string;
+  label: string;
+  cwd: string;
+  archived_at?: string | null;
+}
+
 export interface TaskRow {
   id: string;
+  project_id?: string;
   title?: string;
   status: string;
   priority?: string;
@@ -24,6 +39,30 @@ export interface InboxItemRow {
   created_at?: string;
   updated_at?: string;
   [key: string]: unknown;
+}
+
+export interface ConversationRow {
+  id: string;
+  project_id?: string;
+  title?: string;
+  status: string;
+  created_by?: string;
+  decision_summary?: string;
+  created_at?: string;
+  decided_at?: string;
+  closed_at?: string;
+  owner_session_id?: string;
+  owner_type?: string;
+  participant_count?: number;
+  [key: string]: unknown;
+}
+
+export interface ConversationThread {
+  conversation: ConversationRow;
+  participants: Record<string, unknown>[];
+  messages: Record<string, unknown>[];
+  links: Record<string, unknown>[];
+  actions: Record<string, unknown>[];
 }
 
 export class DbBusyError extends Error {
@@ -99,17 +138,57 @@ function withRetry<T>(fn: () => T): T {
   }
 }
 
-export function queryTasks(dbPath: string, statuses: string[]): TaskRow[] {
+export function queryProjects(dbPath: string): ProjectRow[] {
   return withRetry(() => {
     const db = openDb(dbPath);
     try {
-      if (statuses.length === 0) {
-        return db.prepare("SELECT * FROM tasks ORDER BY updated_at DESC").all() as TaskRow[];
+      return db.prepare("SELECT id, name, cwd FROM projects ORDER BY name ASC").all() as ProjectRow[];
+    } finally {
+      db.close();
+    }
+  });
+}
+
+export function queryWorkspaces(dbPath: string, projectId?: string): WorkspaceRow[] {
+  return withRetry(() => {
+    const db = openDb(dbPath);
+    try {
+      if (projectId) {
+        return db
+          .prepare(
+            "SELECT id, project_id, label, cwd, archived_at FROM workspaces WHERE project_id = ? AND archived_at IS NULL ORDER BY label ASC",
+          )
+          .all(projectId) as WorkspaceRow[];
       }
-      const placeholders = statuses.map(() => "?").join(", ");
       return db
-        .prepare(`SELECT * FROM tasks WHERE status IN (${placeholders}) ORDER BY updated_at DESC`)
-        .all(...statuses) as TaskRow[];
+        .prepare(
+          "SELECT id, project_id, label, cwd, archived_at FROM workspaces WHERE archived_at IS NULL ORDER BY label ASC",
+        )
+        .all() as WorkspaceRow[];
+    } finally {
+      db.close();
+    }
+  });
+}
+
+export function queryTasks(dbPath: string, statuses: string[], projectId?: string): TaskRow[] {
+  return withRetry(() => {
+    const db = openDb(dbPath);
+    try {
+      const where: string[] = [];
+      const params: string[] = [];
+      if (statuses.length > 0) {
+        where.push(`status IN (${statuses.map(() => "?").join(", ")})`);
+        params.push(...statuses);
+      }
+      if (projectId) {
+        where.push("project_id = ?");
+        params.push(projectId);
+      }
+      const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+      return db
+        .prepare(`SELECT * FROM tasks ${whereSql} ORDER BY updated_at DESC`)
+        .all(...params) as TaskRow[];
     } finally {
       db.close();
     }
@@ -127,65 +206,62 @@ export function getTask(dbPath: string, id: string): TaskRow | undefined {
   });
 }
 
-export function queryInboxItems(dbPath: string, statuses: string[]): InboxItemRow[] {
+export function queryInboxItems(
+  dbPath: string,
+  statuses: string[],
+  projectId?: string,
+): InboxItemRow[] {
   return withRetry(() => {
     const db = openDb(dbPath);
     try {
-      if (statuses.length === 0) {
-        return db.prepare("SELECT * FROM inbox_items ORDER BY updated_at DESC").all() as InboxItemRow[];
+      const where: string[] = [];
+      const params: string[] = [];
+      if (statuses.length > 0) {
+        where.push(`status IN (${statuses.map(() => "?").join(", ")})`);
+        params.push(...statuses);
       }
-      const placeholders = statuses.map(() => "?").join(", ");
+      if (projectId) {
+        where.push("project_id = ?");
+        params.push(projectId);
+      }
+      const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
       return db
-        .prepare(`SELECT * FROM inbox_items WHERE status IN (${placeholders}) ORDER BY updated_at DESC`)
-        .all(...statuses) as InboxItemRow[];
+        .prepare(`SELECT * FROM inbox_items ${whereSql} ORDER BY updated_at DESC`)
+        .all(...params) as InboxItemRow[];
     } finally {
       db.close();
     }
   });
 }
 
-export interface ConversationRow {
-  id: string;
-  project_id?: string;
-  title?: string;
-  status: string;
-  created_by?: string;
-  decision_summary?: string;
-  created_at?: string;
-  decided_at?: string;
-  closed_at?: string;
-  owner_session_id?: string;
-  owner_type?: string;
-  participant_count?: number;
-  [key: string]: unknown;
-}
-
-export interface ConversationThread {
-  conversation: ConversationRow;
-  participants: Record<string, unknown>[];
-  messages: Record<string, unknown>[];
-  links: Record<string, unknown>[];
-  actions: Record<string, unknown>[];
-}
-
-export function queryConversations(dbPath: string, statuses?: string[]): ConversationRow[] {
+export function queryConversations(
+  dbPath: string,
+  statuses: string[],
+  projectId?: string,
+): ConversationRow[] {
   return withRetry(() => {
     const db = openDb(dbPath);
     try {
-      const base = `
+      const where: string[] = [];
+      const params: string[] = [];
+      if (statuses.length > 0) {
+        where.push(`c.status IN (${statuses.map(() => "?").join(", ")})`);
+        params.push(...statuses);
+      }
+      if (projectId) {
+        where.push("c.project_id = ?");
+        params.push(projectId);
+      }
+      const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+      const sql = `
         SELECT c.*, COUNT(cp.participant_name) AS participant_count
         FROM conversations c
         LEFT JOIN conversation_participants cp ON cp.conversation_id = c.id
+        ${whereSql}
+        GROUP BY c.id
+        ORDER BY c.created_at DESC
       `;
-      if (!statuses || statuses.length === 0) {
-        return db
-          .prepare(`${base} GROUP BY c.id ORDER BY c.created_at DESC`)
-          .all() as ConversationRow[];
-      }
-      const placeholders = statuses.map(() => "?").join(", ");
-      return db
-        .prepare(`${base} WHERE c.status IN (${placeholders}) GROUP BY c.id ORDER BY c.created_at DESC`)
-        .all(...statuses) as ConversationRow[];
+      return db.prepare(sql).all(...params) as ConversationRow[];
     } finally {
       db.close();
     }

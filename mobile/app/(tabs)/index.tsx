@@ -7,7 +7,7 @@ import { FilterChips } from '@/components/filter-chips';
 import { LabelPill, ListRow, PriorityDot } from '@/components/list-row';
 import { ScreenHeader } from '@/components/screen-header';
 import type { IconName } from '@/components/icon';
-import { apiFetch, type TaskRow } from '@/lib/api';
+import { apiFetch, withProjectId, type TaskRow } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { usePalette } from '@/lib/theme';
 
@@ -32,9 +32,12 @@ export default function TasksScreen() {
   const filterCsv = Array.from(filter).join(',');
 
   const q = useQuery({
-    queryKey: ['tasks', auth?.serverUrl, filterCsv],
+    queryKey: ['tasks', auth?.serverUrl, auth?.projectId, filterCsv],
     queryFn: () =>
-      apiFetch<TaskRow[]>(auth!, `/api/tasks?status=${encodeURIComponent(filterCsv)}`),
+      apiFetch<TaskRow[]>(
+        auth!,
+        withProjectId(`/api/tasks?status=${encodeURIComponent(filterCsv)}`, auth!.projectId),
+      ),
     enabled: !!auth && filter.size > 0,
   });
 

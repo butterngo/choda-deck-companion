@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import {
   Alert,
@@ -11,8 +12,11 @@ import {
   View,
 } from 'react-native';
 
+import { Picker, type PickerOption } from '@/components/picker';
 import { ScreenHeader } from '@/components/screen-header';
 import { Fonts } from '@/constants/theme';
+import { apiFetch, type ProjectRow, type WorkspaceRow } from '@/lib/api';
+import type { Auth } from '@/lib/auth';
 import { useAuth } from '@/lib/auth-context';
 import { usePalette } from '@/lib/theme';
 
@@ -21,14 +25,45 @@ export default function SettingsScreen() {
   const { auth, loading, save, clear } = useAuth();
   const [serverUrl, setServerUrl] = useState('');
   const [token, setToken] = useState('');
+  const [projectId, setProjectId] = useState<string | undefined>();
+  const [workspaceId, setWorkspaceId] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (auth) {
       setServerUrl(auth.serverUrl);
       setToken(auth.token);
+      setProjectId(auth.projectId);
+      setWorkspaceId(auth.workspaceId);
     }
   }, [auth]);
+
+  const probeAuth: Auth | null =
+    serverUrl.trim() && token.trim()
+      ? {
+          serverUrl: serverUrl.trim().replace(/\/+$/, ''),
+          token: token.trim(),
+        }
+      : null;
+
+  const projectsQ = useQuery({
+    queryKey: ['projects', probeAuth?.serverUrl, probeAuth?.token],
+    queryFn: () => apiFetch<ProjectRow[]>(probeAuth!, '/api/projects'),
+    enabled: !!probeAuth,
+  });
+
+  const workspacesQ = useQuery({
+    queryKey: ['workspaces', probeAuth?.serverUrl, probeAuth?.token, projectId],
+    queryFn: () =>
+      apiFetch<WorkspaceRow[]>(probeAuth!, `/api/workspaces?projectId=${projectId}`),
+    enabled: !!probeAuth && !!projectId,
+  });
+
+  const projectOptions: PickerOption<string>[] =
+    projectsQ.data?.map((pr) => ({ value: pr.id, label: pr.name, hint: pr.id })) ?? [];
+
+  const workspaceOptions: PickerOption<string>[] =
+    workspacesQ.data?.map((w) => ({ value: w.id, label: w.label, hint: w.id })) ?? [];
 
   const onSave = async () => {
     const trimmedUrl = serverUrl.trim().replace(/\/+$/, '');
@@ -39,7 +74,7 @@ export default function SettingsScreen() {
     }
     setBusy(true);
     try {
-      await save({ serverUrl: trimmedUrl, token: trimmedToken });
+      await save({ serverUrl: trimmedUrl, token: trimmedToken, projectId, workspaceId });
     } catch (e: any) {
       Alert.alert('Save failed', String(e?.message ?? e));
     } finally {
@@ -48,7 +83,7 @@ export default function SettingsScreen() {
   };
 
   const onClear = () => {
-    Alert.alert('Clear config', 'Token and server URL will be removed.', [
+    Alert.alert('Clear config', 'Token, project + workspace will be removed.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Clear',
@@ -57,6 +92,8 @@ export default function SettingsScreen() {
           await clear();
           setServerUrl('');
           setToken('');
+          setProjectId(undefined);
+          setWorkspaceId(undefined);
         },
       },
     ]);
@@ -114,8 +151,57 @@ export default function SettingsScreen() {
           autoCorrect={false}
           secureTextEntry
         />
+
+        <Text style={[styles.label, { color: p.text, marginTop: 20 }]}>Project</Text>
+        <Picker
+          label="Pick a project"
+          value={projectId}
+          options={projectOptions}
+          placeholder={
+            !probeAuth
+              ? 'Enter server URL + token first'
+              : projectsQ.isLoading
+                ? 'Loading…'
+                : projectsQ.isError
+                  ? 'Cannot load. Check URL + token.'
+                  : projectOptions.length === 0
+                    ? 'No projects.'
+                    : 'Pick a project'
+          }
+          disabled={!probeAuth || projectsQ.isLoading || projectsQ.isError}
+          onChange={(v) => {
+            setProjectId(v);
+            setWorkspaceId(undefined);
+          }}
+          onClear={() => {
+            setProjectId(undefined);
+            setWorkspaceId(undefined);
+          }}
+        />
         <Text style={[styles.hint, { color: p.textMuted }]}>
-          Printed by pnpm --filter server start -- --bind 0.0.0.0.
+          Scopes Tasks / Inbox / Convos. Leave empty for all projects.
+        </Text>
+
+        <Text style={[styles.label, { color: p.text, marginTop: 20 }]}>Workspace (optional)</Text>
+        <Picker
+          label="Pick a workspace"
+          value={workspaceId}
+          options={workspaceOptions}
+          placeholder={
+            !projectId
+              ? 'Pick a project first'
+              : workspacesQ.isLoading
+                ? 'Loading…'
+                : workspaceOptions.length === 0
+                  ? 'No workspaces.'
+                  : 'Pick a workspace'
+          }
+          disabled={!projectId || workspacesQ.isLoading}
+          onChange={setWorkspaceId}
+          onClear={() => setWorkspaceId(undefined)}
+        />
+        <Text style={[styles.hint, { color: p.textMuted }]}>
+          Reserved for queue run context. Read views don&apos;t filter by workspace yet.
         </Text>
 
         <Pressable
@@ -144,7 +230,11 @@ export default function SettingsScreen() {
           ]}>
           <Text style={[styles.statusLabel, { color: p.textMuted }]}>Status</Text>
           <Text style={[styles.statusValue, { color: p.text }]}>
-            {auth ? 'Configured' : 'Not configured'}
+            {auth
+              ? auth.projectId
+                ? `${auth.projectId}${auth.workspaceId ? ` · ${auth.workspaceId}` : ''}`
+                : 'Configured · all projects'
+              : 'Not configured'}
           </Text>
         </View>
       </ScrollView>
