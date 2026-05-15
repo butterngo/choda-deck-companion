@@ -144,11 +144,86 @@ export function queryInboxItems(dbPath: string, statuses: string[]): InboxItemRo
   });
 }
 
+export interface ConversationRow {
+  id: string;
+  project_id?: string;
+  title?: string;
+  status: string;
+  created_by?: string;
+  decision_summary?: string;
+  created_at?: string;
+  decided_at?: string;
+  closed_at?: string;
+  owner_session_id?: string;
+  owner_type?: string;
+  participant_count?: number;
+  [key: string]: unknown;
+}
+
+export interface ConversationThread {
+  conversation: ConversationRow;
+  participants: Record<string, unknown>[];
+  messages: Record<string, unknown>[];
+  links: Record<string, unknown>[];
+  actions: Record<string, unknown>[];
+}
+
+export function queryConversations(dbPath: string, statuses?: string[]): ConversationRow[] {
+  return withRetry(() => {
+    const db = openDb(dbPath);
+    try {
+      const base = `
+        SELECT c.*, COUNT(cp.participant_name) AS participant_count
+        FROM conversations c
+        LEFT JOIN conversation_participants cp ON cp.conversation_id = c.id
+      `;
+      if (!statuses || statuses.length === 0) {
+        return db
+          .prepare(`${base} GROUP BY c.id ORDER BY c.created_at DESC`)
+          .all() as ConversationRow[];
+      }
+      const placeholders = statuses.map(() => "?").join(", ");
+      return db
+        .prepare(`${base} WHERE c.status IN (${placeholders}) GROUP BY c.id ORDER BY c.created_at DESC`)
+        .all(...statuses) as ConversationRow[];
+    } finally {
+      db.close();
+    }
+  });
+}
+
 export function getInboxItem(dbPath: string, id: string): InboxItemRow | undefined {
   return withRetry(() => {
     const db = openDb(dbPath);
     try {
       return db.prepare("SELECT * FROM inbox_items WHERE id = ?").get(id) as InboxItemRow | undefined;
+    } finally {
+      db.close();
+    }
+  });
+}
+
+export function getConversationThread(dbPath: string, id: string): ConversationThread | undefined {
+  return withRetry(() => {
+    const db = openDb(dbPath);
+    try {
+      const conversation = db
+        .prepare("SELECT * FROM conversations WHERE id = ?")
+        .get(id) as ConversationRow | undefined;
+      if (!conversation) return undefined;
+      const participants = db
+        .prepare("SELECT * FROM conversation_participants WHERE conversation_id = ?")
+        .all(id) as Record<string, unknown>[];
+      const messages = db
+        .prepare("SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY created_at ASC")
+        .all(id) as Record<string, unknown>[];
+      const links = db
+        .prepare("SELECT * FROM conversation_links WHERE conversation_id = ?")
+        .all(id) as Record<string, unknown>[];
+      const actions = db
+        .prepare("SELECT * FROM conversation_actions WHERE conversation_id = ? ORDER BY created_at ASC")
+        .all(id) as Record<string, unknown>[];
+      return { conversation, participants, messages, links, actions };
     } finally {
       db.close();
     }

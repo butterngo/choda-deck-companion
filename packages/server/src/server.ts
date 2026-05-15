@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { handleConversationGet, handleConversationList } from "./routes/conversations.js";
 import { handleQueueGet, handleQueueList, handleQueueLive } from "./routes/queue.js";
 import { handleInboxGet, handleInboxList } from "./routes/inbox.js";
 import { handleTaskGet, handleTasksList } from "./routes/tasks.js";
@@ -104,6 +105,10 @@ app.get("/api/tasks/:id", (c) => handleTaskGet(c, dbPath));
 app.get("/api/inbox", (c) => handleInboxList(c, dbPath));
 
 app.get("/api/inbox/:id", (c) => handleInboxGet(c, dbPath));
+
+app.get("/api/conversations", (c) => handleConversationList(c, dbPath));
+
+app.get("/api/conversations/:id", (c) => handleConversationGet(c, dbPath));
 
 // --- Start ---
 
