@@ -26,7 +26,7 @@ export async function handleQueueList(c: Context, artifactsDir: string) {
 }
 
 export async function handleQueueGet(c: Context, artifactsDir: string) {
-  const id = c.req.param("id");
+  const id = c.req.param("id")!;
   try {
     const result = await getQueueRun(artifactsDir, id);
     return c.json(result);

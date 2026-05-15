@@ -15,6 +15,17 @@ export interface TaskRow {
   [key: string]: unknown;
 }
 
+export interface InboxItemRow {
+  id: string;
+  project_id?: string;
+  content: string;
+  status: string;
+  linked_task_id?: string;
+  created_at?: string;
+  updated_at?: string;
+  [key: string]: unknown;
+}
+
 export class DbBusyError extends Error {
   constructor() {
     super("Database busy. Retrying...");
@@ -110,6 +121,34 @@ export function getTask(dbPath: string, id: string): TaskRow | undefined {
     const db = openDb(dbPath);
     try {
       return db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined;
+    } finally {
+      db.close();
+    }
+  });
+}
+
+export function queryInboxItems(dbPath: string, statuses: string[]): InboxItemRow[] {
+  return withRetry(() => {
+    const db = openDb(dbPath);
+    try {
+      if (statuses.length === 0) {
+        return db.prepare("SELECT * FROM inbox_items ORDER BY updated_at DESC").all() as InboxItemRow[];
+      }
+      const placeholders = statuses.map(() => "?").join(", ");
+      return db
+        .prepare(`SELECT * FROM inbox_items WHERE status IN (${placeholders}) ORDER BY updated_at DESC`)
+        .all(...statuses) as InboxItemRow[];
+    } finally {
+      db.close();
+    }
+  });
+}
+
+export function getInboxItem(dbPath: string, id: string): InboxItemRow | undefined {
+  return withRetry(() => {
+    const db = openDb(dbPath);
+    try {
+      return db.prepare("SELECT * FROM inbox_items WHERE id = ?").get(id) as InboxItemRow | undefined;
     } finally {
       db.close();
     }

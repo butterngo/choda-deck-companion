@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { handleQueueList, handleQueueLive } from "../routes/queue.js";
+import { handleInboxGet, handleInboxList } from "../routes/inbox.js";
 import { handleTasksList } from "../routes/tasks.js";
 
 // Minimal Hono app for testing — no real FS/DB
@@ -10,6 +11,8 @@ const makeApp = (artifactsDir: string, dbPath: string) => {
   app.get("/api/queue", (c) => handleQueueList(c, artifactsDir));
   app.get("/api/queue/live", (c) => handleQueueLive(c, artifactsDir));
   app.get("/api/tasks", (c) => handleTasksList(c, dbPath));
+  app.get("/api/inbox", (c) => handleInboxList(c, dbPath));
+  app.get("/api/inbox/:id", (c) => handleInboxGet(c, dbPath));
   return app;
 };
 
@@ -98,6 +101,28 @@ describe("GET /api/tasks", () => {
   it("returns 500 with schema error message when DB missing", async () => {
     const app = makeApp("/fake/artifacts", "/nonexistent/db.db");
     const res = await app.request("/api/tasks");
+    expect(res.status).toBe(500);
+  });
+});
+
+describe("GET /api/inbox", () => {
+  it("returns 500 when DB missing", async () => {
+    const app = makeApp("/fake/artifacts", "/nonexistent/db.db");
+    const res = await app.request("/api/inbox");
+    expect(res.status).toBe(500);
+  });
+
+  it("returns 500 when DB missing (with status filter)", async () => {
+    const app = makeApp("/fake/artifacts", "/nonexistent/db.db");
+    const res = await app.request("/api/inbox?status=pending,archived");
+    expect(res.status).toBe(500);
+  });
+});
+
+describe("GET /api/inbox/:id", () => {
+  it("returns 500 when DB missing", async () => {
+    const app = makeApp("/fake/artifacts", "/nonexistent/db.db");
+    const res = await app.request("/api/inbox/INBOX-001");
     expect(res.status).toBe(500);
   });
 });
