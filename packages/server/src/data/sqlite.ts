@@ -216,6 +216,19 @@ export function getTask(dbPath: string, id: string): TaskRow | undefined {
   });
 }
 
+export function getWorkspace(dbPath: string, id: string): WorkspaceRow | undefined {
+  return withRetry(() => {
+    const db = openDb(dbPath);
+    try {
+      return db
+        .prepare("SELECT id, project_id, label, cwd, archived_at FROM workspaces WHERE id = ?")
+        .get(id) as WorkspaceRow | undefined;
+    } finally {
+      db.close();
+    }
+  });
+}
+
 export function queryInboxItems(
   dbPath: string,
   statuses: string[],
