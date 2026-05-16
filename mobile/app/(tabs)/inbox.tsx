@@ -14,7 +14,7 @@ import { ListRow } from '@/components/list-row';
 import { ScreenHeader } from '@/components/screen-header';
 import type { IconName } from '@/components/icon';
 import { apiFetch, withProjectId } from '@/lib/api';
-import { useAuth } from '@/lib/auth-context';
+import { useAuth, useAuthSubtitle } from '@/lib/auth-context';
 import { usePalette } from '@/lib/theme';
 import { useState } from 'react';
 
@@ -40,6 +40,7 @@ type InboxRow = {
 export default function InboxScreen() {
   const p = usePalette();
   const { auth } = useAuth();
+  const subtitle = useAuthSubtitle();
   const router = useRouter();
   const [filter, setFilter] = useState<Set<InboxStatus>>(new Set(['raw', 'researching', 'ready']));
 
@@ -58,7 +59,7 @@ export default function InboxScreen() {
   if (!auth) {
     return (
       <View style={{ flex: 1, backgroundColor: p.background }}>
-        <ScreenHeader title="Inbox" />
+        <ScreenHeader title="Inbox" subtitle={subtitle} />
         <Text style={[styles.empty, { color: p.textMuted }]}>
           Configure server in settings tab.
         </Text>
@@ -68,7 +69,7 @@ export default function InboxScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: p.background }}>
-      <ScreenHeader title="Inbox" />
+      <ScreenHeader title="Inbox" subtitle={subtitle} />
       <FilterChips options={STATUS_OPTIONS} selected={filter} onChange={setFilter} />
 
       {filter.size === 0 ? (

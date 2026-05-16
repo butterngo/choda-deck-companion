@@ -38,3 +38,13 @@ export function useAuth(): AuthState {
   if (!v) throw new Error('useAuth must be used within AuthProvider');
   return v;
 }
+
+export function useAuthSubtitle(): string | undefined {
+  const { auth } = useAuth();
+  if (!auth) return undefined;
+  const project = auth.projectName ?? auth.projectId;
+  const workspace = auth.workspaceLabel ?? auth.workspaceId;
+  if (project && workspace) return `${project} · ${workspace}`;
+  if (project) return project;
+  return undefined;
+}

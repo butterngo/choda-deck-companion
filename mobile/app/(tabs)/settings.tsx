@@ -26,7 +26,9 @@ export default function SettingsScreen() {
   const [serverUrl, setServerUrl] = useState('');
   const [token, setToken] = useState('');
   const [projectId, setProjectId] = useState<string | undefined>();
+  const [projectName, setProjectName] = useState<string | undefined>();
   const [workspaceId, setWorkspaceId] = useState<string | undefined>();
+  const [workspaceLabel, setWorkspaceLabel] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -34,7 +36,9 @@ export default function SettingsScreen() {
       setServerUrl(auth.serverUrl);
       setToken(auth.token);
       setProjectId(auth.projectId);
+      setProjectName(auth.projectName);
       setWorkspaceId(auth.workspaceId);
+      setWorkspaceLabel(auth.workspaceLabel);
     }
   }, [auth]);
 
@@ -74,7 +78,14 @@ export default function SettingsScreen() {
     }
     setBusy(true);
     try {
-      await save({ serverUrl: trimmedUrl, token: trimmedToken, projectId, workspaceId });
+      await save({
+        serverUrl: trimmedUrl,
+        token: trimmedToken,
+        projectId,
+        projectName,
+        workspaceId,
+        workspaceLabel,
+      });
     } catch (e: any) {
       Alert.alert('Save failed', String(e?.message ?? e));
     } finally {
@@ -93,7 +104,9 @@ export default function SettingsScreen() {
           setServerUrl('');
           setToken('');
           setProjectId(undefined);
+          setProjectName(undefined);
           setWorkspaceId(undefined);
+          setWorkspaceLabel(undefined);
         },
       },
     ]);
@@ -171,11 +184,15 @@ export default function SettingsScreen() {
           disabled={!probeAuth || projectsQ.isLoading || projectsQ.isError}
           onChange={(v) => {
             setProjectId(v);
+            setProjectName(projectsQ.data?.find((pr) => pr.id === v)?.name);
             setWorkspaceId(undefined);
+            setWorkspaceLabel(undefined);
           }}
           onClear={() => {
             setProjectId(undefined);
+            setProjectName(undefined);
             setWorkspaceId(undefined);
+            setWorkspaceLabel(undefined);
           }}
         />
         <Text style={[styles.hint, { color: p.textMuted }]}>
@@ -197,8 +214,14 @@ export default function SettingsScreen() {
                   : 'Pick a workspace'
           }
           disabled={!projectId || workspacesQ.isLoading}
-          onChange={setWorkspaceId}
-          onClear={() => setWorkspaceId(undefined)}
+          onChange={(v) => {
+            setWorkspaceId(v);
+            setWorkspaceLabel(workspacesQ.data?.find((w) => w.id === v)?.label);
+          }}
+          onClear={() => {
+            setWorkspaceId(undefined);
+            setWorkspaceLabel(undefined);
+          }}
         />
         <Text style={[styles.hint, { color: p.textMuted }]}>
           Reserved for queue run context. Read views don&apos;t filter by workspace yet.
@@ -232,7 +255,7 @@ export default function SettingsScreen() {
           <Text style={[styles.statusValue, { color: p.text }]}>
             {auth
               ? auth.projectId
-                ? `${auth.projectId}${auth.workspaceId ? ` · ${auth.workspaceId}` : ''}`
+                ? `${auth.projectName ?? auth.projectId}${auth.workspaceId ? ` · ${auth.workspaceLabel ?? auth.workspaceId}` : ''}`
                 : 'Configured · all projects'
               : 'Not configured'}
           </Text>
