@@ -7,9 +7,13 @@ export function handleTasksList(c: Context, dbPath: string) {
     ? statusParam.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
   const projectId = c.req.query("projectId") || undefined;
+  const labelsParam = c.req.query("labels") ?? "";
+  const labels = labelsParam
+    ? labelsParam.split(",").map((s) => s.trim()).filter(Boolean)
+    : undefined;
 
   try {
-    const tasks = queryTasks(dbPath, statuses, projectId);
+    const tasks = queryTasks(dbPath, statuses, projectId, labels);
     return c.json(tasks);
   } catch (err) {
     if (err instanceof DbBusyError) {
