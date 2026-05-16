@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { spawn } from "node:child_process";
 import { Hono } from "hono";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -7,6 +8,7 @@ import { handleConversationGet, handleConversationList } from "./routes/conversa
 import { handleQueueGet, handleQueueList, handleQueueLive } from "./routes/queue.js";
 import { handleInboxGet, handleInboxList } from "./routes/inbox.js";
 import { handleProjectList, handleWorkspaceList } from "./routes/projects.js";
+import { handleQueueStart } from "./routes/queue-start.js";
 import { handleTaskGet, handleTasksList } from "./routes/tasks.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -54,6 +56,18 @@ const dbPath =
   rawArgs["db-path"] ??
   process.env["CHODA_DB_PATH"] ??
   "C:\\dev\\choda-deck\\data\\database\\choda-deck.db";
+const cliPath =
+  rawArgs["cli-path"] ??
+  process.env["CHODA_CLI_PATH"] ??
+  "C:\\dev\\choda-deck\\dist\\cli.cjs";
+const dataDir =
+  rawArgs["data-dir"] ??
+  process.env["CHODA_DATA_DIR"] ??
+  "C:\\dev\\choda-deck\\data";
+const auditLogPath =
+  rawArgs["audit-log"] ??
+  process.env["CHODA_AUDIT_LOG"] ??
+  join(dataDir, "audit.log");
 
 const lanMode = bind === "0.0.0.0";
 
@@ -114,6 +128,16 @@ app.get("/api/conversations/:id", (c) => handleConversationGet(c, dbPath));
 app.get("/api/projects", (c) => handleProjectList(c, dbPath));
 
 app.get("/api/workspaces", (c) => handleWorkspaceList(c, dbPath));
+
+app.post("/api/queue/start", (c) =>
+  handleQueueStart(c, {
+    dbPath,
+    cliPath,
+    dataDir,
+    auditLogPath,
+    spawnFn: spawn,
+  }),
+);
 
 // --- Start ---
 
