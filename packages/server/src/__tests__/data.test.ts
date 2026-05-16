@@ -96,6 +96,34 @@ describe("artifacts", () => {
     );
   });
 
+  it("getQueueRun resolves stripped id with queue- prefix (active-run SSE shape)", async () => {
+    // SSE active-run emits queueRunId without prefix — detail screen passes it as-is.
+    const result = await getQueueRun(dir, "1000000000000-aaaa");
+    expect(result.report).toContain("# Run A");
+    expect(result.meta.queueRunId).toBe("1000000000000-aaaa");
+  });
+
+  it("getQueueRun resolves stripped id with queue-start- prefix", async () => {
+    const queueStartDir = join(dir, "queue-start-5000000000000-eeee");
+    await mkdir(queueStartDir);
+    await writeFile(
+      join(queueStartDir, "queue-run.json"),
+      JSON.stringify({
+        queueRunId: "5000000000000-eeee",
+        startedAt: "2026-05-04T10:00:00.000Z",
+        endedAt: "2026-05-04T10:01:00.000Z",
+        totalCostUsd: 0,
+        halted: false,
+        tasks: [],
+      }),
+    );
+    await writeFile(join(queueStartDir, "report.md"), "# Run E\n");
+
+    const result = await getQueueRun(dir, "5000000000000-eeee");
+    expect(result.report).toContain("# Run E");
+    expect(result.meta.queueRunId).toBe("5000000000000-eeee");
+  });
+
   it("halted run has status 'failed'", async () => {
     const failedDir = join(dir, "queue-4000000000000-dddd");
     await mkdir(failedDir);

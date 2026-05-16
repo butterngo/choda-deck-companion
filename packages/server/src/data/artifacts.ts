@@ -69,16 +69,28 @@ export async function listQueueRuns(artifactsDir: string): Promise<QueueRunSumma
   return results;
 }
 
+async function resolveQueueRunDir(artifactsDir: string, id: string): Promise<string> {
+  // Accept either the full dir name (e.g. "queue-start-1778944233653-fdq4")
+  // or just the stripped queueRunId (e.g. "1778944233653-fdq4"). The active-run
+  // SSE event emits the stripped form while listQueueRuns emits the full form.
+  const candidates = [id, `queue-start-${id}`, `queue-${id}`];
+  for (const candidate of candidates) {
+    const dir = join(artifactsDir, candidate);
+    try {
+      await stat(dir);
+      return dir;
+    } catch {
+      // try next candidate
+    }
+  }
+  throw new QueueRunNotFoundError(id);
+}
+
 export async function getQueueRun(
   artifactsDir: string,
   id: string,
 ): Promise<{ report: string; meta: QueueRunMeta }> {
-  const dir = join(artifactsDir, id);
-  try {
-    await stat(dir);
-  } catch {
-    throw new QueueRunNotFoundError(id);
-  }
+  const dir = await resolveQueueRunDir(artifactsDir, id);
 
   const metaPath = join(dir, "queue-run.json");
   const reportPath = join(dir, "report.md");
