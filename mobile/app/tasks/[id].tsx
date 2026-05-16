@@ -1,10 +1,19 @@
-import { useQuery } from '@tanstack/react-query';
-import { useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { LabelPill, PriorityDot } from '@/components/list-row';
 import { Fonts } from '@/constants/theme';
-import { apiFetch, type TaskRow } from '@/lib/api';
+import { ApiError, apiFetch, startQueueRun, type TaskRow } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { fmtRelative } from '@/lib/time';
 import { usePalette } from '@/lib/theme';
@@ -13,6 +22,9 @@ export default function TaskDetailScreen() {
   const p = usePalette();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { auth } = useAuth();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const [submitting, setSubmitting] = useState(false);
 
   const q = useQuery({
     queryKey: ['task', id, auth?.serverUrl],
@@ -49,6 +61,54 @@ export default function TaskDetailScreen() {
   const task = q.data;
   const labels = task.labels ? parseLabels(task.labels) : [];
   const body = typeof task.body === 'string' ? (task.body as string) : '';
+
+  const canRun = task.status === 'READY' && !!auth.projectId && !!auth.workspaceId;
+  const runHint = !auth.projectId
+    ? 'Pick a project in Settings to enable.'
+    : !auth.workspaceId
+      ? 'Pick a workspace in Settings to enable.'
+      : task.status !== 'READY'
+        ? 'Only READY tasks can be queued.'
+        : null;
+
+  const handleRun = () => {
+    if (!canRun || !auth.projectId || !auth.workspaceId) return;
+    const taskId = task.id;
+    const projectId = auth.projectId;
+    const workspaceId = auth.workspaceId;
+    Alert.alert(
+      `Start queue run for ${taskId}?`,
+      `${task.title ?? ''}\nWorkspace: ${auth.workspaceLabel ?? workspaceId}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Start',
+          onPress: async () => {
+            setSubmitting(true);
+            try {
+              await startQueueRun(auth, { taskId, projectId, workspaceId });
+              await queryClient.invalidateQueries({ queryKey: ['queue'] });
+              router.push('/queue');
+            } catch (err) {
+              const message =
+                err instanceof ApiError
+                  ? err.status === 401
+                    ? 'Re-pair in Settings.'
+                    : err.status === 409
+                      ? 'Already running or worktree exists — check Queue tab.'
+                      : err.message
+                  : err instanceof Error
+                    ? err.message
+                    : String(err);
+              Alert.alert('Queue start failed', message);
+            } finally {
+              setSubmitting(false);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   return (
     <ScrollView style={{ backgroundColor: p.background }} contentContainerStyle={styles.body}>
@@ -87,6 +147,28 @@ export default function TaskDetailScreen() {
       ) : (
         <Text style={[styles.bodyEmpty, { color: p.textMuted }]}>No body.</Text>
       )}
+
+      <Pressable
+        style={[
+          styles.runBtn,
+          {
+            backgroundColor: canRun ? p.chipBgActive : p.surfaceMuted,
+            opacity: submitting ? 0.6 : 1,
+          },
+        ]}
+        onPress={handleRun}
+        disabled={!canRun || submitting}>
+        <Text
+          style={[
+            styles.runBtnText,
+            { color: canRun ? p.chipTextActive : p.textSubtle },
+          ]}>
+          {submitting ? 'Starting…' : 'Run in queue'}
+        </Text>
+      </Pressable>
+      {runHint ? (
+        <Text style={[styles.runHint, { color: p.textMuted }]}>{runHint}</Text>
+      ) : null}
     </ScrollView>
   );
 }
@@ -140,5 +222,13 @@ const styles = StyleSheet.create({
   },
   bodyText: { fontSize: 13, lineHeight: 19 },
   bodyEmpty: { fontSize: 13, marginTop: 20, textAlign: 'center' },
+  runBtn: {
+    marginTop: 24,
+    paddingVertical: 12,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  runBtnText: { fontWeight: '500', fontSize: 14 },
+  runHint: { fontSize: 12, marginTop: 6, textAlign: 'center' },
   center: { flex: 1, padding: 30, alignItems: 'center', justifyContent: 'center' },
 });
