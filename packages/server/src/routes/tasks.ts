@@ -6,9 +6,10 @@ export function handleTasksList(c: Context, dbPath: string) {
   const statuses = statusParam
     ? statusParam.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
+  const projectId = c.req.query("projectId") || undefined;
 
   try {
-    const tasks = queryTasks(dbPath, statuses);
+    const tasks = queryTasks(dbPath, statuses, projectId);
     return c.json(tasks);
   } catch (err) {
     if (err instanceof DbBusyError) {

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { handleConversationGet, handleConversationList } from "./routes/conversations.js";
 import { handleQueueGet, handleQueueList, handleQueueLive } from "./routes/queue.js";
 import { handleInboxGet, handleInboxList } from "./routes/inbox.js";
+import { handleProjectList, handleWorkspaceList } from "./routes/projects.js";
 import { handleTaskGet, handleTasksList } from "./routes/tasks.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -109,6 +110,10 @@ app.get("/api/inbox/:id", (c) => handleInboxGet(c, dbPath));
 app.get("/api/conversations", (c) => handleConversationList(c, dbPath));
 
 app.get("/api/conversations/:id", (c) => handleConversationGet(c, dbPath));
+
+app.get("/api/projects", (c) => handleProjectList(c, dbPath));
+
+app.get("/api/workspaces", (c) => handleWorkspaceList(c, dbPath));
 
 // --- Start ---
 

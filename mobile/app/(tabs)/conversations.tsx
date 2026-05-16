@@ -14,7 +14,7 @@ import { FilterChips } from '@/components/filter-chips';
 import { ListRow } from '@/components/list-row';
 import { ScreenHeader } from '@/components/screen-header';
 import type { IconName } from '@/components/icon';
-import { apiFetch, type ConversationRow } from '@/lib/api';
+import { apiFetch, withProjectId, type ConversationRow } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { usePalette } from '@/lib/theme';
 
@@ -36,11 +36,14 @@ export default function ConversationsScreen() {
   const filterCsv = Array.from(filter).join(',');
 
   const q = useQuery({
-    queryKey: ['conversations', auth?.serverUrl, filterCsv],
+    queryKey: ['conversations', auth?.serverUrl, auth?.projectId, filterCsv],
     queryFn: () =>
       apiFetch<ConversationRow[]>(
         auth!,
-        `/api/conversations?status=${encodeURIComponent(filterCsv)}`,
+        withProjectId(
+          `/api/conversations?status=${encodeURIComponent(filterCsv)}`,
+          auth!.projectId,
+        ),
       ),
     enabled: !!auth && filter.size > 0,
   });
