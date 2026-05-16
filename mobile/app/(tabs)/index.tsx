@@ -23,21 +23,27 @@ const STATUS_OPTIONS = [
 
 const DEFAULT_FILTER: Status[] = ['READY', 'IN-PROGRESS'];
 
+const LABEL_OPTIONS = [
+  { value: 'auto-safe', label: 'Auto-safe' },
+] as const satisfies readonly { value: string; label: string }[];
+
 export default function TasksScreen() {
   const p = usePalette();
   const { auth } = useAuth();
   const router = useRouter();
   const [filter, setFilter] = useState<Set<Status>>(new Set(DEFAULT_FILTER));
+  const [labelFilter, setLabelFilter] = useState<Set<string>>(new Set());
 
   const filterCsv = Array.from(filter).join(',');
+  const labelsCsv = Array.from(labelFilter).join(',');
 
   const q = useQuery({
-    queryKey: ['tasks', auth?.serverUrl, auth?.projectId, filterCsv],
-    queryFn: () =>
-      apiFetch<TaskRow[]>(
-        auth!,
-        withProjectId(`/api/tasks?status=${encodeURIComponent(filterCsv)}`, auth!.projectId),
-      ),
+    queryKey: ['tasks', auth?.serverUrl, auth?.projectId, filterCsv, labelsCsv],
+    queryFn: () => {
+      let url = withProjectId(`/api/tasks?status=${encodeURIComponent(filterCsv)}`, auth!.projectId);
+      if (labelsCsv) url += `&labels=${encodeURIComponent(labelsCsv)}`;
+      return apiFetch<TaskRow[]>(auth!, url);
+    },
     enabled: !!auth && filter.size > 0,
   });
 
@@ -56,6 +62,7 @@ export default function TasksScreen() {
     <View style={{ flex: 1, backgroundColor: p.background }}>
       <ScreenHeader title="Tasks" />
       <FilterChips options={STATUS_OPTIONS} selected={filter} onChange={setFilter} />
+      <FilterChips options={LABEL_OPTIONS} selected={labelFilter} onChange={setLabelFilter} />
 
       {filter.size === 0 ? (
         <Text style={[styles.empty, { color: p.textMuted }]}>No filter selected.</Text>

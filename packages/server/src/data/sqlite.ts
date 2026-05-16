@@ -171,7 +171,12 @@ export function queryWorkspaces(dbPath: string, projectId?: string): WorkspaceRo
   });
 }
 
-export function queryTasks(dbPath: string, statuses: string[], projectId?: string): TaskRow[] {
+export function queryTasks(
+  dbPath: string,
+  statuses: string[],
+  projectId?: string,
+  labels?: string[],
+): TaskRow[] {
   return withRetry(() => {
     const db = openDb(dbPath);
     try {
@@ -184,6 +189,11 @@ export function queryTasks(dbPath: string, statuses: string[], projectId?: strin
       if (projectId) {
         where.push("project_id = ?");
         params.push(projectId);
+      }
+      if (labels && labels.length > 0) {
+        const placeholders = labels.map(() => "?").join(", ");
+        where.push(`EXISTS (SELECT 1 FROM json_each(labels) WHERE value IN (${placeholders}))`);
+        params.push(...labels);
       }
       const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
       return db
