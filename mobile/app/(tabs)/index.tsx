@@ -8,7 +8,7 @@ import { LabelPill, ListRow, PriorityDot } from '@/components/list-row';
 import { ScreenHeader } from '@/components/screen-header';
 import type { IconName } from '@/components/icon';
 import { apiFetch, withProjectId, type TaskRow } from '@/lib/api';
-import { useAuth } from '@/lib/auth-context';
+import { useAuth, useAuthSubtitle } from '@/lib/auth-context';
 import { usePalette } from '@/lib/theme';
 
 type Status = 'READY' | 'IN-PROGRESS' | 'TODO' | 'DONE' | 'CANCELLED';
@@ -30,6 +30,7 @@ const LABEL_OPTIONS = [
 export default function TasksScreen() {
   const p = usePalette();
   const { auth } = useAuth();
+  const subtitle = useAuthSubtitle();
   const router = useRouter();
   const [filter, setFilter] = useState<Set<Status>>(new Set(DEFAULT_FILTER));
   const [labelFilter, setLabelFilter] = useState<Set<string>>(new Set());
@@ -50,7 +51,7 @@ export default function TasksScreen() {
   if (!auth) {
     return (
       <View style={{ flex: 1, backgroundColor: p.background }}>
-        <ScreenHeader title="Tasks" />
+        <ScreenHeader title="Tasks" subtitle={subtitle} />
         <Text style={[styles.empty, { color: p.textMuted }]}>
           Configure server in settings tab.
         </Text>
@@ -60,7 +61,7 @@ export default function TasksScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: p.background }}>
-      <ScreenHeader title="Tasks" />
+      <ScreenHeader title="Tasks" subtitle={subtitle} />
       <FilterChips options={STATUS_OPTIONS} selected={filter} onChange={setFilter} />
       <FilterChips options={LABEL_OPTIONS} selected={labelFilter} onChange={setLabelFilter} />
 

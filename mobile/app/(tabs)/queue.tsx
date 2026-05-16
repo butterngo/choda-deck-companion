@@ -14,7 +14,7 @@ import { ListRow } from '@/components/list-row';
 import { ScreenHeader } from '@/components/screen-header';
 import { Fonts } from '@/constants/theme';
 import { apiFetch, type QueueRunSummary } from '@/lib/api';
-import { useAuth } from '@/lib/auth-context';
+import { useAuth, useAuthSubtitle } from '@/lib/auth-context';
 import { useLiveStatus } from '@/lib/sse';
 import { fmtDuration } from '@/lib/time';
 import { usePalette } from '@/lib/theme';
@@ -22,6 +22,7 @@ import { usePalette } from '@/lib/theme';
 export default function QueueScreen() {
   const p = usePalette();
   const { auth } = useAuth();
+  const subtitle = useAuthSubtitle();
   const router = useRouter();
   const live = useLiveStatus(auth);
 
@@ -35,7 +36,7 @@ export default function QueueScreen() {
   if (!auth) {
     return (
       <View style={{ flex: 1, backgroundColor: p.background }}>
-        <ScreenHeader title="Queue" />
+        <ScreenHeader title="Queue" subtitle={subtitle} />
         <Text style={[styles.empty, { color: p.textMuted }]}>
           Configure server in settings tab.
         </Text>
@@ -47,7 +48,7 @@ export default function QueueScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: p.background }}>
-      <ScreenHeader title="Queue" />
+      <ScreenHeader title="Queue" subtitle={subtitle} />
 
       {activeRun ? (
         <Pressable

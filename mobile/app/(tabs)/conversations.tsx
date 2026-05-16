@@ -15,7 +15,7 @@ import { ListRow } from '@/components/list-row';
 import { ScreenHeader } from '@/components/screen-header';
 import type { IconName } from '@/components/icon';
 import { apiFetch, withProjectId, type ConversationRow } from '@/lib/api';
-import { useAuth } from '@/lib/auth-context';
+import { useAuth, useAuthSubtitle } from '@/lib/auth-context';
 import { usePalette } from '@/lib/theme';
 
 type ConvStatus = 'discussing' | 'open' | 'decided' | 'closed';
@@ -30,6 +30,7 @@ const STATUS_OPTIONS = [
 export default function ConversationsScreen() {
   const p = usePalette();
   const { auth } = useAuth();
+  const subtitle = useAuthSubtitle();
   const router = useRouter();
   const [filter, setFilter] = useState<Set<ConvStatus>>(new Set(['discussing', 'open']));
 
@@ -51,7 +52,7 @@ export default function ConversationsScreen() {
   if (!auth) {
     return (
       <View style={{ flex: 1, backgroundColor: p.background }}>
-        <ScreenHeader title="Conversations" />
+        <ScreenHeader title="Conversations" subtitle={subtitle} />
         <Text style={[styles.empty, { color: p.textMuted }]}>
           Configure server in settings tab.
         </Text>
@@ -61,7 +62,7 @@ export default function ConversationsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: p.background }}>
-      <ScreenHeader title="Conversations" />
+      <ScreenHeader title="Conversations" subtitle={subtitle} />
       <FilterChips options={STATUS_OPTIONS} selected={filter} onChange={setFilter} />
 
       {filter.size === 0 ? (
