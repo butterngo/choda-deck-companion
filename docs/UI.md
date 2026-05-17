@@ -1,5 +1,5 @@
-> **Source**: `choda-deck/docs/knowledge/companion-ui-system.md`. Update upstream first, copy here.
-> **Last synced**: 2026-05-14 (initial copy)
+> **Source**: this file is the authoritative SoT (upstream `choda-deck/docs/knowledge/companion-ui-system.md` no longer exists — migrated to in-repo doc per TASK-807).
+> **Last synced**: 2026-05-17 (TASK-808 — allow Vite build step for web client)
 
 # Companion UI Design System
 
@@ -28,7 +28,17 @@ Future Claude in design role: đọc full doc trước khi design new component 
 - KHÔNG dashboard with cost trend chart (Phase 2; reconsider sau khi có usage data)
 - KHÔNG emoji decoration (ntfy notification cũng text-only, no tags)
 - KHÔNG fancy micro-animation cho status change
-- KHÔNG build step (no webpack, vite, esbuild — straight HTML/JS served by Hono)
+
+### Build step — exception cho `packages/web/` (TASK-807, 2026-05-17)
+
+Phase 2 cũ cấm hoàn toàn build step. Phase 2.5 (TASK-807) revert quyết định đó cho **web client only**:
+
+- `packages/web/` dùng **Vite + React + TypeScript + Tailwind** để parity với mobile (Expo RN, vốn luôn có build step).
+- Type + API client + SSE reducer share giữa web ↔ mobile qua `packages/shared/` workspace mới — không thể achieve nếu không có build step.
+- `packages/server/` (Hono) vẫn KHÔNG build step ở runtime — server tsx watch cho dev, tsc cho production. Phục vụ `packages/web/dist/` static.
+- `mobile/` không thay đổi (Expo bundler luôn build).
+
+Constraint giữ nguyên: KHÔNG custom webpack config, KHÔNG framework heavyweight (Next.js, Remix). Vite vanilla + React Router + Tailwind — không hơn.
 
 ## Design tokens
 
