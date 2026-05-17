@@ -176,6 +176,7 @@ export function queryTasks(
   statuses: string[],
   projectId?: string,
   labels?: string[],
+  query?: string,
 ): TaskRow[] {
   return withRetry(() => {
     const db = openDb(dbPath);
@@ -194,6 +195,12 @@ export function queryTasks(
         const placeholders = labels.map(() => "?").join(", ");
         where.push(`EXISTS (SELECT 1 FROM json_each(labels) WHERE value IN (${placeholders}))`);
         params.push(...labels);
+      }
+      const trimmed = query?.trim();
+      if (trimmed) {
+        where.push("(id LIKE ? OR title LIKE ?)");
+        const like = `%${trimmed}%`;
+        params.push(like, like);
       }
       const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
       return db

@@ -17,6 +17,7 @@ const MAP: Record<string, MCIName> = {
   'x': 'close',
   'refresh': 'refresh',
   'chevron-right': 'chevron-right',
+  'search': 'magnify',
 
   // Tabs
   'list': 'format-list-bulleted',

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -10,6 +11,7 @@ import {
   View,
 } from 'react-native';
 
+import { FilterChips } from '@/components/filter-chips';
 import { Icon, type IconName } from '@/components/icon';
 import { ListRow } from '@/components/list-row';
 import { ScreenHeader } from '@/components/screen-header';
@@ -20,12 +22,25 @@ import { useLiveStatus, type LiveActiveRun, type LiveTaskState } from '@/lib/sse
 import { fmtDuration } from '@/lib/time';
 import { usePalette } from '@/lib/theme';
 
+type QueueStatus = 'running' | 'finished' | 'failed';
+
+const QUEUE_STATUS_OPTIONS = [
+  { value: 'running', label: 'running' },
+  { value: 'finished', label: 'finished' },
+  { value: 'failed', label: 'failed' },
+] as const satisfies readonly { value: QueueStatus; label: string }[];
+
+const DEFAULT_QUEUE_FILTER: QueueStatus[] = ['running', 'finished', 'failed'];
+
 export default function QueueScreen() {
   const p = usePalette();
   const { auth } = useAuth();
   const subtitle = useAuthSubtitle();
   const router = useRouter();
   const live = useLiveStatus(auth);
+  const [statusFilter, setStatusFilter] = useState<Set<QueueStatus>>(
+    new Set(DEFAULT_QUEUE_FILTER),
+  );
 
   const q = useQuery({
     queryKey: ['queue', auth?.serverUrl],
@@ -47,7 +62,10 @@ export default function QueueScreen() {
 
   const activeRun = live.status === 'active' ? live.active : null;
   const activeId = activeRun?.queueRunId;
-  const queueRuns = (q.data ?? []).filter((r) => r.id !== activeId);
+  const queueRuns = (q.data ?? []).filter(
+    (r) => r.id !== activeId && statusFilter.has(r.status as QueueStatus),
+  );
+  const hasNonDefaultFilter = statusFilter.size !== DEFAULT_QUEUE_FILTER.length;
 
   return (
     <View style={{ flex: 1, backgroundColor: p.background }}>
@@ -59,6 +77,12 @@ export default function QueueScreen() {
           onPress={() => router.push(`/queue/${activeRun.queueRunId}` as never)}
         />
       ) : null}
+
+      <FilterChips
+        options={QUEUE_STATUS_OPTIONS}
+        selected={statusFilter}
+        onChange={setStatusFilter}
+      />
 
       {q.isLoading ? (
         <ActivityIndicator color={p.tint} style={{ marginTop: 30 }} />
@@ -78,7 +102,13 @@ export default function QueueScreen() {
             />
           }
           ListEmptyComponent={
-            <Text style={[styles.empty, { color: p.textMuted }]}>No queue runs yet.</Text>
+            <Text style={[styles.empty, { color: p.textMuted }]}>
+              {statusFilter.size === 0
+                ? 'No filter selected.'
+                : hasNonDefaultFilter
+                  ? `No ${Array.from(statusFilter).join('/')} runs.`
+                  : 'No queue runs yet.'}
+            </Text>
           }
           renderItem={({ item }) => (
             <ListRow
