@@ -5,45 +5,69 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Companion · choda-deck</title>
 
-  <!-- Tailwind CDN with typography plugin, darkMode via prefers-color-scheme -->
+  <!--
+    Theme boot — apply 'dark' class before Tailwind paints, to avoid FOUC.
+    Source priority: localStorage 'theme' (light|dark) → prefers-color-scheme.
+  -->
+  <script>
+    (function () {
+      var stored = null;
+      try { stored = localStorage.getItem('theme'); } catch (e) {}
+      var systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var dark = stored === 'dark' || (stored !== 'light' && systemDark);
+      if (dark) document.documentElement.classList.add('dark');
+    })();
+  </script>
+
+  <!-- Tailwind CDN with typography plugin, class-based dark mode -->
   <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
-  <script>tailwind.config = { darkMode: 'media' };</script>
+  <script>tailwind.config = { darkMode: 'class' };</script>
 
   <!-- Tabler outline icons — NEVER -filled suffix -->
   <link rel="stylesheet"
-    href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.40.0/tabler-icons.min.css" />
+    href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.5.0/dist/tabler-icons.min.css" />
 
   <!-- marked.js pinned post Gate A -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 
-  <!-- DOMPurify for XSS sanitize chain: marked.parse → DOMPurify.sanitize -->
+  <!-- DOMPurify for XSS sanitize chain: marked.parse → DOMPurify.sanitize. Kept by deliberate decision (task TASK-806): companion ingests real task bodies + run reports from disk, marked alone does not sanitize. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.3/purify.min.js"></script>
 
   <style>
     :root { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
     .mono { font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace; }
+    .spin { animation: companion-spin 1s linear infinite; }
+    @keyframes companion-spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body class="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 min-h-screen">
 
 <!-- Tab strip — sticky 48px -->
 <header class="sticky top-0 z-30 bg-white/95 dark:bg-zinc-900/95 backdrop-blur border-b border-zinc-200 dark:border-zinc-700">
-  <div class="max-w-4xl mx-auto px-4 md:px-6">
+  <div class="max-w-[1024px] mx-auto px-4 md:px-6">
     <nav class="flex items-center h-12 gap-1" role="tablist">
-      <a id="tab-queue" href="#/queue" role="tab"
+      <a id="tab-queue" href="#/queue" data-tab="queue" role="tab"
          class="inline-flex items-center gap-1 h-12 px-3 text-sm border-b-2 border-transparent text-zinc-500">
-        <i class="ti ti-list text-base" aria-hidden="true"></i>Queue
+        <i class="ti ti-list text-base" aria-hidden="true"></i><span>Queue</span>
+        <span data-badge="queue" class="ml-1 hidden mono text-[11px] px-1.5 py-px rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300"></span>
       </a>
-      <a id="tab-tasks" href="#/tasks" role="tab"
+      <a id="tab-tasks" href="#/tasks" data-tab="tasks" role="tab"
          class="inline-flex items-center gap-1 h-12 px-3 text-sm border-b-2 border-transparent text-zinc-500">
-        <i class="ti ti-checklist text-base" aria-hidden="true"></i>Tasks
+        <i class="ti ti-checklist text-base" aria-hidden="true"></i><span>Tasks</span>
+        <span data-badge="tasks" class="ml-1 hidden mono text-[11px] px-1.5 py-px rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300"></span>
       </a>
+      <div class="ml-auto flex items-center gap-3 text-zinc-400">
+        <span id="sse-status" class="hidden items-center gap-1 text-[12px]" title="Reconnecting to live event stream…">
+          <i class="ti ti-refresh spin" aria-hidden="true"></i>
+        </span>
+        <span id="server-url" class="text-[12px] mono hidden md:inline"></span>
+      </div>
     </nav>
   </div>
 </header>
 
-<!-- Content area — max-w-4xl, page-level scroll only -->
-<main id="view" class="max-w-4xl mx-auto px-4 md:px-6 py-4 md:py-6" aria-live="polite"></main>
+<!-- Content area — max-w-[1024px], page-level scroll only -->
+<main id="view" class="max-w-[1024px] mx-auto px-4 md:px-6 py-4 md:py-6" aria-live="polite"></main>
 
 <script>
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -233,6 +257,8 @@ function startSse() {
   if (sseState.eventSource) return;
   const es = new EventSource('/api/queue/live');
   sseState.eventSource = es;
+  updateSseIndicator();
+  es.addEventListener('open', updateSseIndicator);
 
   es.addEventListener('run.active', (e) => {
     let data;
@@ -245,6 +271,7 @@ function startSse() {
       tasks: new Map(),
     };
     setTitle(currentTitleSuffix);
+    setTabBadge('queue', 1);
     rerenderActiveIfQueueList();
   });
 
@@ -256,6 +283,7 @@ function startSse() {
     setTitle(currentTitleSuffix);
     if (wasActive && !sseState.active) {
       // terminal — refresh full Queue list if on it
+      setTabBadge('queue', 0);
       const { parts, params } = parseRoute(window.location.hash);
       const [tab, id] = parts;
       if ((!tab || tab === 'queue') && !id) showQueueList(params);
@@ -265,10 +293,11 @@ function startSse() {
   });
 
   // EventSource auto-reconnects natively (~3s). Silent per UI.md — no toast/banner.
-  es.addEventListener('error', () => {});
+  // The reconnect indicator (#sse-status) is the only visible cue.
+  es.addEventListener('error', updateSseIndicator);
 }
 
-// ── Tab strip active state ───────────────────────────────────────────────────
+// ── Tab strip: active state + count badges + SSE indicator ──────────────────
 
 const TAB_ACTIVE   = 'border-zinc-900 dark:border-zinc-100 font-medium text-zinc-900 dark:text-zinc-100';
 const TAB_INACTIVE = 'border-transparent text-zinc-500';
@@ -285,6 +314,36 @@ function setActiveTab(name) {
       TAB_INACTIVE.split(' ').forEach(c => el.classList.add(c));
     }
   });
+}
+
+// Tab count badges — updated by list views after fetch.
+const tabCounts = { queue: 0, tasks: 0 };
+function setTabBadge(name, n) {
+  tabCounts[name] = n;
+  const el = document.querySelector(`[data-badge="${name}"]`);
+  if (!el) return;
+  if (n > 0) {
+    el.textContent = '(' + n + ')';
+    el.classList.remove('hidden');
+  } else {
+    el.textContent = '';
+    el.classList.add('hidden');
+  }
+}
+
+// SSE indicator: visible while EventSource is connecting or closed.
+function updateSseIndicator() {
+  const el = document.getElementById('sse-status');
+  if (!el) return;
+  const rs = sseState.eventSource && sseState.eventSource.readyState;
+  const connected = rs === 1; // EventSource.OPEN
+  el.classList.toggle('hidden', connected);
+  el.classList.toggle('inline-flex', !connected);
+}
+
+function setServerUrlBadge() {
+  const el = document.getElementById('server-url');
+  if (el) el.textContent = location.host;
 }
 
 // ── Queue views ──────────────────────────────────────────────────────────────
@@ -347,6 +406,8 @@ async function showQueueList(params) {
     wireQueueChips();
     return;
   }
+
+  setTabBadge('queue', sseState.active ? 1 : runs.filter(r => r.status === 'running').length);
 
   // Active run renders as the top expanded card — drop it from the list below.
   const activeId = sseState.active?.queueRunId;
@@ -618,6 +679,8 @@ async function showTasksList(params) {
     return (b.updated_at ?? '').localeCompare(a.updated_at ?? '');
   });
 
+  setTabBadge('tasks', tasks.filter(t => t.status === 'IN-PROGRESS' || t.status === 'READY').length);
+
   if (!tasks.length) {
     const msg = activeQuery
       ? `No match for "${esc(activeQuery)}". Adjust filters or clear search.`
@@ -869,6 +932,7 @@ window.addEventListener('popstate',   route);
 
 window.addEventListener('DOMContentLoaded', () => {
   __assertSanitize__();
+  setServerUrlBadge();
   if (!window.location.hash || window.location.hash === '#') {
     history.replaceState(null, '', '#/queue');
   }
