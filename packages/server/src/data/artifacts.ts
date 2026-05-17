@@ -7,7 +7,16 @@ export interface QueueRunMeta {
   endedAt?: string;
   totalCostUsd?: number;
   halted?: boolean;
-  tasks?: Array<{ id: string; outcome: string; costUsd?: number }>;
+  taskOutcomes?: Array<{
+    taskId: string;
+    outcome: string;
+    costUsd?: number;
+    reason?: string;
+    account?: string | null;
+    worktreePath?: string;
+    branch?: string;
+    headSha?: string;
+  }>;
   [key: string]: unknown;
 }
 
@@ -47,7 +56,7 @@ export async function listQueueRuns(artifactsDir: string): Promise<QueueRunSumma
       const endMs = meta.endedAt ? new Date(meta.endedAt).getTime() : Date.now();
       results.push({
         id: dir,
-        taskCount: meta.tasks?.length ?? 0,
+        taskCount: meta.taskOutcomes?.length ?? 0,
         totalCostUsd: meta.totalCostUsd ?? 0,
         durationMs: endMs - startMs,
         status,

@@ -410,15 +410,20 @@ async function showQueueDetail(id) {
   const endMs   = meta.endedAt   ? new Date(meta.endedAt).getTime()   : Date.now();
   const dur = formatDuration(endMs - startMs);
 
-  const tasks = Array.isArray(meta.tasks) ? meta.tasks : [];
+  const tasks = Array.isArray(meta.taskOutcomes) ? meta.taskOutcomes : [];
   const taskRows = tasks.length
     ? tasks.map(t => `
-        <div class="flex items-center gap-3 px-3 py-2 border-t border-zinc-200 dark:border-zinc-700">
-          ${statusIcon(t.outcome)}
-          <span class="mono text-[13px] text-zinc-700 dark:text-zinc-300 truncate flex-1">${esc(t.id)}</span>
-          <span class="text-[12px] text-zinc-500 flex-shrink-0">${esc(t.outcome ?? '')}</span>
-          ${t.costUsd != null
-            ? `<span class="mono text-[12px] text-zinc-500 flex-shrink-0">$${Number(t.costUsd).toFixed(3)}</span>`
+        <div class="border-t border-zinc-200 dark:border-zinc-700">
+          <div class="flex items-center gap-3 px-3 py-2">
+            ${statusIcon(t.outcome)}
+            <span class="mono text-[13px] text-zinc-700 dark:text-zinc-300 truncate flex-1">${esc(t.taskId)}</span>
+            <span class="text-[12px] text-zinc-500 flex-shrink-0">${esc(t.outcome ?? '')}</span>
+            ${t.costUsd != null
+              ? `<span class="mono text-[12px] text-zinc-500 flex-shrink-0">$${Number(t.costUsd).toFixed(3)}</span>`
+              : ''}
+          </div>
+          ${t.reason && t.outcome !== 'DONE'
+            ? `<div class="px-3 pb-2 text-[12px] text-zinc-500 dark:text-zinc-400 break-words">${esc(t.reason)}</div>`
             : ''}
         </div>`).join('')
     : '';

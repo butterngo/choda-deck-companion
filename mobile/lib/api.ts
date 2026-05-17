@@ -71,10 +71,15 @@ export type QueueRunSummary = {
   finishedAt: string | null;
 };
 
-export type QueueTask = {
-  id: string;
+export type QueueTaskOutcome = {
+  taskId: string;
   outcome: string;
   costUsd?: number;
+  reason?: string;
+  account?: string | null;
+  worktreePath?: string;
+  branch?: string;
+  headSha?: string;
 };
 
 export type QueueRunMeta = {
@@ -83,7 +88,7 @@ export type QueueRunMeta = {
   endedAt?: string;
   totalCostUsd?: number;
   halted?: boolean;
-  tasks?: QueueTask[];
+  taskOutcomes?: QueueTaskOutcome[];
   [key: string]: unknown;
 };
 

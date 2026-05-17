@@ -16,7 +16,7 @@ describe("artifacts", () => {
       endedAt: "2026-05-01T10:05:00.000Z",
       totalCostUsd: 0.15,
       halted: false,
-      tasks: [{ id: "TASK-001", outcome: "DONE", costUsd: 0.15 }],
+      taskOutcomes: [{ taskId: "TASK-001", outcome: "DONE", costUsd: 0.15 }],
     };
     const meta2 = {
       queueRunId: "2000000000000-bbbb",
@@ -24,9 +24,14 @@ describe("artifacts", () => {
       endedAt: "2026-05-02T10:10:00.000Z",
       totalCostUsd: 0.42,
       halted: false,
-      tasks: [
-        { id: "TASK-002", outcome: "DONE", costUsd: 0.21 },
-        { id: "TASK-003", outcome: "DONE", costUsd: 0.21 },
+      taskOutcomes: [
+        { taskId: "TASK-002", outcome: "DONE", costUsd: 0.21 },
+        {
+          taskId: "TASK-003",
+          outcome: "FAILED",
+          costUsd: 1.4289,
+          reason: "claude -p exited 1: Reached maximum budget ($1.42)",
+        },
       ],
     };
 
@@ -114,7 +119,7 @@ describe("artifacts", () => {
         endedAt: "2026-05-04T10:01:00.000Z",
         totalCostUsd: 0,
         halted: false,
-        tasks: [],
+        taskOutcomes: [],
       }),
     );
     await writeFile(join(queueStartDir, "report.md"), "# Run E\n");
@@ -122,6 +127,23 @@ describe("artifacts", () => {
     const result = await getQueueRun(dir, "5000000000000-eeee");
     expect(result.report).toContain("# Run E");
     expect(result.meta.queueRunId).toBe("5000000000000-eeee");
+  });
+
+  it("getQueueRun exposes taskOutcomes with reason for FAILED tasks (TASK-804)", async () => {
+    const result = await getQueueRun(dir, "queue-2000000000000-bbbb");
+    expect(result.meta.taskOutcomes).toHaveLength(2);
+    const failed = result.meta.taskOutcomes?.find((t) => t.outcome === "FAILED");
+    expect(failed?.taskId).toBe("TASK-003");
+    expect(failed?.costUsd).toBeCloseTo(1.4289, 4);
+    expect(failed?.reason).toContain("Reached maximum budget");
+  });
+
+  it("listQueueRuns counts taskOutcomes correctly (no longer reads legacy meta.tasks)", async () => {
+    const runs = await listQueueRuns(dir);
+    const run1 = runs.find((r) => r.id === "queue-1000000000000-aaaa");
+    const run2 = runs.find((r) => r.id === "queue-2000000000000-bbbb");
+    expect(run1?.taskCount).toBe(1);
+    expect(run2?.taskCount).toBe(2);
   });
 
   it("halted run has status 'failed'", async () => {
@@ -135,7 +157,7 @@ describe("artifacts", () => {
         endedAt: "2026-05-03T10:03:00.000Z",
         totalCostUsd: 0.05,
         halted: true,
-        tasks: [],
+        taskOutcomes: [],
       }),
     );
     const runs = await listQueueRuns(dir);
