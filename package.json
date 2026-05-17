@@ -11,7 +11,13 @@
   "scripts": {
     "lint": "eslint .",
     "test": "pnpm -r --filter=./packages/* run test",
-    "typecheck": "pnpm -r --filter=./packages/* run typecheck"
+    "typecheck": "pnpm -r --filter=./packages/* run typecheck",
+    "dev:server": "pnpm --filter server dev",
+    "dev:web": "pnpm --filter web dev",
+    "build:shared": "pnpm --filter shared build",
+    "build:web": "pnpm --filter web build",
+    "build:server": "pnpm --filter server build",
+    "build": "pnpm build:shared && pnpm build:web && pnpm build:server"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",

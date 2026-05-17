@@ -122,27 +122,48 @@ a push and that no extra fields leak into the payload. Real ntfy.sh delivery
 is *not* exercised in CI (network-dependent, brittle); use the manual smoke
 above.
 
+## Web client (Phase 2, TASK-807)
+
+The web UI lives in `packages/web/` — Vite + React 19 + TypeScript + Tailwind, sharing
+types / API client / SSE reducer with mobile via `packages/shared/`. The Hono server
+serves the built bundle from `packages/web/dist/`.
+
+```pwsh
+pnpm install
+pnpm build:shared          # types + api + sse → dist
+pnpm build:web             # Vite production bundle
+pnpm dev:server            # start Hono on :8080
+pnpm dev:web               # start Vite on :5173 (proxies /api to :8080)
+```
+
+Mobile (`mobile/`, Expo Router) keeps its own React Native components but consumes
+the same `packages/shared/` types (migration future).
+
 ## Repository layout
 
 ```
 choda-deck-companion/
-├── package.json            workspace root
+├── package.json            workspace root + dev/build scripts
 ├── pnpm-workspace.yaml     declares packages/*
 ├── tsconfig.json           base TS config
 ├── eslint.config.js        flat eslint config
+├── docs/UI.md              companion UI SoT
+├── mobile/                 Expo / React Native app
 └── packages/
-    └── notifier/
-        ├── package.json
-        ├── tsconfig.json
+    ├── notifier/           ntfy push from queue.jsonl
+    ├── server/             Hono HTTP server, SQLite readonly, SSE; serves web/dist
+    ├── shared/             TS types + API client + SSE reducer (web ↔ mobile)
+    │   └── src/{types,api,sse}/
+    └── web/                Vite + React 19 + Tailwind SPA (replaces former
+                            packages/server/src/static/index.html since TASK-807)
         └── src/
-            ├── cli.ts      entry — argv + topic + startNotifier
-            ├── notifier.ts startNotifier(): watch + dispatch (stream state)
-            ├── parser.ts   parseLine + numberOr
-            ├── format.ts   buildTitle / buildBody / formatCost / formatDuration
-            ├── ntfy.ts     pushNtfy with retry + backoff
-            ├── topic.ts    base58 generation + persistence
-            ├── types.ts    NotifyPayload, QueueEvent, …
-            └── __tests__/  vitest specs
+            ├── App.tsx, main.tsx, router.tsx, query-client.ts
+            ├── api.ts                   shared/api wired to window.location.origin
+            ├── components/              TabStrip, Markdown, StatusChips, …
+            ├── hooks/use-live-queue.ts  EventSource → shared SSE reducer
+            ├── hooks/use-workspace.ts   active project/workspace in localStorage
+            ├── layouts/Shell.tsx        tab strip + Outlet + LiveQueue context
+            └── views/                   Queue/Task/Inbox/Conversation/Settings
 ```
 
 ## Non-goals

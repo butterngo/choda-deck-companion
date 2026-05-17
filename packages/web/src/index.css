@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .mono {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+  }
+}
+
+@layer utilities {
+  .spin {
+    animation: companion-spin 1s linear infinite;
+  }
+  @keyframes companion-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}

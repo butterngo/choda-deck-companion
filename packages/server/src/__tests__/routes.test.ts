@@ -41,7 +41,7 @@ async function readUntil(res: Response, needle: string, timeoutMs = 3000): Promi
   return buf;
 }
 
-async function readChunk(res: Response, timeoutMs = 1500): Promise<string> {
+async function _readChunk(res: Response, timeoutMs = 1500): Promise<string> {
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
   let buf = "";

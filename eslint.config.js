@@ -4,7 +4,15 @@ import globals from "globals";
 
 export default [
   {
-    ignores: ["**/node_modules/**", "**/dist/**", "**/out/**", "docs/**", "**/__spikes__/**"],
+    ignores: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/dist-types/**",
+      "**/out/**",
+      "docs/**",
+      "mobile/**",
+      "**/__spikes__/**",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

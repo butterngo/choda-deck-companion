@@ -1,8 +1,10 @@
 import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { Hono } from "hono";
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleConversationGet, handleConversationList } from "./routes/conversations.js";
 import { handleQueueGet, handleQueueList, handleQueueLive } from "./routes/queue.js";
@@ -69,6 +71,15 @@ const auditLogPath =
   process.env["CHODA_AUDIT_LOG"] ??
   join(dataDir, "audit.log");
 
+// React SPA dist (built by Vite in packages/web). Override with CHODA_WEB_DIST.
+// Default: resolve relative to this file. src/server.ts → packages/web/dist
+// is reached via ../../web/dist; dist/server.js (built) lands at the same place.
+const rawWebDist =
+  rawArgs["web-dist"] ?? process.env["CHODA_WEB_DIST"] ?? "";
+const webDist = rawWebDist
+  ? isAbsolute(rawWebDist) ? rawWebDist : resolve(process.cwd(), rawWebDist)
+  : resolve(__dirname, "..", "..", "web", "dist");
+
 const lanMode = bind === "0.0.0.0";
 
 let token = rawArgs["token"] ?? "";
@@ -92,18 +103,6 @@ if (lanMode) {
     await next();
   });
 }
-
-app.get("/", (c) => c.redirect("/static/index.html#/queue", 302));
-
-app.get("/static/index.html", async (c) => {
-  const fp = join(__dirname, "static", "index.html");
-  try {
-    const html = await readFile(fp, "utf8");
-    return c.html(html);
-  } catch {
-    return c.text("Not found", 404);
-  }
-});
 
 app.get("/api/health", (c) => c.json({ ok: true }));
 
@@ -138,6 +137,45 @@ app.post("/api/queue/start", (c) =>
     spawnFn: spawn,
   }),
 );
+
+// --- SPA serve: web/dist for assets + SPA fallback for unknown non-/api paths ---
+
+const webDistExists = existsSync(webDist);
+if (!webDistExists) {
+  console.warn(
+    `[warn] web dist not found at ${webDist}. Build with: pnpm --filter web build. ` +
+      `Set CHODA_WEB_DIST to override.`,
+  );
+}
+
+app.use(
+  "/assets/*",
+  serveStatic({
+    root: webDist,
+    rewriteRequestPath: (path) => path,
+  }),
+);
+
+const SPA_HTML_CACHE: { html: string | null } = { html: null };
+async function loadIndex(): Promise<string> {
+  if (SPA_HTML_CACHE.html) return SPA_HTML_CACHE.html;
+  const html = await readFile(join(webDist, "index.html"), "utf8");
+  SPA_HTML_CACHE.html = html;
+  return html;
+}
+
+app.get("*", async (c) => {
+  if (c.req.path.startsWith("/api/")) return c.notFound();
+  try {
+    const html = await loadIndex();
+    return c.html(html);
+  } catch {
+    return c.text(
+      `Web client not built. Run \`pnpm --filter web build\` first (looked in ${webDist}).`,
+      503,
+    );
+  }
+});
 
 // --- Start ---
 
