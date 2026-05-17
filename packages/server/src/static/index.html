@@ -210,8 +210,9 @@ function activeRunCard() {
 }
 
 function rerenderActiveIfQueueList() {
-  const hash = window.location.hash || '';
-  const isQueueList = hash === '' || hash === '#' || hash === '#/queue' || hash === '#/';
+  const { parts } = parseRoute(window.location.hash);
+  const [tab, id] = parts;
+  const isQueueList = (!tab || tab === 'queue') && !id;
   if (!isQueueList) return;
 
   const view = document.getElementById('view');
@@ -255,9 +256,9 @@ function startSse() {
     setTitle(currentTitleSuffix);
     if (wasActive && !sseState.active) {
       // terminal — refresh full Queue list if on it
-      const hash = window.location.hash || '';
-      const isQueueList = hash === '' || hash === '#' || hash === '#/queue' || hash === '#/';
-      if (isQueueList) showQueueList();
+      const { parts, params } = parseRoute(window.location.hash);
+      const [tab, id] = parts;
+      if ((!tab || tab === 'queue') && !id) showQueueList(params);
     } else {
       rerenderActiveIfQueueList();
     }
@@ -288,11 +289,53 @@ function setActiveTab(name) {
 
 // ── Queue views ──────────────────────────────────────────────────────────────
 
-async function showQueueList() {
+const ALL_QUEUE_STATUSES = ['running', 'finished', 'failed'];
+let activeQueueFilter = [...ALL_QUEUE_STATUSES];
+
+function buildQueueHash() {
+  // Default = all selected; omit param for clean URL
+  if (activeQueueFilter.length === ALL_QUEUE_STATUSES.length) return '#/queue';
+  return `#/queue?status=${activeQueueFilter.join(',')}`;
+}
+
+function queueChipStrip() {
+  return `<div class="flex gap-2 flex-wrap mb-4" role="group" aria-label="Filter queue by status">
+    ${ALL_QUEUE_STATUSES.map(s => {
+      const on = activeQueueFilter.includes(s);
+      const cls = on
+        ? 'px-3 py-1 rounded-full text-[12px] font-medium cursor-pointer select-none bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900'
+        : 'px-3 py-1 rounded-full text-[12px] cursor-pointer select-none bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700';
+      return `<button class="${cls}" data-queue-status="${esc(s)}" type="button">${esc(s)}</button>`;
+    }).join('')}
+  </div>`;
+}
+
+function wireQueueChips() {
+  document.getElementById('view').querySelectorAll('button[data-queue-status]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const s = btn.dataset.queueStatus;
+      activeQueueFilter = activeQueueFilter.includes(s)
+        ? activeQueueFilter.filter(x => x !== s)
+        : [...activeQueueFilter, s];
+      history.pushState(null, '', buildQueueHash());
+      showQueueList(null);
+    });
+  });
+}
+
+async function showQueueList(params) {
   setActiveTab('queue');
   setTitle('Queue');
   const view = document.getElementById('view');
-  view.innerHTML = activeRunCard() + errorMsg('Loading...');
+
+  if (params && params.status !== undefined) {
+    activeQueueFilter = params.status
+      ? params.status.split(',').map(s => s.trim()).filter(Boolean)
+      : [];
+  }
+
+  view.innerHTML = activeRunCard() + queueChipStrip() + errorMsg('Loading...');
+  wireQueueChips();
 
   let runs;
   try {
@@ -300,16 +343,27 @@ async function showQueueList() {
     if (!res.ok) throw new Error(await res.text());
     runs = await res.json();
   } catch (e) {
-    view.innerHTML = activeRunCard() + errorMsg(`Cannot read queue. ${e.message}`);
+    view.innerHTML = activeRunCard() + queueChipStrip() + errorMsg(`Cannot read queue. ${e.message}`);
+    wireQueueChips();
     return;
   }
 
   // Active run renders as the top expanded card — drop it from the list below.
   const activeId = sseState.active?.queueRunId;
-  const filtered = activeId ? runs.filter(r => r.id !== activeId) : runs;
+  let filtered = activeId ? runs.filter(r => r.id !== activeId) : runs;
+  // Apply client-side status filter
+  if (activeQueueFilter.length !== ALL_QUEUE_STATUSES.length) {
+    filtered = filtered.filter(r => activeQueueFilter.includes(r.status));
+  }
 
   if (!filtered.length) {
-    view.innerHTML = activeRunCard() + (sseState.active ? '' : errorMsg('No queue runs yet.'));
+    const msg = activeQueueFilter.length === 0
+      ? 'No filter selected.'
+      : activeQueueFilter.length === ALL_QUEUE_STATUSES.length
+        ? 'No queue runs yet.'
+        : `No ${activeQueueFilter.join('/')} runs.`;
+    view.innerHTML = activeRunCard() + queueChipStrip() + (sseState.active && activeQueueFilter.length === ALL_QUEUE_STATUSES.length ? '' : errorMsg(msg));
+    wireQueueChips();
     return;
   }
 
@@ -328,7 +382,9 @@ async function showQueueList() {
     </a>`).join('');
 
   view.innerHTML = activeRunCard()
+    + queueChipStrip()
     + `<div class="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden">${rows}</div>`;
+  wireQueueChips();
 }
 
 async function showQueueDetail(id) {
@@ -400,11 +456,29 @@ const PRIORITY_ORD   = { critical: 0, high: 1, medium: 2, low: 3 };
 
 let activeFilter = [...DEFAULT_FILTER];
 let activeLabels = [];
+let activeQuery = '';
+let queryDebounceTimer = null;
 
 function buildTasksHash() {
   const qs = [`status=${activeFilter.join(',')}`];
   if (activeLabels.length) qs.push(`labels=${activeLabels.join(',')}`);
+  if (activeQuery)         qs.push(`query=${encodeURIComponent(activeQuery)}`);
   return `#/tasks?${qs.join('&')}`;
+}
+
+function searchBoxStrip() {
+  const hasValue = activeQuery !== '';
+  return `<div class="relative mb-3">
+    <i class="ti ti-search absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-base" aria-hidden="true"></i>
+    <input id="task-search" type="text" autocomplete="off" spellcheck="false"
+      placeholder="Search by id or title…"
+      value="${esc(activeQuery)}"
+      class="w-full pl-9 pr-9 py-2 text-sm rounded bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500" />
+    ${hasValue ? `<button id="task-search-clear" type="button" aria-label="Clear search"
+      class="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 p-1">
+      <i class="ti ti-x text-base" aria-hidden="true"></i>
+    </button>` : ''}
+  </div>`;
 }
 
 function filterChipStrip() {
@@ -426,7 +500,7 @@ function filterChipStrip() {
       return `<button class="${cls}" data-label="${esc(l)}" type="button">${esc(l)}</button>`;
     }).join('')}
   </div>`;
-  return statusRow + labelRow;
+  return searchBoxStrip() + statusRow + labelRow;
 }
 
 function wireChips() {
@@ -452,6 +526,35 @@ function wireChips() {
       showTasksList(null);
     });
   });
+
+  const searchInput = view.querySelector('#task-search');
+  if (searchInput) {
+    // Preserve focus + caret across re-render — relevant for typing while debouncing.
+    if (searchInput.value === activeQuery) {
+      const len = activeQuery.length;
+      searchInput.focus();
+      // Defer to next tick — Chrome resets selection on .focus() of newly inserted node.
+      requestAnimationFrame(() => searchInput.setSelectionRange(len, len));
+    }
+    searchInput.addEventListener('input', (e) => {
+      const next = e.target.value;
+      activeQuery = next;
+      if (queryDebounceTimer) clearTimeout(queryDebounceTimer);
+      queryDebounceTimer = setTimeout(() => {
+        history.pushState(null, '', buildTasksHash());
+        showTasksList(null);
+      }, 250);
+    });
+  }
+  const clearBtn = view.querySelector('#task-search-clear');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      activeQuery = '';
+      if (queryDebounceTimer) clearTimeout(queryDebounceTimer);
+      history.pushState(null, '', buildTasksHash());
+      showTasksList(null);
+    });
+  }
 }
 
 async function showTasksList(params) {
@@ -467,6 +570,9 @@ async function showTasksList(params) {
       ? params.labels.split(',').map(l => l.trim()).filter(Boolean)
       : [];
   }
+  if (params && params.query !== undefined) {
+    activeQuery = params.query;
+  }
 
   view.innerHTML = filterChipStrip() + errorMsg('Loading...');
   wireChips();
@@ -476,6 +582,9 @@ async function showTasksList(params) {
     let url = `/api/tasks?status=${encodeURIComponent(activeFilter.join(','))}`;
     if (activeLabels.length) {
       url += `&labels=${encodeURIComponent(activeLabels.join(','))}`;
+    }
+    if (activeQuery) {
+      url += `&query=${encodeURIComponent(activeQuery)}`;
     }
     const res = await fetch(url);
     if (!res.ok) {
@@ -505,7 +614,10 @@ async function showTasksList(params) {
   });
 
   if (!tasks.length) {
-    view.innerHTML = filterChipStrip() + errorMsg('No tasks. Adjust filters.');
+    const msg = activeQuery
+      ? `No match for "${esc(activeQuery)}". Adjust filters or clear search.`
+      : 'No tasks. Adjust filters.';
+    view.innerHTML = filterChipStrip() + errorMsg(msg);
     wireChips();
     return;
   }
@@ -743,7 +855,7 @@ function route() {
     id ? showTaskDetail(id) : showTasksList(params);
   } else {
     // 'queue' or empty → queue
-    id ? showQueueDetail(id) : showQueueList();
+    id ? showQueueDetail(id) : showQueueList(params);
   }
 }
 

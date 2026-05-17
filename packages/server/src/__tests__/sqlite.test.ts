@@ -69,3 +69,35 @@ describe("queryTasks — labels filter", () => {
     expect(ids).not.toContain("TASK-004");
   });
 });
+
+describe("queryTasks — query filter (LIKE)", () => {
+  it("returns all tasks when query is empty / whitespace", () => {
+    expect(queryTasks(dbPath, [], undefined, undefined, "")).toHaveLength(4);
+    expect(queryTasks(dbPath, [], undefined, undefined, "   ")).toHaveLength(4);
+    expect(queryTasks(dbPath, [], undefined, undefined, undefined)).toHaveLength(4);
+  });
+
+  it("matches by title substring (case-insensitive on SQLite default)", () => {
+    const tasks = queryTasks(dbPath, [], undefined, undefined, "Task 2");
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]?.id).toBe("TASK-002");
+  });
+
+  it("matches by id substring", () => {
+    const tasks = queryTasks(dbPath, [], undefined, undefined, "TASK-003");
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]?.id).toBe("TASK-003");
+  });
+
+  it("combines with status filter", () => {
+    const tasks = queryTasks(dbPath, ["READY"], undefined, undefined, "Task");
+    const ids = tasks.map((t) => t.id);
+    expect(ids).toEqual(expect.arrayContaining(["TASK-001", "TASK-002"]));
+    expect(ids).not.toContain("TASK-003");
+    expect(ids).not.toContain("TASK-004");
+  });
+
+  it("returns empty when query matches nothing", () => {
+    expect(queryTasks(dbPath, [], undefined, undefined, "nonexistent")).toHaveLength(0);
+  });
+});

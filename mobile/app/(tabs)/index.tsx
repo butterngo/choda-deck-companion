@@ -1,15 +1,35 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  Keyboard,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { FilterChips } from '@/components/filter-chips';
+import { Icon } from '@/components/icon';
 import { LabelPill, ListRow, PriorityDot } from '@/components/list-row';
 import { ScreenHeader } from '@/components/screen-header';
 import type { IconName } from '@/components/icon';
 import { ApiError, apiFetch, withProjectId, type TaskRow } from '@/lib/api';
 import { useAuth, useAuthSubtitle } from '@/lib/auth-context';
 import { usePalette } from '@/lib/theme';
+
+function useDebounced<T>(value: T, ms: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return debounced;
+}
 
 type Status = 'IN-PROGRESS' | 'READY' | 'TODO' | 'FAILED' | 'DONE' | 'CANCELLED';
 
@@ -63,21 +83,25 @@ export default function TasksScreen() {
   const router = useRouter();
   const [filter, setFilter] = useState<Set<Status>>(new Set(DEFAULT_FILTER));
   const [labelFilter, setLabelFilter] = useState<Set<string>>(new Set());
+  const [searchText, setSearchText] = useState('');
+  const debouncedSearch = useDebounced(searchText.trim(), 250);
 
   const filterCsv = Array.from(filter).join(',');
   const labelsCsv = Array.from(labelFilter).join(',');
 
   const q = useQuery({
-    queryKey: ['tasks', auth?.serverUrl, auth?.projectId, filterCsv, labelsCsv],
+    queryKey: ['tasks', auth?.serverUrl, auth?.projectId, filterCsv, labelsCsv, debouncedSearch],
     queryFn: () => {
       let url = withProjectId(`/api/tasks?status=${encodeURIComponent(filterCsv)}`, auth!.projectId);
       if (labelsCsv) url += `&labels=${encodeURIComponent(labelsCsv)}`;
+      if (debouncedSearch) url += `&query=${encodeURIComponent(debouncedSearch)}`;
       return apiFetch<TaskRow[]>(auth!, url);
     },
     enabled: !!auth && filter.size > 0,
     retry: (failureCount, err) =>
       err instanceof ApiError && err.status === 503 && failureCount < 3,
     retryDelay: 3000,
+    placeholderData: keepPreviousData,
   });
 
   const dbBusy =
@@ -96,9 +120,35 @@ export default function TasksScreen() {
     );
   }
 
+  const sortedData = sortTasks(q.data ?? []);
+  const hasSearch = debouncedSearch !== '';
+
   return (
     <View style={{ flex: 1, backgroundColor: p.background }}>
       <ScreenHeader title="Tasks" subtitle={subtitle} />
+
+      <View style={[searchStyles.wrap, { borderColor: p.border }]}>
+        <Icon name="search" size={16} color={p.textMuted} style={searchStyles.icon} />
+        <TextInput
+          style={[searchStyles.input, { color: p.text }]}
+          placeholder="Search by id or title…"
+          placeholderTextColor={p.textSubtle}
+          value={searchText}
+          onChangeText={setSearchText}
+          autoCorrect={false}
+          autoCapitalize="none"
+          returnKeyType="search"
+        />
+        {searchText.length > 0 ? (
+          <Pressable
+            onPress={() => setSearchText('')}
+            hitSlop={8}
+            style={searchStyles.clearBtn}>
+            <Icon name="x" size={14} color={p.textMuted} />
+          </Pressable>
+        ) : null}
+      </View>
+
       <FilterChips options={STATUS_OPTIONS} selected={filter} onChange={setFilter} />
       <FilterChips options={LABEL_OPTIONS} selected={labelFilter} onChange={setLabelFilter} />
 
@@ -117,8 +167,9 @@ export default function TasksScreen() {
         </Text>
       ) : (
         <FlatList
-          data={sortTasks(q.data ?? [])}
+          data={sortedData}
           keyExtractor={(t) => t.id}
+          keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl
               refreshing={q.isFetching}
@@ -128,7 +179,9 @@ export default function TasksScreen() {
           }
           ListEmptyComponent={
             <Text style={[styles.empty, { color: p.textMuted }]}>
-              No tasks. Adjust filters.
+              {hasSearch
+                ? `No match for "${debouncedSearch}". Adjust filters or clear search.`
+                : 'No tasks. Adjust filters.'}
             </Text>
           }
           renderItem={({ item }) => (
@@ -139,7 +192,10 @@ export default function TasksScreen() {
               title={item.title ?? '(no title)'}
               time={item.updated_at}
               belowRow={<TaskMeta task={item} />}
-              onPress={() => router.push(`/tasks/${item.id}` as never)}
+              onPress={() => {
+                Keyboard.dismiss();
+                router.push(`/tasks/${item.id}` as never);
+              }}
             />
           )}
         />
@@ -223,4 +279,28 @@ const styles = StyleSheet.create({
 
 const metaStyles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+});
+
+const searchStyles = StyleSheet.create({
+  wrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 12,
+    marginTop: 8,
+    marginBottom: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  icon: { marginRight: 6 },
+  input: {
+    flex: 1,
+    fontSize: 14,
+    paddingVertical: 2,
+  },
+  clearBtn: {
+    padding: 2,
+    marginLeft: 6,
+  },
 });
