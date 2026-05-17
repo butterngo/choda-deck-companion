@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 
 import { LabelPill, PriorityDot } from '@/components/list-row';
+import { MarkdownView } from '@/components/markdown-view';
 import { Fonts } from '@/constants/theme';
 import { ApiError, apiFetch, startQueueRun, type TaskRow } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
@@ -142,7 +143,7 @@ export default function TaskDetailScreen() {
 
       {body ? (
         <View style={[styles.bodyBox, { backgroundColor: p.surface, borderColor: p.border }]}>
-          <Text style={[styles.bodyText, { color: p.text, fontFamily: Fonts.mono }]}>{body}</Text>
+          <MarkdownView>{body}</MarkdownView>
         </View>
       ) : (
         <Text style={[styles.bodyEmpty, { color: p.textMuted }]}>No body.</Text>

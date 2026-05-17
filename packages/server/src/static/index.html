@@ -57,15 +57,18 @@ function esc(s) {
 function statusIcon(status) {
   const k = String(status ?? '').toUpperCase().replace(/-/g, '_');
   const m = {
-    TODO:        { i: 'ti-clock',       c: 'text-zinc-500' },
-    QUEUED:      { i: 'ti-clock',       c: 'text-zinc-500' },
-    READY:       { i: 'ti-check',       c: 'text-zinc-500' },
-    IN_PROGRESS: { i: 'ti-player-play', c: 'text-blue-600 dark:text-blue-400' },
-    RUNNING:     { i: 'ti-player-play', c: 'text-blue-600 dark:text-blue-400' },
-    DONE:        { i: 'ti-check',       c: 'text-green-600 dark:text-green-400' },
-    FINISHED:    { i: 'ti-check',       c: 'text-green-600 dark:text-green-400' },
-    CANCELLED:   { i: 'ti-x',           c: 'text-zinc-400' },
-    FAILED:      { i: 'ti-x',           c: 'text-red-600 dark:text-red-400' },
+    TODO:            { i: 'ti-clock',       c: 'text-zinc-500' },
+    QUEUED:          { i: 'ti-clock',       c: 'text-zinc-500' },
+    READY:           { i: 'ti-check',       c: 'text-zinc-500' },
+    IN_PROGRESS:     { i: 'ti-player-play', c: 'text-blue-600 dark:text-blue-400' },
+    RUNNING:         { i: 'ti-player-play', c: 'text-blue-600 dark:text-blue-400' },
+    DONE:            { i: 'ti-check',       c: 'text-green-600 dark:text-green-400' },
+    FINISHED:        { i: 'ti-check',       c: 'text-green-600 dark:text-green-400' },
+    SUCCESS:         { i: 'ti-check',       c: 'text-green-600 dark:text-green-400' },
+    MERGED:          { i: 'ti-check',       c: 'text-green-600 dark:text-green-400' },
+    CANCELLED:       { i: 'ti-x',           c: 'text-zinc-400' },
+    FAILED:          { i: 'ti-x',           c: 'text-red-600 dark:text-red-400' },
+    PREFLIGHT_FAILED:{ i: 'ti-x',           c: 'text-red-600 dark:text-red-400' },
   };
   const d = m[k] ?? { i: 'ti-clock', c: 'text-zinc-500' };
   return `<i class="ti ${d.i} ${d.c} text-base leading-none flex-shrink-0" aria-hidden="true"></i>`;
@@ -351,6 +354,19 @@ async function showQueueDetail(id) {
   const endMs   = meta.endedAt   ? new Date(meta.endedAt).getTime()   : Date.now();
   const dur = formatDuration(endMs - startMs);
 
+  const tasks = Array.isArray(meta.tasks) ? meta.tasks : [];
+  const taskRows = tasks.length
+    ? tasks.map(t => `
+        <div class="flex items-center gap-3 px-3 py-2 border-t border-zinc-200 dark:border-zinc-700">
+          ${statusIcon(t.outcome)}
+          <span class="mono text-[13px] text-zinc-700 dark:text-zinc-300 truncate flex-1">${esc(t.id)}</span>
+          <span class="text-[12px] text-zinc-500 flex-shrink-0">${esc(t.outcome ?? '')}</span>
+          ${t.costUsd != null
+            ? `<span class="mono text-[12px] text-zinc-500 flex-shrink-0">$${Number(t.costUsd).toFixed(3)}</span>`
+            : ''}
+        </div>`).join('')
+    : '';
+
   view.innerHTML = `
     <a href="#/queue"
        class="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 mb-4 no-underline">
@@ -363,6 +379,12 @@ async function showQueueDetail(id) {
       ${dur  ? `<span class="text-[12px] text-zinc-500">${esc(dur)}</span>` : ''}
       <span class="text-[12px] text-zinc-400 ml-auto">${esc(relativeTime(meta.endedAt || meta.startedAt))}</span>
     </div>
+    ${taskRows
+      ? `<div class="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden mb-6">
+           <div class="px-3 py-2 text-[12px] font-medium text-zinc-500 dark:text-zinc-400">Tasks (${tasks.length})</div>
+           ${taskRows}
+         </div>`
+      : ''}
     ${data.report
       ? `<div class="prose prose-sm dark:prose-invert max-w-none">${renderMarkdown(data.report)}</div>`
       : errorMsg('No report available.')}`;
@@ -372,13 +394,21 @@ async function showQueueDetail(id) {
 
 const ALL_STATUSES   = ['IN-PROGRESS', 'READY', 'TODO', 'FAILED', 'DONE', 'CANCELLED'];
 const DEFAULT_FILTER = ['READY', 'IN-PROGRESS', 'TODO', 'FAILED'];
+const ALL_LABELS     = ['auto-safe'];
 const STATUS_ORDER   = { 'IN-PROGRESS': 0, READY: 1, TODO: 2, FAILED: 3, DONE: 4, CANCELLED: 5 };
 const PRIORITY_ORD   = { critical: 0, high: 1, medium: 2, low: 3 };
 
 let activeFilter = [...DEFAULT_FILTER];
+let activeLabels = [];
+
+function buildTasksHash() {
+  const qs = [`status=${activeFilter.join(',')}`];
+  if (activeLabels.length) qs.push(`labels=${activeLabels.join(',')}`);
+  return `#/tasks?${qs.join('&')}`;
+}
 
 function filterChipStrip() {
-  return `<div class="flex gap-2 flex-wrap mb-4" role="group" aria-label="Filter by status">
+  const statusRow = `<div class="flex gap-2 flex-wrap mb-2" role="group" aria-label="Filter by status">
     ${ALL_STATUSES.map(s => {
       const on = activeFilter.includes(s);
       const cls = on
@@ -387,17 +417,38 @@ function filterChipStrip() {
       return `<button class="${cls}" data-status="${esc(s)}" type="button">${esc(s.toLowerCase().replace('-', ' '))}</button>`;
     }).join('')}
   </div>`;
+  const labelRow = `<div class="flex gap-2 flex-wrap mb-4" role="group" aria-label="Filter by label">
+    ${ALL_LABELS.map(l => {
+      const on = activeLabels.includes(l);
+      const cls = on
+        ? 'px-3 py-1 rounded-full text-[12px] font-medium cursor-pointer select-none bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900'
+        : 'px-3 py-1 rounded-full text-[12px] cursor-pointer select-none bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700';
+      return `<button class="${cls}" data-label="${esc(l)}" type="button">${esc(l)}</button>`;
+    }).join('')}
+  </div>`;
+  return statusRow + labelRow;
 }
 
 function wireChips() {
-  document.getElementById('view').querySelectorAll('button[data-status]').forEach(btn => {
+  const view = document.getElementById('view');
+  view.querySelectorAll('button[data-status]').forEach(btn => {
     btn.addEventListener('click', () => {
       const s = btn.dataset.status;
       activeFilter = activeFilter.includes(s)
         ? activeFilter.filter(x => x !== s)
         : [...activeFilter, s];
       // pushState + manual render — avoids hashchange double-fire
-      history.pushState(null, '', `#/tasks?status=${activeFilter.join(',')}`);
+      history.pushState(null, '', buildTasksHash());
+      showTasksList(null);
+    });
+  });
+  view.querySelectorAll('button[data-label]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const l = btn.dataset.label;
+      activeLabels = activeLabels.includes(l)
+        ? activeLabels.filter(x => x !== l)
+        : [...activeLabels, l];
+      history.pushState(null, '', buildTasksHash());
       showTasksList(null);
     });
   });
@@ -411,13 +462,22 @@ async function showTasksList(params) {
   if (params && params.status) {
     activeFilter = params.status.split(',').map(s => s.trim()).filter(Boolean);
   }
+  if (params && params.labels !== undefined) {
+    activeLabels = params.labels
+      ? params.labels.split(',').map(l => l.trim()).filter(Boolean)
+      : [];
+  }
 
   view.innerHTML = filterChipStrip() + errorMsg('Loading...');
   wireChips();
 
   let tasks;
   try {
-    const res = await fetch(`/api/tasks?status=${encodeURIComponent(activeFilter.join(','))}`);
+    let url = `/api/tasks?status=${encodeURIComponent(activeFilter.join(','))}`;
+    if (activeLabels.length) {
+      url += `&labels=${encodeURIComponent(activeLabels.join(','))}`;
+    }
+    const res = await fetch(url);
     if (!res.ok) {
       if (res.status === 503) {
         view.innerHTML = filterChipStrip() + errorMsg('Database busy. Retrying...');
@@ -504,7 +564,157 @@ async function showTaskDetail(id) {
     </div>
     ${task.body
       ? `<div class="prose prose-sm dark:prose-invert max-w-none">${renderMarkdown(task.body)}</div>`
-      : errorMsg('No body.')}`;
+      : errorMsg('No body.')}
+    <div id="run-panel" class="mt-6"></div>`;
+
+  renderRunPanel(task);
+}
+
+// ── Run in queue ─────────────────────────────────────────────────────────────
+//
+// Mirrors mobile's Run-in-queue button on task detail. Only enabled when
+// task.status === 'READY'. Picker remembers last project/workspace via
+// localStorage. POST /api/queue/start → 202 → navigate to Queue tab.
+
+const RUN_STORAGE_KEY = 'companion:lastRunTarget';
+
+function loadLastRunTarget() {
+  try {
+    const raw = localStorage.getItem(RUN_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+function saveLastRunTarget(t) {
+  try { localStorage.setItem(RUN_STORAGE_KEY, JSON.stringify(t)); } catch {}
+}
+
+async function renderRunPanel(task) {
+  const panel = document.getElementById('run-panel');
+  if (!panel) return;
+
+  if (task.status !== 'READY') {
+    panel.innerHTML = `
+      <div class="rounded-lg border border-zinc-200 dark:border-zinc-700 px-4 py-3 text-[12px] text-zinc-500">
+        Only READY tasks can be queued. Current status: ${esc(task.status)}.
+      </div>`;
+    return;
+  }
+
+  // Fetch projects + workspaces; reuse last selection if compatible
+  let projects = [];
+  try {
+    const res = await fetch('/api/projects');
+    if (res.ok) projects = await res.json();
+  } catch {}
+
+  const last = loadLastRunTarget();
+  // Prefer task.project_id if available; else last project; else first
+  const preferredProjectId =
+    (task.project_id && projects.find(p => p.id === task.project_id)?.id) ||
+    (last.projectId && projects.find(p => p.id === last.projectId)?.id) ||
+    projects[0]?.id ||
+    '';
+
+  panel.innerHTML = `
+    <div class="rounded-lg border border-zinc-200 dark:border-zinc-700 p-4">
+      <div class="flex items-center gap-2 mb-3">
+        <i class="ti ti-player-play text-base text-zinc-500" aria-hidden="true"></i>
+        <span class="text-sm font-medium">Run in queue</span>
+      </div>
+      ${projects.length === 0
+        ? `<p class="text-[12px] text-zinc-500">No projects available — check server config.</p>`
+        : `
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block">
+            <span class="block text-[12px] text-zinc-500 mb-1">Project</span>
+            <select id="run-project"
+              class="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded px-2 py-1.5 text-sm">
+              ${projects.map(p => `<option value="${esc(p.id)}"${p.id === preferredProjectId ? ' selected' : ''}>${esc(p.name || p.id)}</option>`).join('')}
+            </select>
+          </label>
+          <label class="block">
+            <span class="block text-[12px] text-zinc-500 mb-1">Workspace</span>
+            <select id="run-workspace"
+              class="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded px-2 py-1.5 text-sm">
+              <option>Loading…</option>
+            </select>
+          </label>
+        </div>
+        <div class="flex items-center gap-3 mt-4">
+          <button id="run-start" type="button"
+            class="px-3 py-1.5 rounded text-sm font-medium bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 disabled:opacity-50">
+            Start
+          </button>
+          <span id="run-hint" class="text-[12px] text-zinc-500"></span>
+        </div>`}
+    </div>`;
+
+  if (projects.length === 0) return;
+
+  const projectSel = document.getElementById('run-project');
+  const workspaceSel = document.getElementById('run-workspace');
+  const startBtn = document.getElementById('run-start');
+  const hintEl = document.getElementById('run-hint');
+
+  async function loadWorkspaces(projectId) {
+    workspaceSel.innerHTML = '<option>Loading…</option>';
+    startBtn.disabled = true;
+    let workspaces = [];
+    try {
+      const res = await fetch(`/api/workspaces?projectId=${encodeURIComponent(projectId)}`);
+      if (res.ok) workspaces = (await res.json()).filter(w => !w.archived_at);
+    } catch {}
+    if (!workspaces.length) {
+      workspaceSel.innerHTML = '<option value="">— no workspaces —</option>';
+      startBtn.disabled = true;
+      hintEl.textContent = 'Add a workspace via choda-tasks MCP first.';
+      return;
+    }
+    const preferred =
+      (last.projectId === projectId && last.workspaceId && workspaces.find(w => w.id === last.workspaceId)?.id) ||
+      workspaces[0].id;
+    workspaceSel.innerHTML = workspaces
+      .map(w => `<option value="${esc(w.id)}"${w.id === preferred ? ' selected' : ''}>${esc(w.label || w.id)}</option>`)
+      .join('');
+    startBtn.disabled = false;
+    hintEl.textContent = '';
+  }
+
+  projectSel.addEventListener('change', () => loadWorkspaces(projectSel.value));
+  startBtn.addEventListener('click', async () => {
+    const projectId = projectSel.value;
+    const workspaceId = workspaceSel.value;
+    if (!projectId || !workspaceId) return;
+    startBtn.disabled = true;
+    const original = startBtn.textContent;
+    startBtn.textContent = 'Starting…';
+    hintEl.textContent = '';
+    try {
+      const res = await fetch('/api/queue/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId: task.id, projectId, workspaceId, source: 'web' }),
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        let msg = text || `HTTP ${res.status}`;
+        try { msg = (JSON.parse(text)?.error) ?? msg; } catch {}
+        if (res.status === 409) msg = 'Already running or worktree exists — check Queue.';
+        throw new Error(msg);
+      }
+      saveLastRunTarget({ projectId, workspaceId });
+      history.pushState(null, '', '#/queue');
+      route();
+    } catch (e) {
+      startBtn.disabled = false;
+      startBtn.textContent = original;
+      hintEl.textContent = e.message;
+    }
+  });
+
+  if (preferredProjectId) await loadWorkspaces(preferredProjectId);
 }
 
 // ── Router ───────────────────────────────────────────────────────────────────

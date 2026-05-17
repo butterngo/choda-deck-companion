@@ -10,12 +10,13 @@ import {
   View,
 } from 'react-native';
 
+import { Icon, type IconName } from '@/components/icon';
 import { ListRow } from '@/components/list-row';
 import { ScreenHeader } from '@/components/screen-header';
 import { Fonts } from '@/constants/theme';
 import { apiFetch, type QueueRunSummary } from '@/lib/api';
 import { useAuth, useAuthSubtitle } from '@/lib/auth-context';
-import { useLiveStatus } from '@/lib/sse';
+import { useLiveStatus, type LiveActiveRun, type LiveTaskState } from '@/lib/sse';
 import { fmtDuration } from '@/lib/time';
 import { usePalette } from '@/lib/theme';
 
@@ -45,23 +46,18 @@ export default function QueueScreen() {
   }
 
   const activeRun = live.status === 'active' ? live.active : null;
+  const activeId = activeRun?.queueRunId;
+  const queueRuns = (q.data ?? []).filter((r) => r.id !== activeId);
 
   return (
     <View style={{ flex: 1, backgroundColor: p.background }}>
       <ScreenHeader title="Queue" subtitle={subtitle} />
 
       {activeRun ? (
-        <Pressable
-          style={[styles.activeRow, { borderBottomColor: p.border }]}
-          onPress={() => router.push(`/queue/${activeRun.queueRunId}` as never)}>
-          <View style={[styles.liveDot, { backgroundColor: p.livePulse }]} />
-          <Text style={[styles.activeId, { color: p.text, fontFamily: Fonts.mono }]}>
-            {activeRun.queueRunId}
-          </Text>
-          <Text style={[styles.activeMeta, { color: p.textMuted }]}>
-            {activeRun.taskCount} task{activeRun.taskCount === 1 ? '' : 's'} · running
-          </Text>
-        </Pressable>
+        <ActiveRunCard
+          active={activeRun}
+          onPress={() => router.push(`/queue/${activeRun.queueRunId}` as never)}
+        />
       ) : null}
 
       {q.isLoading ? (
@@ -72,7 +68,7 @@ export default function QueueScreen() {
         </Text>
       ) : (
         <FlatList
-          data={q.data ?? []}
+          data={queueRuns}
           keyExtractor={(r) => r.id}
           refreshControl={
             <RefreshControl
@@ -127,18 +123,91 @@ function QueueMeta({ cost, durationMs }: { cost: number; durationMs: number }) {
   );
 }
 
+function ActiveRunCard({
+  active,
+  onPress,
+}: {
+  active: LiveActiveRun;
+  onPress: () => void;
+}) {
+  const p = usePalette();
+  const elapsedMs = active.startedAt ? Date.now() - new Date(active.startedAt).getTime() : 0;
+  const taskIds = Object.keys(active.tasks);
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[
+        activeStyles.card,
+        { borderColor: p.inProgress, backgroundColor: p.surface },
+      ]}>
+      <View style={activeStyles.header}>
+        <View style={[activeStyles.liveDot, { backgroundColor: p.livePulse }]} />
+        <Text style={[activeStyles.id, { color: p.text, fontFamily: Fonts.mono }]} numberOfLines={1}>
+          {active.queueRunId}
+        </Text>
+        <View style={[activeStyles.activeChip, { backgroundColor: p.chipBgActive }]}>
+          <Text style={[activeStyles.activeChipText, { color: p.chipTextActive }]}>active</Text>
+        </View>
+        <View style={activeStyles.spacer} />
+        <Text style={[activeStyles.metaText, { color: p.textMuted, fontFamily: Fonts.mono }]}>
+          ${active.totalCostUsd.toFixed(2)}
+        </Text>
+        <Text style={[activeStyles.metaText, { color: p.textMuted }]}>
+          {fmtDuration(elapsedMs)}
+        </Text>
+      </View>
+      {taskIds.map((tid) => {
+        const t = active.tasks[tid] as LiveTaskState;
+        return (
+          <View key={tid} style={[activeStyles.taskRow, { borderTopColor: p.border }]}>
+            <Icon
+              name={iconForLive(t.status)}
+              size={14}
+              color={colorForLive(p, t.status)}
+            />
+            <Text
+              style={[activeStyles.taskId, { color: p.text, fontFamily: Fonts.mono }]}
+              numberOfLines={1}>
+              {tid}
+            </Text>
+            {t.costUsd != null ? (
+              <Text
+                style={[
+                  activeStyles.taskMeta,
+                  { color: p.textMuted, fontFamily: Fonts.mono },
+                ]}>
+                ${t.costUsd.toFixed(2)}
+              </Text>
+            ) : null}
+            {t.durationMs ? (
+              <Text style={[activeStyles.taskMeta, { color: p.textMuted }]}>
+                {fmtDuration(t.durationMs)}
+              </Text>
+            ) : null}
+          </View>
+        );
+      })}
+    </Pressable>
+  );
+}
+
+function iconForLive(status: string): IconName {
+  const s = status.toLowerCase();
+  if (s === 'in-progress' || s === 'running') return 'player-play';
+  if (s === 'failed' || s === 'preflight-failed' || s === 'cancelled') return 'x';
+  return 'check';
+}
+
+function colorForLive(p: ReturnType<typeof usePalette>, status: string): string {
+  const s = status.toLowerCase();
+  if (s === 'in-progress' || s === 'running') return p.inProgress;
+  if (s === 'failed' || s === 'preflight-failed') return p.danger;
+  if (s === 'cancelled') return p.cancelled;
+  return p.success;
+}
+
 const styles = StyleSheet.create({
-  activeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  liveDot: { width: 8, height: 8, borderRadius: 4 },
-  activeId: { fontSize: 12, fontWeight: '500' },
-  activeMeta: { fontSize: 12, marginLeft: 'auto' },
   empty: {
     fontSize: 13,
     textAlign: 'center',
@@ -150,4 +219,42 @@ const styles = StyleSheet.create({
 const metaStyles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 8 },
   text: { fontSize: 12, fontWeight: '400' },
+});
+
+const activeStyles = StyleSheet.create({
+  card: {
+    marginHorizontal: 12,
+    marginTop: 10,
+    marginBottom: 6,
+    borderRadius: 8,
+    borderWidth: 2,
+    overflow: 'hidden',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  liveDot: { width: 8, height: 8, borderRadius: 4 },
+  id: { fontSize: 13, fontWeight: '500', flexShrink: 1 },
+  activeChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  activeChipText: { fontSize: 11, fontWeight: '500' },
+  spacer: { flex: 1 },
+  metaText: { fontSize: 11 },
+  taskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  taskId: { fontSize: 12, flex: 1 },
+  taskMeta: { fontSize: 11 },
 });

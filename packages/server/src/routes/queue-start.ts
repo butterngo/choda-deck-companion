@@ -43,6 +43,7 @@ interface RequestBody {
   taskId?: string;
   projectId?: string;
   workspaceId?: string;
+  source?: string;
 }
 
 export async function handleQueueStart(
@@ -57,6 +58,8 @@ export async function handleQueueStart(
   }
 
   const { taskId, projectId, workspaceId } = body;
+  const source =
+    typeof body.source === "string" && body.source.trim() ? body.source.trim() : "mobile";
   if (!taskId || !projectId || !workspaceId) {
     return c.json(
       { error: "missing required field: taskId, projectId, workspaceId all required" },
@@ -152,7 +155,7 @@ export async function handleQueueStart(
     taskId,
     projectId,
     workspaceId,
-    source: "mobile",
+    source,
     queueRunId,
   });
 

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { MarkdownView } from '@/components/markdown-view';
 import { Fonts } from '@/constants/theme';
 import { apiFetch, type QueueRunDetail } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
@@ -98,9 +99,7 @@ export default function QueueRunDetailScreen() {
         <View style={styles.section}>
           <Text style={[styles.sectionLabel, { color: p.textMuted }]}>Report</Text>
           <View style={[styles.reportBox, { backgroundColor: p.surface, borderColor: p.border }]}>
-            <Text style={[styles.reportText, { color: p.text, fontFamily: Fonts.mono }]}>
-              {report}
-            </Text>
+            <MarkdownView>{report}</MarkdownView>
           </View>
         </View>
       ) : null}
