@@ -64,31 +64,36 @@ export default function QueueRunDetailScreen() {
       </Text>
 
       <View style={styles.metrics}>
-        <Metric label="Tasks" value={String(meta.tasks?.length ?? 0)} />
+        <Metric label="Tasks" value={String(meta.taskOutcomes?.length ?? 0)} />
         <Metric label="Cost" value={`$${(meta.totalCostUsd ?? 0).toFixed(2)}`} mono />
         <Metric label="Duration" value={fmtDuration(durationMs)} mono />
       </View>
 
-      {meta.tasks && meta.tasks.length > 0 ? (
+      {meta.taskOutcomes && meta.taskOutcomes.length > 0 ? (
         <View style={styles.section}>
           <Text style={[styles.sectionLabel, { color: p.textMuted }]}>Tasks</Text>
-          {meta.tasks.map((t) => (
+          {meta.taskOutcomes.map((t) => (
             <View
-              key={t.id}
+              key={t.taskId}
               style={[
                 styles.taskRow,
                 { backgroundColor: p.surface, borderColor: p.border },
               ]}>
-              <Text style={[styles.taskId, { color: p.text, fontFamily: Fonts.mono }]}>
-                {t.id}
-              </Text>
-              <Text style={[styles.taskOutcome, { color: outcomeColor(p, t.outcome) }]}>
-                {t.outcome}
-              </Text>
-              {t.costUsd != null ? (
-                <Text style={[styles.taskCost, { color: p.textMuted, fontFamily: Fonts.mono }]}>
-                  ${t.costUsd.toFixed(3)}
+              <View style={styles.taskRowHeader}>
+                <Text style={[styles.taskId, { color: p.text, fontFamily: Fonts.mono }]}>
+                  {t.taskId}
                 </Text>
+                <Text style={[styles.taskOutcome, { color: outcomeColor(p, t.outcome) }]}>
+                  {t.outcome}
+                </Text>
+                {t.costUsd != null ? (
+                  <Text style={[styles.taskCost, { color: p.textMuted, fontFamily: Fonts.mono }]}>
+                    ${t.costUsd.toFixed(3)}
+                  </Text>
+                ) : null}
+              </View>
+              {t.reason && t.outcome !== 'DONE' ? (
+                <Text style={[styles.taskReason, { color: p.textMuted }]}>{t.reason}</Text>
               ) : null}
             </View>
           ))}
@@ -140,17 +145,22 @@ const styles = StyleSheet.create({
   section: { marginTop: 24 },
   sectionLabel: { fontSize: 12, fontWeight: '500', marginBottom: 8 },
   taskRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'column',
     padding: 10,
     borderRadius: 6,
     marginBottom: 6,
     borderWidth: StyleSheet.hairlineWidth,
+    gap: 4,
+  },
+  taskRowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
   taskId: { fontSize: 13, fontWeight: '500', flex: 1 },
   taskOutcome: { fontSize: 12, fontWeight: '400' },
   taskCost: { fontSize: 12 },
+  taskReason: { fontSize: 12, lineHeight: 16 },
   reportBox: {
     padding: 12,
     borderRadius: 8,
