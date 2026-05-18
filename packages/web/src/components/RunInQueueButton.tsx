@@ -19,7 +19,7 @@ export function RunInQueueButton({
       if (!projectId || !workspaceId) {
         throw new Error("Pick a workspace in Settings before running");
       }
-      return api.startQueue({ taskId, projectId, workspaceId, source: "web" });
+      return api.startQueueRun({ taskId, projectId, workspaceId, source: "web" });
     },
     onSuccess: () => navigate("/queue"),
   });

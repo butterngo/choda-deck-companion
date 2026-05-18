@@ -12,29 +12,20 @@ import type {
   ConversationThread,
 } from "../types/conversation.js";
 import type { Project, Workspace } from "../types/project.js";
+import { ApiError } from "./errors.js";
 
-export class ApiError extends Error {
-  readonly status: number;
-  readonly body: string;
-  constructor(status: number, body: string) {
-    super(`API ${status}: ${body}`);
-    this.status = status;
-    this.body = body;
-  }
-}
-
-export interface ApiClientOptions {
+export type ApiClientConfig = {
   baseUrl: string;
-  token?: string;
+  getAuthHeader?: () => Record<string, string> | null;
   fetchImpl?: typeof fetch;
-}
+};
 
 export interface ApiClient {
   listTasks(params?: TaskListParams): Promise<Task[]>;
   getTask(id: string): Promise<Task>;
   listQueueRuns(): Promise<QueueRunSummary[]>;
   getQueueRun(id: string): Promise<QueueRunDetail>;
-  startQueue(body: QueueStartRequest): Promise<QueueStartResponse>;
+  startQueueRun(body: QueueStartRequest): Promise<QueueStartResponse>;
   listInbox(params?: InboxListParams): Promise<InboxItem[]>;
   getInbox(id: string): Promise<InboxItem>;
   listConversations(params?: ConversationListParams): Promise<Conversation[]>;
@@ -43,16 +34,18 @@ export interface ApiClient {
   listWorkspaces(projectId?: string): Promise<Workspace[]>;
 }
 
-export function createApiClient(opts: ApiClientOptions): ApiClient {
-  const fetchImpl = opts.fetchImpl ?? fetch;
-  const headers: Record<string, string> = {};
-  if (opts.token) headers["Authorization"] = `Bearer ${opts.token}`;
+export function createApiClient(cfg: ApiClientConfig): ApiClient {
+  const fetchImpl = cfg.fetchImpl ?? fetch;
 
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
-    const url = `${opts.baseUrl.replace(/\/$/, "")}${path}`;
+    const authHeaders = cfg.getAuthHeader?.() ?? null;
+    const url = `${cfg.baseUrl.replace(/\/$/, "")}${path}`;
     const res = await fetchImpl(url, {
       ...init,
-      headers: { ...headers, ...(init?.headers ?? {}) },
+      headers: {
+        ...(authHeaders ?? {}),
+        ...(init?.headers as Record<string, string> | undefined ?? {}),
+      },
     });
     if (!res.ok) {
       const body = await res.text();
@@ -87,8 +80,9 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       ),
     getTask: (id) => request<Task>(`/api/tasks/${encodeURIComponent(id)}`),
     listQueueRuns: () => request<QueueRunSummary[]>(`/api/queue`),
-    getQueueRun: (id) => request<QueueRunDetail>(`/api/queue/${encodeURIComponent(id)}`),
-    startQueue: (body) =>
+    getQueueRun: (id) =>
+      request<QueueRunDetail>(`/api/queue/${encodeURIComponent(id)}`),
+    startQueueRun: (body) =>
       request<QueueStartResponse>(`/api/queue/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -101,10 +95,15 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
     getInbox: (id) => request<InboxItem>(`/api/inbox/${encodeURIComponent(id)}`),
     listConversations: (params) =>
       request<Conversation[]>(
-        `/api/conversations${qs({ status: params?.status, projectId: params?.projectId })}`,
+        `/api/conversations${qs({
+          status: params?.status,
+          projectId: params?.projectId,
+        })}`,
       ),
     getConversation: (id) =>
-      request<ConversationThread>(`/api/conversations/${encodeURIComponent(id)}`),
+      request<ConversationThread>(
+        `/api/conversations/${encodeURIComponent(id)}`,
+      ),
     listProjects: () => request<Project[]>(`/api/projects`),
     listWorkspaces: (projectId) =>
       request<Workspace[]>(`/api/workspaces${qs({ projectId })}`),
