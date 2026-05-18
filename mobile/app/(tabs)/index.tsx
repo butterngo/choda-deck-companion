@@ -18,7 +18,8 @@ import { Icon } from '@/components/icon';
 import { LabelPill, ListRow, PriorityDot } from '@/components/list-row';
 import { ScreenHeader } from '@/components/screen-header';
 import type { IconName } from '@/components/icon';
-import { ApiError, apiFetch, withProjectId, type TaskRow } from '@/lib/api';
+import { type TaskRow } from '@/lib/api';
+import { ApiError, useApiClient } from '@/lib/api-client';
 import { useAuth, useAuthSubtitle } from '@/lib/auth-context';
 import { usePalette } from '@/lib/theme';
 
@@ -79,6 +80,7 @@ const LABEL_OPTIONS = [
 export default function TasksScreen() {
   const p = usePalette();
   const { auth } = useAuth();
+  const client = useApiClient();
   const subtitle = useAuthSubtitle();
   const router = useRouter();
   const [filter, setFilter] = useState<Set<Status>>(new Set(DEFAULT_FILTER));
@@ -87,17 +89,18 @@ export default function TasksScreen() {
   const debouncedSearch = useDebounced(searchText.trim(), 250);
 
   const filterCsv = Array.from(filter).join(',');
-  const labelsCsv = Array.from(labelFilter).join(',');
+  const labelsArr = Array.from(labelFilter);
 
   const q = useQuery({
-    queryKey: ['tasks', auth?.serverUrl, auth?.projectId, filterCsv, labelsCsv, debouncedSearch],
-    queryFn: () => {
-      let url = withProjectId(`/api/tasks?status=${encodeURIComponent(filterCsv)}`, auth!.projectId);
-      if (labelsCsv) url += `&labels=${encodeURIComponent(labelsCsv)}`;
-      if (debouncedSearch) url += `&query=${encodeURIComponent(debouncedSearch)}`;
-      return apiFetch<TaskRow[]>(auth!, url);
-    },
-    enabled: !!auth && filter.size > 0,
+    queryKey: ['tasks', auth?.serverUrl, auth?.projectId, filterCsv, labelsArr.join(','), debouncedSearch],
+    queryFn: () =>
+      client!.listTasks({
+        status: filterCsv,
+        projectId: auth!.projectId,
+        labels: labelsArr,
+        query: debouncedSearch || undefined,
+      }),
+    enabled: !!client && filter.size > 0,
     retry: (failureCount, err) =>
       err instanceof ApiError && err.status === 503 && failureCount < 3,
     retryDelay: 3000,

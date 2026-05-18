@@ -4,7 +4,8 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-nat
 
 import { MarkdownView } from '@/components/markdown-view';
 import { Fonts } from '@/constants/theme';
-import { apiFetch, type QueueRunDetail } from '@/lib/api';
+import { type QueueRunDetail } from '@/lib/api';
+import { useApiClient } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
 import { fmtDuration, fmtRelative } from '@/lib/time';
 import { usePalette } from '@/lib/theme';
@@ -13,11 +14,12 @@ export default function QueueRunDetailScreen() {
   const p = usePalette();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { auth } = useAuth();
+  const client = useApiClient();
 
-  const q = useQuery({
+  const q = useQuery<QueueRunDetail>({
     queryKey: ['queue', id, auth?.serverUrl],
-    queryFn: () => apiFetch<QueueRunDetail>(auth!, `/api/queue/${id}`),
-    enabled: !!auth && !!id,
+    queryFn: () => client!.getQueueRun(id),
+    enabled: !!client && !!id,
   });
 
   if (!auth) {

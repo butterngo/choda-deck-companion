@@ -14,7 +14,8 @@ import {
 import { LabelPill, PriorityDot } from '@/components/list-row';
 import { MarkdownView } from '@/components/markdown-view';
 import { Fonts } from '@/constants/theme';
-import { ApiError, apiFetch, startQueueRun, type TaskRow } from '@/lib/api';
+import { type TaskRow } from '@/lib/api';
+import { ApiError, useApiClient } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
 import { fmtRelative } from '@/lib/time';
 import { usePalette } from '@/lib/theme';
@@ -23,14 +24,15 @@ export default function TaskDetailScreen() {
   const p = usePalette();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { auth } = useAuth();
+  const client = useApiClient();
   const router = useRouter();
   const queryClient = useQueryClient();
   const [submitting, setSubmitting] = useState(false);
 
-  const q = useQuery({
+  const q = useQuery<TaskRow>({
     queryKey: ['task', id, auth?.serverUrl],
-    queryFn: () => apiFetch<TaskRow>(auth!, `/api/tasks/${id}`),
-    enabled: !!auth && !!id,
+    queryFn: () => client!.getTask(id),
+    enabled: !!client && !!id,
   });
 
   if (!auth) {
@@ -85,9 +87,10 @@ export default function TaskDetailScreen() {
         {
           text: 'Start',
           onPress: async () => {
+            if (!client) return;
             setSubmitting(true);
             try {
-              await startQueueRun(auth, { taskId, projectId, workspaceId });
+              await client.startQueueRun({ taskId, projectId, workspaceId });
               await queryClient.invalidateQueries({ queryKey: ['queue'] });
               router.push('/queue');
             } catch (err) {

@@ -16,7 +16,8 @@ import { Icon, type IconName } from '@/components/icon';
 import { ListRow } from '@/components/list-row';
 import { ScreenHeader } from '@/components/screen-header';
 import { Fonts } from '@/constants/theme';
-import { apiFetch, type QueueRunSummary } from '@/lib/api';
+import { type QueueRunSummary } from '@/lib/api';
+import { useApiClient } from '@/lib/api-client';
 import { useAuth, useAuthSubtitle } from '@/lib/auth-context';
 import { useLiveStatus } from '@/lib/sse';
 import type { ActiveRunState, TaskTickState } from 'shared/sse';
@@ -36,6 +37,7 @@ const DEFAULT_QUEUE_FILTER: QueueStatus[] = ['running', 'finished', 'failed'];
 export default function QueueScreen() {
   const p = usePalette();
   const { auth } = useAuth();
+  const client = useApiClient();
   const subtitle = useAuthSubtitle();
   const router = useRouter();
   const live = useLiveStatus(auth);
@@ -43,10 +45,10 @@ export default function QueueScreen() {
     new Set(DEFAULT_QUEUE_FILTER),
   );
 
-  const q = useQuery({
+  const q = useQuery<QueueRunSummary[]>({
     queryKey: ['queue', auth?.serverUrl],
-    queryFn: () => apiFetch<QueueRunSummary[]>(auth!, '/api/queue'),
-    enabled: !!auth,
+    queryFn: () => client!.listQueueRuns(),
+    enabled: !!client,
     refetchInterval: live.state.active !== null ? 5000 : false,
   });
 

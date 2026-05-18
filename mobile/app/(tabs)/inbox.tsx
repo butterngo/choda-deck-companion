@@ -13,7 +13,7 @@ import { FilterChips } from '@/components/filter-chips';
 import { ListRow } from '@/components/list-row';
 import { ScreenHeader } from '@/components/screen-header';
 import type { IconName } from '@/components/icon';
-import { apiFetch, withProjectId } from '@/lib/api';
+import { useApiClient } from '@/lib/api-client';
 import { useAuth, useAuthSubtitle } from '@/lib/auth-context';
 import { usePalette } from '@/lib/theme';
 import { useState } from 'react';
@@ -40,6 +40,7 @@ type InboxRow = {
 export default function InboxScreen() {
   const p = usePalette();
   const { auth } = useAuth();
+  const client = useApiClient();
   const subtitle = useAuthSubtitle();
   const router = useRouter();
   const [filter, setFilter] = useState<Set<InboxStatus>>(new Set(['raw', 'researching', 'ready']));
@@ -49,11 +50,8 @@ export default function InboxScreen() {
   const q = useQuery({
     queryKey: ['inbox', auth?.serverUrl, auth?.projectId, filterCsv],
     queryFn: () =>
-      apiFetch<InboxRow[]>(
-        auth!,
-        withProjectId(`/api/inbox?status=${encodeURIComponent(filterCsv)}`, auth!.projectId),
-      ),
-    enabled: !!auth && filter.size > 0,
+      client!.listInbox({ status: filterCsv, projectId: auth!.projectId }) as Promise<InboxRow[]>,
+    enabled: !!client && filter.size > 0,
   });
 
   if (!auth) {
