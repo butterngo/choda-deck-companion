@@ -18,7 +18,8 @@ import { ScreenHeader } from '@/components/screen-header';
 import { Fonts } from '@/constants/theme';
 import { apiFetch, type QueueRunSummary } from '@/lib/api';
 import { useAuth, useAuthSubtitle } from '@/lib/auth-context';
-import { useLiveStatus, type LiveActiveRun, type LiveTaskState } from '@/lib/sse';
+import { useLiveStatus } from '@/lib/sse';
+import type { ActiveRunState, TaskTickState } from 'shared/sse';
 import { fmtDuration } from '@/lib/time';
 import { usePalette } from '@/lib/theme';
 
@@ -46,7 +47,7 @@ export default function QueueScreen() {
     queryKey: ['queue', auth?.serverUrl],
     queryFn: () => apiFetch<QueueRunSummary[]>(auth!, '/api/queue'),
     enabled: !!auth,
-    refetchInterval: live.status === 'active' ? 5000 : false,
+    refetchInterval: live.state.active !== null ? 5000 : false,
   });
 
   if (!auth) {
@@ -60,7 +61,7 @@ export default function QueueScreen() {
     );
   }
 
-  const activeRun = live.status === 'active' ? live.active : null;
+  const activeRun = live.state.active;
   const activeId = activeRun?.queueRunId;
   const queueRuns = (q.data ?? []).filter(
     (r) => r.id !== activeId && statusFilter.has(r.status as QueueStatus),
@@ -157,12 +158,12 @@ function ActiveRunCard({
   active,
   onPress,
 }: {
-  active: LiveActiveRun;
+  active: ActiveRunState;
   onPress: () => void;
 }) {
   const p = usePalette();
   const elapsedMs = active.startedAt ? Date.now() - new Date(active.startedAt).getTime() : 0;
-  const taskIds = Object.keys(active.tasks);
+  const taskEntries = Array.from(active.tasks.entries());
 
   return (
     <Pressable
@@ -187,53 +188,42 @@ function ActiveRunCard({
           {fmtDuration(elapsedMs)}
         </Text>
       </View>
-      {taskIds.map((tid) => {
-        const t = active.tasks[tid] as LiveTaskState;
-        return (
-          <View key={tid} style={[activeStyles.taskRow, { borderTopColor: p.border }]}>
-            <Icon
-              name={iconForLive(t.status)}
-              size={14}
-              color={colorForLive(p, t.status)}
-            />
+      {taskEntries.map(([tid, t]: [string, TaskTickState]) => (
+        <View key={tid} style={[activeStyles.taskRow, { borderTopColor: p.border }]}>
+          <Icon
+            name={iconForLive(t.status)}
+            size={14}
+            color={colorForLive(p, t.status)}
+          />
+          <Text
+            style={[activeStyles.taskId, { color: p.text, fontFamily: Fonts.mono }]}
+            numberOfLines={1}>
+            {tid}
+          </Text>
+          {t.costUsd != null ? (
             <Text
-              style={[activeStyles.taskId, { color: p.text, fontFamily: Fonts.mono }]}
-              numberOfLines={1}>
-              {tid}
+              style={[
+                activeStyles.taskMeta,
+                { color: p.textMuted, fontFamily: Fonts.mono },
+              ]}>
+              ${t.costUsd.toFixed(2)}
             </Text>
-            {t.costUsd != null ? (
-              <Text
-                style={[
-                  activeStyles.taskMeta,
-                  { color: p.textMuted, fontFamily: Fonts.mono },
-                ]}>
-                ${t.costUsd.toFixed(2)}
-              </Text>
-            ) : null}
-            {t.durationMs ? (
-              <Text style={[activeStyles.taskMeta, { color: p.textMuted }]}>
-                {fmtDuration(t.durationMs)}
-              </Text>
-            ) : null}
-          </View>
-        );
-      })}
+          ) : null}
+        </View>
+      ))}
     </Pressable>
   );
 }
 
 function iconForLive(status: string): IconName {
-  const s = status.toLowerCase();
-  if (s === 'in-progress' || s === 'running') return 'player-play';
-  if (s === 'failed' || s === 'preflight-failed' || s === 'cancelled') return 'x';
+  if (status === 'started') return 'player-play';
+  if (status === 'failed') return 'x';
   return 'check';
 }
 
 function colorForLive(p: ReturnType<typeof usePalette>, status: string): string {
-  const s = status.toLowerCase();
-  if (s === 'in-progress' || s === 'running') return p.inProgress;
-  if (s === 'failed' || s === 'preflight-failed') return p.danger;
-  if (s === 'cancelled') return p.cancelled;
+  if (status === 'started') return p.inProgress;
+  if (status === 'failed') return p.danger;
   return p.success;
 }
 

@@ -15,9 +15,9 @@ export function LiveBadge() {
   if (!auth) return null;
 
   let color: string = p.textSubtle;
-  if (live.status === 'active') color = p.livePulse;
-  else if (live.status === 'error') color = p.danger;
-  else if (live.status === 'open') color = p.queued;
+  if (live.state.active !== null) color = p.livePulse;
+  else if (live.sseStatus === 'error') color = p.danger;
+  else if (live.sseStatus === 'open') color = p.queued;
 
   return <View style={[styles.dot, { backgroundColor: color }]} />;
 }
