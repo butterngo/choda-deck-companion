@@ -3,7 +3,8 @@ import { useLocalSearchParams } from 'expo-router';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Fonts } from '@/constants/theme';
-import { apiFetch, type InboxRow } from '@/lib/api';
+import { type InboxRow } from '@/lib/api';
+import { useApiClient } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
 import { fmtRelative } from '@/lib/time';
 import { usePalette } from '@/lib/theme';
@@ -12,11 +13,12 @@ export default function InboxDetailScreen() {
   const p = usePalette();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { auth } = useAuth();
+  const client = useApiClient();
 
-  const q = useQuery({
+  const q = useQuery<InboxRow>({
     queryKey: ['inbox', id, auth?.serverUrl],
-    queryFn: () => apiFetch<InboxRow>(auth!, `/api/inbox/${id}`),
-    enabled: !!auth && !!id,
+    queryFn: () => client!.getInbox(id),
+    enabled: !!client && !!id,
   });
 
   if (!auth) {

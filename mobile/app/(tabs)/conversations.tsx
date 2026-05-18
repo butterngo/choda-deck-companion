@@ -14,7 +14,8 @@ import { FilterChips } from '@/components/filter-chips';
 import { ListRow } from '@/components/list-row';
 import { ScreenHeader } from '@/components/screen-header';
 import type { IconName } from '@/components/icon';
-import { apiFetch, withProjectId, type ConversationRow } from '@/lib/api';
+import { type ConversationRow } from '@/lib/api';
+import { useApiClient } from '@/lib/api-client';
 import { useAuth, useAuthSubtitle } from '@/lib/auth-context';
 import { usePalette } from '@/lib/theme';
 
@@ -30,23 +31,18 @@ const STATUS_OPTIONS = [
 export default function ConversationsScreen() {
   const p = usePalette();
   const { auth } = useAuth();
+  const client = useApiClient();
   const subtitle = useAuthSubtitle();
   const router = useRouter();
   const [filter, setFilter] = useState<Set<ConvStatus>>(new Set(['discussing', 'open']));
 
   const filterCsv = Array.from(filter).join(',');
 
-  const q = useQuery({
+  const q = useQuery<ConversationRow[]>({
     queryKey: ['conversations', auth?.serverUrl, auth?.projectId, filterCsv],
     queryFn: () =>
-      apiFetch<ConversationRow[]>(
-        auth!,
-        withProjectId(
-          `/api/conversations?status=${encodeURIComponent(filterCsv)}`,
-          auth!.projectId,
-        ),
-      ),
-    enabled: !!auth && filter.size > 0,
+      client!.listConversations({ status: filterCsv, projectId: auth!.projectId }),
+    enabled: !!client && filter.size > 0,
   });
 
   if (!auth) {

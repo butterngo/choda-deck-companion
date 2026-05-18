@@ -3,7 +3,8 @@ import { useLocalSearchParams } from 'expo-router';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Fonts } from '@/constants/theme';
-import { apiFetch, type ConversationThread } from '@/lib/api';
+import { type ConversationThread } from '@/lib/api';
+import { useApiClient } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
 import { fmtRelative } from '@/lib/time';
 import { usePalette } from '@/lib/theme';
@@ -12,11 +13,12 @@ export default function ConversationThreadScreen() {
   const p = usePalette();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { auth } = useAuth();
+  const client = useApiClient();
 
-  const q = useQuery({
+  const q = useQuery<ConversationThread>({
     queryKey: ['conversation', id, auth?.serverUrl],
-    queryFn: () => apiFetch<ConversationThread>(auth!, `/api/conversations/${id}`),
-    enabled: !!auth && !!id,
+    queryFn: () => client!.getConversation(id) as Promise<ConversationThread>,
+    enabled: !!client && !!id,
   });
 
   if (!auth) {

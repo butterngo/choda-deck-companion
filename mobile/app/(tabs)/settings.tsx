@@ -15,7 +15,8 @@ import {
 import { Picker, type PickerOption } from '@/components/picker';
 import { ScreenHeader } from '@/components/screen-header';
 import { Fonts } from '@/constants/theme';
-import { apiFetch, type ProjectRow, type WorkspaceRow } from '@/lib/api';
+import { type ProjectRow, type WorkspaceRow } from '@/lib/api';
+import { clientFromAuth } from '@/lib/api-client';
 import type { Auth } from '@/lib/auth';
 import { useAuth } from '@/lib/auth-context';
 import { usePalette } from '@/lib/theme';
@@ -50,16 +51,15 @@ export default function SettingsScreen() {
         }
       : null;
 
-  const projectsQ = useQuery({
+  const projectsQ = useQuery<ProjectRow[]>({
     queryKey: ['projects', probeAuth?.serverUrl, probeAuth?.token],
-    queryFn: () => apiFetch<ProjectRow[]>(probeAuth!, '/api/projects'),
+    queryFn: () => clientFromAuth(probeAuth!).listProjects(),
     enabled: !!probeAuth,
   });
 
-  const workspacesQ = useQuery({
+  const workspacesQ = useQuery<WorkspaceRow[]>({
     queryKey: ['workspaces', probeAuth?.serverUrl, probeAuth?.token, projectId],
-    queryFn: () =>
-      apiFetch<WorkspaceRow[]>(probeAuth!, `/api/workspaces?projectId=${projectId}`),
+    queryFn: () => clientFromAuth(probeAuth!).listWorkspaces(projectId),
     enabled: !!probeAuth && !!projectId,
   });
 
