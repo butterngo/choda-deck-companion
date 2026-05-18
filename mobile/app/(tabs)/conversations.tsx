@@ -94,7 +94,7 @@ export default function ConversationsScreen() {
               statusIcon={iconFor(item.status as ConvStatus)}
               statusColor={statusColor(p, item.status as ConvStatus)}
               primaryId={item.id}
-              title={item.title}
+              title={item.title ?? ''}
               time={item.decided_at ?? item.created_at}
               onPress={() => router.push(`/conversations/${item.id}`)}
             />
