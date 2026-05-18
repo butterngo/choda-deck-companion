@@ -80,7 +80,7 @@ export default function InboxDetailScreen() {
   );
 }
 
-function statusColor(p: ReturnType<typeof usePalette>, status: InboxRow['status']): string {
+function statusColor(p: ReturnType<typeof usePalette>, status: string): string {
   switch (status) {
     case 'raw':
       return p.queued;
@@ -92,6 +92,8 @@ function statusColor(p: ReturnType<typeof usePalette>, status: InboxRow['status'
       return p.success;
     case 'archived':
       return p.cancelled;
+    default:
+      return p.textMuted;
   }
 }
 

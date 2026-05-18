@@ -1,4 +1,15 @@
 import type { Auth } from './auth';
+import type {
+  Task,
+  Conversation,
+  QueueRunSummary,
+  TaskOutcome,
+  QueueRunMeta,
+  QueueRunDetail,
+  InboxItem,
+  Project,
+  Workspace,
+} from 'shared/types';
 
 export class ApiError extends Error {
   constructor(
@@ -24,27 +35,16 @@ export async function apiFetch<T>(auth: Auth, path: string, init?: RequestInit):
   return res.json() as Promise<T>;
 }
 
-export type TaskRow = {
-  id: string;
-  title?: string;
-  status: string;
-  priority?: string;
-  labels?: string;
-  updated_at?: string;
-  [key: string]: unknown;
-};
+// Re-export shared canonical types + backward-compat aliases for mobile callsites
+export type { Task, QueueRunSummary, QueueRunMeta, QueueRunDetail };
+export type TaskRow = Task;
+export type ConversationRow = Conversation;
+export type QueueTaskOutcome = TaskOutcome;
+export type InboxRow = InboxItem;
+export type ProjectRow = Project;
+export type WorkspaceRow = Workspace;
 
-export type ConversationRow = {
-  id: string;
-  title: string;
-  status: string;
-  created_by: string;
-  decision_summary?: string;
-  created_at: string;
-  decided_at?: string | null;
-  closed_at?: string | null;
-};
-
+// Mobile-only — no shared equivalent
 export type ConversationMessage = {
   id: string;
   conversation_id: string;
@@ -54,71 +54,13 @@ export type ConversationMessage = {
   created_at: string;
 };
 
+// Mobile-specific shape: messages typed as ConversationMessage[], not Record<string, unknown>[]
 export type ConversationThread = {
   conversation: ConversationRow;
   participants: { participant_name: string; participant_type: string }[];
   messages: ConversationMessage[];
   links: { linked_type: string; linked_id: string }[];
   actions: { id: string; assignee: string; description: string; status: string }[];
-};
-
-export type QueueRunSummary = {
-  id: string;
-  taskCount: number;
-  totalCostUsd: number;
-  durationMs: number;
-  status: 'running' | 'finished' | 'failed';
-  finishedAt: string | null;
-};
-
-export type QueueTaskOutcome = {
-  taskId: string;
-  outcome: string;
-  costUsd?: number;
-  reason?: string;
-  account?: string | null;
-  worktreePath?: string;
-  branch?: string;
-  headSha?: string;
-};
-
-export type QueueRunMeta = {
-  queueRunId: string;
-  startedAt: string;
-  endedAt?: string;
-  totalCostUsd?: number;
-  halted?: boolean;
-  taskOutcomes?: QueueTaskOutcome[];
-  [key: string]: unknown;
-};
-
-export type QueueRunDetail = {
-  meta: QueueRunMeta;
-  report: string;
-};
-
-export type InboxRow = {
-  id: string;
-  project_id?: string | null;
-  content: string;
-  status: 'raw' | 'researching' | 'ready' | 'converted' | 'archived';
-  linked_task_id?: string | null;
-  created_at?: string;
-  updated_at?: string;
-};
-
-export type ProjectRow = {
-  id: string;
-  name: string;
-  cwd: string;
-};
-
-export type WorkspaceRow = {
-  id: string;
-  project_id: string;
-  label: string;
-  cwd: string;
-  archived_at?: string | null;
 };
 
 export function withProjectId(path: string, projectId?: string): string {
