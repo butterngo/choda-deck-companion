@@ -17,7 +17,7 @@ const INACTIVE = "border-transparent text-zinc-500";
 
 export function TabStrip({ sseStatus }: { sseStatus: SseStatusValue }) {
   return (
-    <header className="sticky top-0 z-30 bg-white/95 dark:bg-zinc-900/95 backdrop-blur border-b border-zinc-200 dark:border-zinc-700">
+    <header className="sticky top-0 z-30 bg-white/95 dark:bg-zinc-900/95 backdrop-blur tabstrip-shadow">
       <div className="max-w-page mx-auto px-4 md:px-6">
         <nav className="flex items-center h-12 gap-1" role="tablist">
           {TABS.map((tab) => (
