@@ -23,7 +23,7 @@ export default function InboxDetailScreen() {
 
   if (!auth) {
     return (
-      <View style={[styles.center, { backgroundColor: p.background }]}>
+      <View style={[styles.center, { backgroundColor: p.surface }]}>
         <Text style={{ fontSize: 13, color: p.textMuted }}>
           Configure server in settings.
         </Text>
@@ -32,14 +32,14 @@ export default function InboxDetailScreen() {
   }
   if (q.isLoading) {
     return (
-      <View style={{ flex: 1, backgroundColor: p.background }}>
+      <View style={{ flex: 1, backgroundColor: p.surface }}>
         <ActivityIndicator color={p.tint} style={{ marginTop: 30 }} />
       </View>
     );
   }
   if (q.isError || !q.data) {
     return (
-      <View style={[styles.center, { backgroundColor: p.background }]}>
+      <View style={[styles.center, { backgroundColor: p.surface }]}>
         <Text style={{ fontSize: 13, color: p.danger }}>
           Cannot read inbox item. {String(q.error?.message ?? 'not found')}
         </Text>
@@ -50,7 +50,7 @@ export default function InboxDetailScreen() {
   const item = q.data;
 
   return (
-    <ScrollView style={{ backgroundColor: p.background }} contentContainerStyle={styles.body}>
+    <ScrollView style={{ backgroundColor: p.surface }} contentContainerStyle={styles.body}>
       <Text style={[styles.id, { color: p.textMuted, fontFamily: Fonts.mono }]}>{item.id}</Text>
 
       <View style={styles.metaRow}>
@@ -73,7 +73,7 @@ export default function InboxDetailScreen() {
         </View>
       ) : null}
 
-      <View style={[styles.contentBox, { backgroundColor: p.surface, borderColor: p.border }]}>
+      <View style={[styles.contentBox, { backgroundColor: p.surfaceRaised, borderColor: p.border }]}>
         <Text style={[styles.contentText, { color: p.text, fontFamily: Fonts.mono }]}>
           {item.content}
         </Text>

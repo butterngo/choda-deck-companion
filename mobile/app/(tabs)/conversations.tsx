@@ -47,7 +47,7 @@ export default function ConversationsScreen() {
 
   if (!auth) {
     return (
-      <View style={{ flex: 1, backgroundColor: p.background }}>
+      <View style={{ flex: 1, backgroundColor: p.surface }}>
         <ScreenHeader title="Conversations" subtitle={subtitle} />
         <Text style={[styles.empty, { color: p.textMuted }]}>
           Configure server in settings tab.
@@ -57,7 +57,7 @@ export default function ConversationsScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: p.background }}>
+    <View style={{ flex: 1, backgroundColor: p.surface }}>
       <ScreenHeader title="Conversations" subtitle={subtitle} />
       <FilterChips options={STATUS_OPTIONS} selected={filter} onChange={setFilter} />
 

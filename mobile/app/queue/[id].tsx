@@ -26,7 +26,7 @@ export default function QueueRunDetailScreen() {
 
   if (!auth) {
     return (
-      <View style={[styles.center, { backgroundColor: p.background }]}>
+      <View style={[styles.center, { backgroundColor: p.surface }]}>
         <Text style={{ fontSize: 13, color: p.textMuted }}>
           Configure server in settings.
         </Text>
@@ -35,14 +35,14 @@ export default function QueueRunDetailScreen() {
   }
   if (q.isLoading) {
     return (
-      <View style={{ flex: 1, backgroundColor: p.background }}>
+      <View style={{ flex: 1, backgroundColor: p.surface }}>
         <ActivityIndicator color={p.tint} style={{ marginTop: 30 }} />
       </View>
     );
   }
   if (q.isError || !q.data) {
     return (
-      <View style={[styles.center, { backgroundColor: p.background }]}>
+      <View style={[styles.center, { backgroundColor: p.surface }]}>
         <Text style={{ fontSize: 13, color: p.danger }}>
           Cannot read queue run. {String(q.error?.message ?? 'not found')}
         </Text>
@@ -58,7 +58,7 @@ export default function QueueRunDetailScreen() {
     : 0;
 
   return (
-    <ScrollView style={{ backgroundColor: p.background }} contentContainerStyle={styles.body}>
+    <ScrollView style={{ backgroundColor: p.surface }} contentContainerStyle={styles.body}>
       <Text style={[styles.title, { color: p.text, fontFamily: Fonts.mono }]}>
         {meta.queueRunId}
       </Text>
@@ -81,7 +81,7 @@ export default function QueueRunDetailScreen() {
               key={t.taskId}
               style={[
                 styles.taskRow,
-                { backgroundColor: p.surface, borderColor: p.border },
+                { backgroundColor: p.surfaceRaised, borderColor: p.border },
               ]}>
               <View style={styles.taskRowHeader}>
                 <Text style={[styles.taskId, { color: p.text, fontFamily: Fonts.mono }]}>
@@ -107,7 +107,7 @@ export default function QueueRunDetailScreen() {
       {report ? (
         <View style={styles.section}>
           <Text style={[styles.sectionLabel, { color: p.textMuted }]}>Report</Text>
-          <View style={[styles.reportBox, { backgroundColor: p.surface, borderColor: p.border }]}>
+          <View style={[styles.reportBox, { backgroundColor: p.surfaceRaised, borderColor: p.border }]}>
             <MarkdownView>{report}</MarkdownView>
           </View>
         </View>

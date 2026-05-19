@@ -8,7 +8,7 @@ import { LiveBadge } from './live-badge';
 export function ScreenHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   const p = usePalette();
   return (
-    <View style={[styles.row, { backgroundColor: p.background }]}>
+    <View style={[styles.row, { backgroundColor: p.surface }]}>
       <View style={{ flex: 1 }}>
         <Text style={[styles.title, { color: p.text, fontFamily: Fonts.sans }]}>{title}</Text>
         {subtitle ? (

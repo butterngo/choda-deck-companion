@@ -72,7 +72,7 @@ export function Picker<T extends string>({
           <Pressable
             style={[
               styles.sheet,
-              { backgroundColor: p.background, borderColor: p.border },
+              { backgroundColor: p.surface, borderColor: p.border },
             ]}
             onPress={(e) => e.stopPropagation()}>
             <Text style={[styles.sheetTitle, { color: p.text }]}>{label}</Text>

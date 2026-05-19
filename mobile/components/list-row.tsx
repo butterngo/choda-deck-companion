@@ -36,7 +36,7 @@ export function ListRow({
       style={({ pressed }) => [
         styles.row,
         {
-          backgroundColor: pressed ? p.surface : 'transparent',
+          backgroundColor: pressed ? p.surfaceRaised : 'transparent',
           borderBottomColor: p.border,
         },
       ]}>

@@ -114,7 +114,7 @@ export default function TasksScreen() {
 
   if (!auth) {
     return (
-      <View style={{ flex: 1, backgroundColor: p.background }}>
+      <View style={{ flex: 1, backgroundColor: p.surface }}>
         <ScreenHeader title="Tasks" subtitle={subtitle} />
         <Text style={[styles.empty, { color: p.textMuted }]}>
           Configure server in settings tab.
@@ -127,7 +127,7 @@ export default function TasksScreen() {
   const hasSearch = debouncedSearch !== '';
 
   return (
-    <View style={{ flex: 1, backgroundColor: p.background }}>
+    <View style={{ flex: 1, backgroundColor: p.surface }}>
       <ScreenHeader title="Tasks" subtitle={subtitle} />
 
       <View style={[searchStyles.wrap, { borderColor: p.border }]}>

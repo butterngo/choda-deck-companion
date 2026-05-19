@@ -23,7 +23,7 @@ export default function ConversationThreadScreen() {
 
   if (!auth) {
     return (
-      <View style={[styles.center, { backgroundColor: p.background }]}>
+      <View style={[styles.center, { backgroundColor: p.surface }]}>
         <Text style={{ fontSize: 13, color: p.textMuted }}>
           Configure server in settings.
         </Text>
@@ -32,14 +32,14 @@ export default function ConversationThreadScreen() {
   }
   if (q.isLoading) {
     return (
-      <View style={{ flex: 1, backgroundColor: p.background }}>
+      <View style={{ flex: 1, backgroundColor: p.surface }}>
         <ActivityIndicator color={p.tint} style={{ marginTop: 30 }} />
       </View>
     );
   }
   if (q.isError || !q.data) {
     return (
-      <View style={[styles.center, { backgroundColor: p.background }]}>
+      <View style={[styles.center, { backgroundColor: p.surface }]}>
         <Text style={{ fontSize: 13, color: p.danger }}>
           Cannot read conversation. {String(q.error?.message ?? 'not found')}
         </Text>
@@ -50,7 +50,7 @@ export default function ConversationThreadScreen() {
   const { conversation, participants, messages, actions, links } = q.data;
 
   return (
-    <ScrollView style={{ backgroundColor: p.background }} contentContainerStyle={styles.body}>
+    <ScrollView style={{ backgroundColor: p.surface }} contentContainerStyle={styles.body}>
       <Text style={[styles.title, { color: p.text }]}>{conversation.title}</Text>
       <Text style={[styles.meta, { color: p.textMuted, fontFamily: Fonts.mono }]}>
         {conversation.id} · {conversation.status} · {fmtRelative(conversation.created_at)}
@@ -66,7 +66,7 @@ export default function ConversationThreadScreen() {
       ) : null}
 
       {conversation.decision_summary ? (
-        <View style={[styles.decision, { backgroundColor: p.surface, borderLeftColor: p.success }]}>
+        <View style={[styles.decision, { backgroundColor: p.surfaceRaised, borderLeftColor: p.success }]}>
           <Text style={[styles.sectionLabel, { color: p.success }]}>Decision</Text>
           <Text style={[styles.sectionBody, { color: p.text }]}>
             {conversation.decision_summary}
@@ -86,7 +86,7 @@ export default function ConversationThreadScreen() {
               key={m.id}
               style={[
                 styles.message,
-                { backgroundColor: p.surface, borderColor: p.border },
+                { backgroundColor: p.surfaceRaised, borderColor: p.border },
               ]}>
               <View style={styles.msgHeader}>
                 <Text style={[styles.msgAuthor, { color: p.text }]}>{m.author_name}</Text>
