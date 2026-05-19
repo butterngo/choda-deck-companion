@@ -36,20 +36,27 @@ export function relativeTime(iso: string | null | undefined): string {
   return `${Math.round(delta / 86400)}d ago`;
 }
 
+/**
+ * v2 status palette — see docs/handoff-design/project/uploads/00-product-overview.md.
+ * DONE emerald / FAILED rose / IN-PROGRESS amber / READY sky / TODO zinc-500 / CANCELLED zinc-400.
+ */
 export function statusClass(status: string): string {
   switch (status.toLowerCase()) {
     case "finished":
     case "done":
-      return "text-green-600 dark:text-green-400";
+      return "text-emerald-600 dark:text-emerald-400";
     case "running":
     case "in-progress":
-      return "text-blue-600 dark:text-blue-400";
+      return "text-amber-600 dark:text-amber-400";
     case "failed":
-      return "text-red-600 dark:text-red-400";
+      return "text-rose-600 dark:text-rose-400";
+    case "ready":
+      return "text-sky-600 dark:text-sky-400";
     case "cancelled":
-      return "text-zinc-400";
+      return "text-zinc-400 dark:text-zinc-500";
+    case "todo":
     default:
-      return "text-zinc-500";
+      return "text-zinc-500 dark:text-zinc-400";
   }
 }
 
@@ -57,14 +64,17 @@ export function statusIcon(status: string): string {
   switch (status.toLowerCase()) {
     case "finished":
     case "done":
-      return "ti-check";
+      return "ti-circle-check";
     case "running":
     case "in-progress":
-      return "ti-loader-2 spin";
+      return "ti-progress spin";
     case "failed":
-      return "ti-x";
+      return "ti-circle-x";
+    case "ready":
+      return "ti-player-play";
     case "cancelled":
-      return "ti-ban";
+      return "ti-circle-minus";
+    case "todo":
     default:
       return "ti-circle";
   }
