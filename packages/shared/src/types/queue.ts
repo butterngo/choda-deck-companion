@@ -12,6 +12,35 @@ export interface QueueRunSummary {
 
 export type QueueRunStatus = "running" | "finished" | "failed";
 
+/**
+ * Executor-emitted outcome strings (per choda-deck queue-lifecycle-service).
+ * Kept as a documented union; `TaskOutcome.outcome` stays `string` because
+ * companion reads JSON from an external repo where the writer can diverge.
+ */
+export type TaskOutcomeStatus = "DONE" | "FAILED" | "SKIPPED_PREFLIGHT" | "SKIPPED";
+
+export type TaskOutcomeTone = "success" | "danger" | "warning" | "muted";
+
+/**
+ * Maps an executor outcome string to a semantic tone the UI can render.
+ * Case-insensitive — older artifacts or hand-edited files may have stray casing.
+ * Unknown values fall back to `muted` (safer than throwing on display path).
+ */
+export function outcomeTone(outcome: string): TaskOutcomeTone {
+  switch (outcome.toUpperCase()) {
+    case "DONE":
+      return "success";
+    case "FAILED":
+      return "danger";
+    case "SKIPPED_PREFLIGHT":
+      return "warning";
+    case "SKIPPED":
+      return "muted";
+    default:
+      return "muted";
+  }
+}
+
 export interface TaskOutcome {
   taskId: string;
   outcome: string;

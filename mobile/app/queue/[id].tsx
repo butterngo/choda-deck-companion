@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { outcomeTone, type TaskOutcomeTone } from 'shared/types';
+
 import { MarkdownView } from '@/components/markdown-view';
 import { Fonts } from '@/constants/theme';
 import { type QueueRunDetail } from '@/lib/api';
@@ -130,10 +132,15 @@ function Metric({ label, value, mono }: { label: string; value: string; mono?: b
   );
 }
 
+const tonePaletteKey: Record<TaskOutcomeTone, keyof ReturnType<typeof usePalette>> = {
+  success: 'success',
+  danger: 'danger',
+  warning: 'warning',
+  muted: 'textMuted',
+};
+
 function outcomeColor(p: ReturnType<typeof usePalette>, outcome: string): string {
-  if (outcome === 'merged' || outcome === 'success') return p.success;
-  if (outcome === 'failed' || outcome === 'preflight-failed') return p.danger;
-  return p.textMuted;
+  return p[tonePaletteKey[outcomeTone(outcome)]];
 }
 
 const styles = StyleSheet.create({

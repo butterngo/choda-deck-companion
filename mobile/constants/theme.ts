@@ -21,6 +21,7 @@ export const Colors = {
     inProgress: '#2563eb', // blue-600
     queued: '#71717a', // zinc-500
     danger: '#dc2626', // red-600
+    warning: '#d97706', // amber-600
     cancelled: '#a1a1aa', // zinc-400
     livePulse: '#22c55e', // green-500
 
@@ -59,6 +60,7 @@ export const Colors = {
     inProgress: '#60a5fa', // blue-400
     queued: '#a1a1aa',
     danger: '#f87171', // red-400
+    warning: '#fbbf24', // amber-400
     cancelled: '#71717a',
     livePulse: '#22c55e',
 
