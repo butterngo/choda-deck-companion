@@ -54,7 +54,7 @@ export default function QueueScreen() {
 
   if (!auth) {
     return (
-      <View style={{ flex: 1, backgroundColor: p.background }}>
+      <View style={{ flex: 1, backgroundColor: p.surface }}>
         <ScreenHeader title="Queue" subtitle={subtitle} />
         <Text style={[styles.empty, { color: p.textMuted }]}>
           Configure server in settings tab.
@@ -71,7 +71,7 @@ export default function QueueScreen() {
   const hasNonDefaultFilter = statusFilter.size !== DEFAULT_QUEUE_FILTER.length;
 
   return (
-    <View style={{ flex: 1, backgroundColor: p.background }}>
+    <View style={{ flex: 1, backgroundColor: p.surface }}>
       <ScreenHeader title="Queue" subtitle={subtitle} />
 
       {activeRun ? (
@@ -172,7 +172,7 @@ function ActiveRunCard({
       onPress={onPress}
       style={[
         activeStyles.card,
-        { borderColor: p.inProgress, backgroundColor: p.surface },
+        { borderColor: p.inProgress, backgroundColor: p.surfaceRaised },
       ]}>
       <View style={activeStyles.header}>
         <View style={[activeStyles.liveDot, { backgroundColor: p.livePulse }]} />

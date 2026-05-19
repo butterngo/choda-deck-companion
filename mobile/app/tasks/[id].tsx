@@ -37,7 +37,7 @@ export default function TaskDetailScreen() {
 
   if (!auth) {
     return (
-      <View style={[styles.center, { backgroundColor: p.background }]}>
+      <View style={[styles.center, { backgroundColor: p.surface }]}>
         <Text style={{ fontSize: 13, color: p.textMuted }}>
           Configure server in settings.
         </Text>
@@ -46,14 +46,14 @@ export default function TaskDetailScreen() {
   }
   if (q.isLoading) {
     return (
-      <View style={{ flex: 1, backgroundColor: p.background }}>
+      <View style={{ flex: 1, backgroundColor: p.surface }}>
         <ActivityIndicator color={p.tint} style={{ marginTop: 30 }} />
       </View>
     );
   }
   if (q.isError || !q.data) {
     return (
-      <View style={[styles.center, { backgroundColor: p.background }]}>
+      <View style={[styles.center, { backgroundColor: p.surface }]}>
         <Text style={{ fontSize: 13, color: p.danger }}>
           Cannot read task. {String(q.error?.message ?? 'not found')}
         </Text>
@@ -115,7 +115,7 @@ export default function TaskDetailScreen() {
   };
 
   return (
-    <ScrollView style={{ backgroundColor: p.background }} contentContainerStyle={styles.body}>
+    <ScrollView style={{ backgroundColor: p.surface }} contentContainerStyle={styles.body}>
       <Text style={[styles.id, { color: p.textMuted, fontFamily: Fonts.mono }]}>{task.id}</Text>
       <Text style={[styles.title, { color: p.text }]}>{task.title ?? '(no title)'}</Text>
 
@@ -145,7 +145,7 @@ export default function TaskDetailScreen() {
       ) : null}
 
       {body ? (
-        <View style={[styles.bodyBox, { backgroundColor: p.surface, borderColor: p.border }]}>
+        <View style={[styles.bodyBox, { backgroundColor: p.surfaceRaised, borderColor: p.border }]}>
           <MarkdownView>{body}</MarkdownView>
         </View>
       ) : (

@@ -56,7 +56,7 @@ export default function InboxScreen() {
 
   if (!auth) {
     return (
-      <View style={{ flex: 1, backgroundColor: p.background }}>
+      <View style={{ flex: 1, backgroundColor: p.surface }}>
         <ScreenHeader title="Inbox" subtitle={subtitle} />
         <Text style={[styles.empty, { color: p.textMuted }]}>
           Configure server in settings tab.
@@ -66,7 +66,7 @@ export default function InboxScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: p.background }}>
+    <View style={{ flex: 1, backgroundColor: p.surface }}>
       <ScreenHeader title="Inbox" subtitle={subtitle} />
       <FilterChips options={STATUS_OPTIONS} selected={filter} onChange={setFilter} />
 

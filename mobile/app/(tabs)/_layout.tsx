@@ -16,7 +16,7 @@ export default function TabLayout() {
         tabBarActiveTintColor: palette.tabIconSelected,
         tabBarInactiveTintColor: palette.tabIconDefault,
         tabBarStyle: {
-          backgroundColor: palette.background,
+          backgroundColor: palette.surface,
           borderTopColor: palette.border,
         },
         tabBarLabelStyle: { fontWeight: '400', fontSize: 11 },

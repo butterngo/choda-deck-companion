@@ -114,7 +114,7 @@ export default function SettingsScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: p.background }}
+      style={{ flex: 1, backgroundColor: p.surface }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScreenHeader title="Settings" />
       <ScrollView contentContainerStyle={styles.body}>
@@ -249,7 +249,7 @@ export default function SettingsScreen() {
         <View
           style={[
             styles.statusBox,
-            { backgroundColor: p.surface, borderColor: p.border },
+            { backgroundColor: p.surfaceRaised, borderColor: p.border },
           ]}>
           <Text style={[styles.statusLabel, { color: p.textMuted }]}>Status</Text>
           <Text style={[styles.statusValue, { color: p.text }]}>

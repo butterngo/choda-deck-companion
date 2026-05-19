@@ -12,9 +12,9 @@ export function MarkdownView({ children }: { children: string }) {
     heading2: { color: p.text, fontSize: 17, fontWeight: '600' as const, marginTop: 14, marginBottom: 6 },
     heading3: { color: p.text, fontSize: 15, fontWeight: '600' as const, marginTop: 12, marginBottom: 4 },
     paragraph: { marginTop: 0, marginBottom: 10 },
-    link: { color: p.inProgress },
+    link: { color: p.accent },
     blockquote: {
-      backgroundColor: p.surface,
+      backgroundColor: p.surfaceRaised,
       borderLeftColor: p.border,
       borderLeftWidth: 3,
       paddingLeft: 10,
@@ -29,7 +29,7 @@ export function MarkdownView({ children }: { children: string }) {
       borderRadius: 3,
     },
     code_block: {
-      backgroundColor: p.surface,
+      backgroundColor: p.surfaceRaised,
       borderColor: p.border,
       borderWidth: 1,
       color: p.text,
@@ -39,7 +39,7 @@ export function MarkdownView({ children }: { children: string }) {
       marginVertical: 8,
     },
     fence: {
-      backgroundColor: p.surface,
+      backgroundColor: p.surfaceRaised,
       borderColor: p.border,
       borderWidth: 1,
       color: p.text,
