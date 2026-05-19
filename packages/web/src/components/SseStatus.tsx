@@ -1,7 +1,19 @@
 export type SseStatusValue = "connecting" | "open" | "closed";
 
+/**
+ * Connected → 6px emerald `.live-dot` (silent confidence per spec S1).
+ * Connecting / closed → `ti-refresh` spinning (silent retry per spec S2).
+ */
 export function SseStatus({ status }: { status: SseStatusValue }) {
-  if (status === "open") return null;
+  if (status === "open") {
+    return (
+      <span
+        className="live-dot inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"
+        title="Live event stream connected"
+        aria-label="Live event stream connected"
+      />
+    );
+  }
   const title =
     status === "connecting"
       ? "Connecting to live event stream…"
