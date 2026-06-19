@@ -8,7 +8,7 @@ out
 !packages/**/__tests__/fixtures/**/*.log
 
 CLAUDE.local.md
-.claude/settings.local.json
+.claude/
 .claude.json
 .mcp.json
 

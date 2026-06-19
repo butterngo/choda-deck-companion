@@ -1,9 +1,0 @@
-node_modules
-dist
-src/__tests__
-__spikes__
-**/*.test.ts
-vitest.config.ts
-*.tsbuildinfo
-.eslintcache
-README.md
