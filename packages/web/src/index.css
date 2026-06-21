@@ -1,0 +1,181 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* v2 design tokens — see docs/handoff-design/project/css/style.css. */
+
+@layer base {
+  :root {
+    --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    font-family: var(--font-body);
+  }
+  html,
+  body {
+    font-family: var(--font-body);
+  }
+  body {
+    font-size: 14px;
+    font-weight: 400;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  /* Only 400 + 500 used per spec. */
+  b,
+  strong,
+  .font-medium,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-weight: 500;
+  }
+  /* Tabler icon default sizing/alignment. */
+  .ti {
+    line-height: 1;
+    display: inline-flex;
+    vertical-align: middle;
+  }
+  /* Focus ring for keyboard nav — blue-600. */
+  :focus-visible {
+    outline: 2px solid rgb(37 99 235);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@layer utilities {
+  .mono {
+    font-family: var(--font-mono);
+  }
+  /* 0.5px hairline border. */
+  .hairline {
+    border-width: 0.5px;
+  }
+  /* Sticky tab strip hairline. */
+  .tabstrip-shadow {
+    box-shadow: 0 0.5px 0 0 rgb(228 228 231);
+  }
+  .dark .tabstrip-shadow {
+    box-shadow: 0 0.5px 0 0 rgb(63 63 70);
+  }
+  /* Active-run progress track. */
+  .progress-track {
+    background: rgb(244 244 245);
+  }
+  .dark .progress-track {
+    background: rgb(39 39 42);
+  }
+  /* Title truncate utility. */
+  .truncate-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Live indicator pulse — emerald. */
+  .live-dot {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
+    animation: livepulse 2.4s ease-out infinite;
+  }
+  /* Spinner used by ti-refresh + ti-progress (IN-PROGRESS status). */
+  .spin {
+    animation: spin 1.2s linear infinite;
+  }
+}
+
+@keyframes livepulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Prose tweaks for marked.js detail render. */
+.prose {
+  font-size: 14px;
+}
+.prose h1 {
+  font-size: 18px;
+  margin-top: 1.25rem;
+}
+.prose h2 {
+  font-size: 16px;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+.prose h3 {
+  font-size: 14px;
+  margin-top: 1rem;
+}
+.prose code,
+.prose pre {
+  font-family: var(--font-mono);
+}
+.prose code {
+  font-size: 13px;
+  background: rgb(244 244 245);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.dark .prose code {
+  background: rgb(39 39 42);
+}
+.prose pre {
+  background: rgb(244 244 245);
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  overflow-x: auto;
+}
+.dark .prose pre {
+  background: rgb(39 39 42);
+}
+.prose pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 13px;
+}
+.prose table {
+  width: 100%;
+  font-size: 13px;
+  border-collapse: collapse;
+}
+.prose th,
+.prose td {
+  padding: 6px 10px;
+  border-bottom: 1px solid rgb(228 228 231);
+  text-align: left;
+}
+.dark .prose th,
+.dark .prose td {
+  border-bottom-color: rgb(63 63 70);
+}
+.prose ul.contains-task-list {
+  list-style: none;
+  padding-left: 0;
+}
+.prose .ac-checkbox {
+  display: inline-block;
+  margin-right: 8px;
+  font-size: 16px;
+  color: rgb(113 113 122);
+}
+.prose .ac-checkbox.checked {
+  color: rgb(5 150 105);
+}
+.dark .prose .ac-checkbox.checked {
+  color: rgb(52 211 153);
+}
