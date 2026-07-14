@@ -24,6 +24,21 @@ export interface LedgerRow {
   tombstoned: number;
 }
 
+// One entry of the durable sync activity log — mirror of the adapter's
+// GET /sync/log events (src/adapters/companion/sync-log, backed by TASK-1214's
+// sync_events table). `at` is wall-clock epoch ms; the feed formats it as relative
+// time the way the StatusBar does for lastPullAge.
+export interface SyncEvent {
+  id: number;
+  at: number;
+  kind: "pull" | "push" | "drain" | "conflict";
+  upserted: number;
+  tombstoned: number;
+  pushed: number;
+  conflicts: number;
+  note: string | null;
+}
+
 // Result of a Pull/Push action (POST /sync/pull|push, TASK-1175). Shape is
 // permissive — the adapter may return a flat count or per-table detail.
 export interface SyncActionResult {
@@ -51,6 +66,16 @@ export function fetchHealth(signal?: AbortSignal): Promise<SyncHealth> {
 
 export function fetchLedger(signal?: AbortSignal): Promise<{ ledger: LedgerRow[] }> {
   return getJson<{ ledger: LedgerRow[] }>("/sync/ledger", signal);
+}
+
+// The sync activity feed (GET /sync/log, TASK-1215). Newest-first; the adapter
+// defaults to 50 and hard-caps at 200, so an omitted/over-large limit is safe.
+export function fetchSyncLog(
+  limit?: number,
+  signal?: AbortSignal
+): Promise<{ events: SyncEvent[] }> {
+  const qs = limit === undefined ? "" : `?limit=${limit}`;
+  return getJson<{ events: SyncEvent[] }>(`/sync/log${qs}`, signal);
 }
 
 // Pull/Push wire to the adapter's mutation endpoints (TASK-1175). They 404 until
