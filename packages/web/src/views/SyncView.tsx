@@ -6,18 +6,26 @@
 import { useOutletContext } from "react-router-dom";
 import type { HealthView } from "../hooks/use-health";
 import { useLedger } from "../hooks/use-ledger";
+import { useSyncLog } from "../hooks/use-sync-log";
 import { LedgerTable } from "../components/LedgerTable";
 import { SyncActions } from "../components/SyncActions";
+import { SyncLogFeed } from "../components/SyncLogFeed";
 
 export function SyncView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
   const ledger = useLedger();
+  const syncLog = useSyncLog();
+
+  const refetchAll = (): void => {
+    ledger.refetch();
+    syncLog.refetch();
+  };
 
   return (
     <section aria-label="sync observatory">
       <div className="flex items-center justify-between mb-3">
         <h1 className="text-lg font-medium">Sync Observatory</h1>
-        <SyncActions onDone={ledger.refetch} />
+        <SyncActions onDone={refetchAll} />
       </div>
 
       {health.conn === "disconnected" || ledger.isError ? (
@@ -33,6 +41,11 @@ export function SyncView(): React.JSX.Element {
             Counts are the laptop’s view, from each row’s sync origin + stamp.{" "}
             {health.conn === "stale" && "Possibly stale — see the status bar."}
           </p>
+          <SyncLogFeed
+            events={syncLog.events}
+            isLoading={syncLog.isLoading}
+            isError={syncLog.isError}
+          />
         </>
       )}
     </section>
