@@ -162,3 +162,88 @@ export function startWorkflowSession(
 export function endWorkflowSession(sessionId: string, resumePoint?: string): Promise<FocusSession> {
   return postJson<FocusSession>(`/sessions/${encodeURIComponent(sessionId)}/end`, { resumePoint });
 }
+
+// TASK-1174 — Knowledgebase browser. Mirrors of the adapter's knowledge/graph
+// shapes (src/adapters/companion/knowledge.ts, src/adapters/companion/graph.ts,
+// src/core/domain/knowledge-types.ts, src/core/domain/task-types.ts). Only the
+// fields the browser renders are declared here.
+export type KnowledgeType =
+  | "spike"
+  | "decision"
+  | "postmortem"
+  | "learning"
+  | "evaluation"
+  | "feature"
+  | "code_ref"
+  | "gotcha";
+
+export interface KnowledgeRefStaleness {
+  path: string;
+  commitSha: string;
+  commitsSince: number;
+}
+
+export interface KnowledgeListItem {
+  slug: string;
+  projectId: string;
+  workspaceId: string | null;
+  scope: "project" | "cross";
+  type: KnowledgeType;
+  title: string;
+  filePath: string;
+  createdAt: string;
+  lastVerifiedAt: string;
+}
+
+export interface KnowledgeEntry {
+  slug: string;
+  frontmatter: KnowledgeListItem;
+  body: string;
+  filePath: string;
+  staleness: KnowledgeRefStaleness[];
+  isStale: boolean;
+}
+
+export interface KnowledgeSearchHit extends KnowledgeListItem {
+  distance: number;
+}
+
+export interface KnowledgeSearchResult {
+  enabled: boolean;
+  reason?: string;
+  providerId?: string;
+  results: KnowledgeSearchHit[];
+}
+
+export interface GraphEdge {
+  fromId: string;
+  toId: string;
+  type: string;
+}
+
+export function fetchKnowledgeList(
+  type?: KnowledgeType,
+  signal?: AbortSignal,
+): Promise<{ entries: KnowledgeListItem[] }> {
+  const qs = type === undefined ? "" : `?type=${encodeURIComponent(type)}`;
+  return getJson<{ entries: KnowledgeListItem[] }>(`/knowledge${qs}`, signal);
+}
+
+export function fetchKnowledgeEntry(slug: string, signal?: AbortSignal): Promise<KnowledgeEntry> {
+  return getJson<KnowledgeEntry>(`/knowledge/${encodeURIComponent(slug)}`, signal);
+}
+
+export function searchKnowledgeEntries(query: string, signal?: AbortSignal): Promise<KnowledgeSearchResult> {
+  return getJson<KnowledgeSearchResult>(`/knowledge/search?q=${encodeURIComponent(query)}`, signal);
+}
+
+export function fetchGraphEdges(
+  nodeId: string,
+  direction: "out" | "in" | "both" = "both",
+  signal?: AbortSignal,
+): Promise<{ edges: GraphEdge[] }> {
+  return getJson<{ edges: GraphEdge[] }>(
+    `/graph/edges?node=${encodeURIComponent(nodeId)}&direction=${direction}`,
+    signal,
+  );
+}
