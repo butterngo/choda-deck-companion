@@ -7,6 +7,7 @@ const { app, BrowserWindow, dialog } = require("electron");
 const path = require("node:path");
 const { resolveAdapterEntry, resolveDataDir, resolveNodePath, spawnAdapter } = require("./adapter-launcher.cjs");
 const { createStaticProxyServer } = require("./static-proxy-server.cjs");
+const { configureLoginItem } = require("./login-item.cjs");
 
 // AC-6 — a second launch (or a launch while auto-started instance is already
 // running) focuses the existing window instead of spawning a second adapter
@@ -25,6 +26,8 @@ if (!app.requestSingleInstanceLock()) {
   let adapterChild = null;
 
   app.whenReady().then(async () => {
+    configureLoginItem({ app, isPackaged: app.isPackaged });
+
     const staticDir = path.join(__dirname, "..", "packages", "web", "dist");
     const entry = resolveAdapterEntry({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
     const dataDir = resolveDataDir({ isPackaged: app.isPackaged, userDataPath: app.getPath("userData") });

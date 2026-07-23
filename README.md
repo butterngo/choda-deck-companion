@@ -50,3 +50,17 @@ Installing over an existing install upgrades in place (NSIS `oneClick`);
 uninstalling does **not** delete `CHODA_DATA_DIR`
 (`nsis.deleteAppDataOnUninstall: false`), which in a packaged build defaults
 to `<userData>/data` — the SQLite DB and its contents survive an uninstall.
+
+## Auto-start at login (TASK-1439)
+
+Packaged builds register a per-user Windows login item
+(`app.setLoginItemSettings`, `electron/login-item.cjs`) on every launch —
+same mechanism english-companion already uses, not the Task Scheduler
+`AtLogOn` trigger the standalone adapter service used. Registered under the
+name `Choda Companion`; visible and independently toggleable in Windows
+Settings → Startup Apps. Dev runs never register (`app.isPackaged` guard) —
+otherwise every `pnpm run electron:dev` would auto-start `electron.exe .`.
+
+Uninstalling removes the Run-key entry via a custom NSIS uninstall macro
+(`build/installer.nsh`) — Electron's own login-item API only sets/reads state
+at runtime, so without this the uninstaller wouldn't know to clean it up.
