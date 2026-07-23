@@ -83,3 +83,33 @@ it, electron-builder's default NSIS filename includes spaces
 (`productName`), while `latest.yml`'s asset reference does not, so every real
 auto-update would 404 downloading the new version. Caught by actually
 building the installer and diffing the two filenames, not by inspection.
+
+## Cutting a release (TASK-1441) — `pnpm run dist:publish`
+
+1. Bump `version` in `package.json` (semver). No pre-release/draft staging in
+   v1 — `--publish always` publishes the GitHub Release immediately and every
+   installed client with a token picks it up within the next 4h poll (or
+   sooner if the app is relaunched). Revisit if staged rollout is ever needed.
+2. Authenticate electron-builder's publish step — it needs a `GH_TOKEN` (or
+   `GITHUB_TOKEN`) env var with `repo` scope for `butterngo/choda-deck-companion`
+   at publish time (separate concern from the *installed app's* own
+   `gh-token.txt`, which is read-only and used only to check for updates).
+3. Run `pnpm run dist:publish`. This builds, vendors the adapter, packages,
+   and uploads the installer + `latest.yml` to a new GitHub Release in one
+   step.
+4. Verify the release landed:
+   `gh release view v<version> --repo butterngo/choda-deck-companion`.
+
+### Recovery from a failed/partial publish
+
+A network drop mid-upload can leave a GitHub Release with a missing or
+inconsistent `latest.yml` — every installed client's updater would then
+either see nothing new or fetch a broken artifact set. Recovery:
+
+1. `gh release delete v<version> --repo butterngo/choda-deck-companion --yes`
+   (delete the incomplete release; this does **not** touch any other
+   version or any installed client — nothing auto-updates from a deleted
+   release, they just keep polling and find nothing new).
+2. Re-run `pnpm run dist:publish` for the same version. electron-builder
+   regenerates and re-uploads both the installer and `latest.yml` together,
+   so a clean re-publish can't leave the same partial state twice.
