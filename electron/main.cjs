@@ -8,6 +8,7 @@ const path = require("node:path");
 const { resolveAdapterEntry, resolveDataDir, resolveNodePath, spawnAdapter } = require("./adapter-launcher.cjs");
 const { createStaticProxyServer } = require("./static-proxy-server.cjs");
 const { configureLoginItem } = require("./login-item.cjs");
+const { initUpdater } = require("./updater.cjs");
 
 // AC-6 — a second launch (or a launch while auto-started instance is already
 // running) focuses the existing window instead of spawning a second adapter
@@ -69,6 +70,18 @@ if (!app.requestSingleInstanceLock()) {
     app.on("before-quit", () => {
       adapterChild?.kill();
     });
+
+    // Auto-update (private GitHub Releases). Packaged builds only — dev runs
+    // have no app-update.yml and would just error immediately. Silent no-op
+    // without a token (see updater.cjs) or in dev.
+    if (app.isPackaged) {
+      const { autoUpdater } = require("electron-updater");
+      initUpdater({
+        autoUpdater,
+        userDataDir: app.getPath("userData"),
+        onUpdateReady: () => {}, // no tray/notification surface yet — installs on next quit regardless
+      });
+    }
   });
 
   app.on("window-all-closed", () => {

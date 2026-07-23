@@ -64,3 +64,22 @@ otherwise every `pnpm run electron:dev` would auto-start `electron.exe .`.
 Uninstalling removes the Run-key entry via a custom NSIS uninstall macro
 (`build/installer.nsh`) — Electron's own login-item API only sets/reads state
 at runtime, so without this the uninstaller wouldn't know to clean it up.
+
+## Auto-update (TASK-1440)
+
+Packaged builds poll a **private GitHub Releases** feed
+(`butterngo/choda-deck-companion`) every 4h via `electron-updater`
+(`electron/updater.cjs`, ported near-verbatim from english-companion's own
+`updater.cjs`). Needs a token at `%APPDATA%/choda-companion/gh-token.txt` or
+`GH_TOKEN` env — silently disabled without one, never a crash.
+
+Test override: `CHODA_UPDATE_FEED_URL` points the updater at a plain static
+file server (serving `release/latest.yml` + the installer) instead of GitHub,
+for testing the check → download flow without a token.
+
+`nsis.artifactName` is set explicitly
+(`choda-companion-setup-${version}.${ext}`) — **do not remove this.** Without
+it, electron-builder's default NSIS filename includes spaces
+(`productName`), while `latest.yml`'s asset reference does not, so every real
+auto-update would 404 downloading the new version. Caught by actually
+building the installer and diffing the two filenames, not by inspection.
