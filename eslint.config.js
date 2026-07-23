@@ -3,7 +3,16 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["**/dist/**", "**/dist-types/**", "**/node_modules/**", "**/out/**"] },
+  {
+    ignores: [
+      "**/dist/**",
+      "**/dist-types/**",
+      "**/node_modules/**",
+      "**/out/**",
+      "release/**",
+      "electron/vendor/**",
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -13,6 +22,13 @@ export default tseslint.config(
     },
     rules: {
       "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+    },
+  },
+  // TASK-1438 — build-time node scripts (vendor-adapter.mjs etc.)
+  {
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: { ...globals.node },
     },
   },
   // TASK-1437 — electron/ is plain CommonJS (electron-builder/main-process

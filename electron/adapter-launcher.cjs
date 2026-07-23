@@ -22,6 +22,19 @@ function resolveAdapterEntry({ isPackaged, resourcesPath, env = process.env } = 
   return path.resolve(__dirname, "..", "..", "choda-deck", "dist", "companion-server.cjs");
 }
 
+// The vendored adapter's require('better-sqlite3') needs its native module
+// resolvable — vendor-adapter.mjs copies it to <resources>/adapter/deps (NOT
+// node_modules: electron-builder's extraResources file-matcher silently drops
+// any nested `node_modules` dir, so the vendored copy is deliberately named
+// something else), so NODE_PATH must point there in packaged mode. In dev the
+// sibling choda-deck checkout already has its own node_modules, so no
+// override is needed (Node resolves it via the entry's own directory).
+function resolveNodePath({ isPackaged, resourcesPath, env = process.env } = {}) {
+  if (env.CHODA_ADAPTER_NODE_PATH) return path.resolve(env.CHODA_ADAPTER_NODE_PATH);
+  if (isPackaged) return path.join(resourcesPath, "adapter", "deps");
+  return undefined;
+}
+
 // Dev: no override — the adapter falls back to its own `<cwd>/data` default,
 // same as running it standalone today. Packaged: a per-app-install data dir
 // under Electron's userData, so it survives updates and (per TASK-1438 AC-6)
@@ -43,12 +56,13 @@ class AdapterBootError extends Error {
 // Spawns the adapter and resolves { child, port } once its boot line appears
 // on stderr, or rejects with AdapterBootError if it exits/times out first —
 // the caller (main.cjs) turns that into the visible error state (AC-7).
-function spawnAdapter({ entry, dataDir, port = "0", env = process.env, spawnFn = spawn } = {}) {
+function spawnAdapter({ entry, dataDir, nodePath, port = "0", env = process.env, spawnFn = spawn } = {}) {
   const child = spawnFn(process.execPath, [entry], {
     env: {
       ...env,
       CHODA_COMPANION_PORT: String(port),
       ...(dataDir ? { CHODA_DATA_DIR: dataDir } : {}),
+      ...(nodePath ? { NODE_PATH: nodePath } : {}),
     },
     windowsHide: true,
   });
@@ -89,4 +103,4 @@ function spawnAdapter({ entry, dataDir, port = "0", env = process.env, spawnFn =
   return { child, portPromise };
 }
 
-module.exports = { resolveAdapterEntry, resolveDataDir, spawnAdapter, AdapterBootError, LISTEN_LINE };
+module.exports = { resolveAdapterEntry, resolveDataDir, resolveNodePath, spawnAdapter, AdapterBootError, LISTEN_LINE };

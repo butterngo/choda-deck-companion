@@ -2,6 +2,11 @@ node_modules
 dist
 dist-types
 out
+release
+
+# TASK-1438 — vendored adapter copy (scripts/vendor-adapter.mjs), a build
+# artifact of the sibling choda-deck checkout, not source.
+electron/vendor/
 .DS_Store
 .eslintcache
 *.log*

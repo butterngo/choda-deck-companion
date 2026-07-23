@@ -13,14 +13,52 @@
     "dev": "pnpm --filter web dev",
     "build": "pnpm --filter web build",
     "electron:dev": "pnpm run build && electron .",
+    "vendor:adapter": "node scripts/vendor-adapter.mjs",
+    "dist": "pnpm run build && pnpm run vendor:adapter && electron-builder --win",
     "test": "pnpm -r --filter=./packages/* run test && vitest run -c electron/vitest.config.cjs",
     "typecheck": "pnpm -r --filter=./packages/* run typecheck",
     "lint": "eslint ."
+  },
+  "build": {
+    "appId": "com.butter.choda-companion",
+    "productName": "Choda Companion",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**",
+      "!electron/*.test.cjs",
+      "!electron/vitest.config.cjs",
+      "!electron/vendor/**",
+      "packages/web/dist/**",
+      "public/icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "electron/vendor",
+        "to": "adapter",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "butterngo",
+      "repo": "choda-deck-companion"
+    }
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
     "@types/node": "^22.10.0",
     "electron": "^42.4.1",
+    "electron-builder": "^26.15.3",
     "eslint": "^9.18.0",
     "globals": "^15.14.0",
     "typescript": "^5.7.0",

@@ -1,6 +1,6 @@
 const path = require("node:path");
 const { EventEmitter } = require("node:events");
-const { resolveAdapterEntry, resolveDataDir, spawnAdapter, AdapterBootError } = require("./adapter-launcher.cjs");
+const { resolveAdapterEntry, resolveDataDir, resolveNodePath, spawnAdapter, AdapterBootError } = require("./adapter-launcher.cjs");
 
 describe("resolveAdapterEntry", () => {
   it("prefers CHODA_ADAPTER_ENTRY when set (dev/test override)", () => {
@@ -32,6 +32,24 @@ describe("resolveDataDir", () => {
 
   it("returns undefined in dev with no override (adapter falls back to its own default)", () => {
     expect(resolveDataDir({ isPackaged: false, userDataPath: "C:/u", env: {} })).toBeUndefined();
+  });
+});
+
+describe("resolveNodePath", () => {
+  it("prefers CHODA_ADAPTER_NODE_PATH when set", () => {
+    expect(resolveNodePath({ isPackaged: true, resourcesPath: "C:/app/resources", env: { CHODA_ADAPTER_NODE_PATH: "C:/x" } })).toBe(
+      path.resolve("C:/x"),
+    );
+  });
+
+  it("points at the vendored deps dir when packaged (not node_modules — electron-builder drops that)", () => {
+    expect(resolveNodePath({ isPackaged: true, resourcesPath: "C:/app/resources", env: {} })).toBe(
+      path.join("C:/app/resources", "adapter", "deps"),
+    );
+  });
+
+  it("returns undefined in dev with no override (sibling repo resolves its own deps)", () => {
+    expect(resolveNodePath({ isPackaged: false, resourcesPath: "C:/app/resources", env: {} })).toBeUndefined();
   });
 });
 

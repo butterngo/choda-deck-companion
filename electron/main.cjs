@@ -5,7 +5,7 @@
 
 const { app, BrowserWindow, dialog } = require("electron");
 const path = require("node:path");
-const { resolveAdapterEntry, resolveDataDir, spawnAdapter } = require("./adapter-launcher.cjs");
+const { resolveAdapterEntry, resolveDataDir, resolveNodePath, spawnAdapter } = require("./adapter-launcher.cjs");
 const { createStaticProxyServer } = require("./static-proxy-server.cjs");
 
 // AC-6 — a second launch (or a launch while auto-started instance is already
@@ -28,10 +28,11 @@ if (!app.requestSingleInstanceLock()) {
     const staticDir = path.join(__dirname, "..", "packages", "web", "dist");
     const entry = resolveAdapterEntry({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
     const dataDir = resolveDataDir({ isPackaged: app.isPackaged, userDataPath: app.getPath("userData") });
+    const nodePath = resolveNodePath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
 
     let apiPort;
     try {
-      const { child, portPromise } = spawnAdapter({ entry, dataDir });
+      const { child, portPromise } = spawnAdapter({ entry, dataDir, nodePath });
       adapterChild = child;
       apiPort = await portPromise;
     } catch (err) {
