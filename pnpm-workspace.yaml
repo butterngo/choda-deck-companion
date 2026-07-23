@@ -4,5 +4,6 @@ packages:
 # esbuild ships prebuilt binaries via its postinstall — needed by vite + vitest's
 # transformer. Trusted: pinned versions from pnpm-lock.yaml.
 allowBuilds:
+  electron: true
   electron-winstaller: true
   esbuild: true
