@@ -11,6 +11,7 @@ import { useInbox } from "../hooks/use-inbox";
 import { FocusBoard } from "../components/FocusBoard";
 import { InboxTriage } from "../components/InboxTriage";
 import { WorkflowActions } from "../components/WorkflowActions";
+import { WorkspaceSelect } from "../components/WorkspaceSelect";
 
 export function CockpitView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
@@ -31,7 +32,7 @@ export function CockpitView(): React.JSX.Element {
       </div>
 
       {workspaceId === null ? (
-        <WorkspacePrompt onSubmit={setWorkspaceId} />
+        <WorkspaceSelect onSubmit={setWorkspaceId} />
       ) : health.conn === "disconnected" || focus.isError ? (
         <p role="alert" className="text-sm text-rose-700 dark:text-rose-400">
           Can’t reach the laptop API — the board is unavailable. (Not “nothing to do”.)
@@ -49,32 +50,5 @@ export function CockpitView(): React.JSX.Element {
         </>
       )}
     </section>
-  );
-}
-
-function WorkspacePrompt({ onSubmit }: { onSubmit: (id: string) => void }): React.JSX.Element {
-  return (
-    <form
-      className="flex items-center gap-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const input = e.currentTarget.elements.namedItem("workspaceId") as HTMLInputElement;
-        onSubmit(input.value);
-      }}
-    >
-      <label htmlFor="workspaceId" className="text-sm text-zinc-500">
-        Workspace id:
-      </label>
-      <input
-        id="workspaceId"
-        name="workspaceId"
-        type="text"
-        placeholder="choda-deck-companion"
-        className="px-2 py-1.5 rounded-md text-sm border border-zinc-300 dark:border-zinc-700 bg-transparent"
-      />
-      <button type="submit" className="px-3 py-1.5 rounded-md text-sm bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700">
-        Load
-      </button>
-    </form>
   );
 }
