@@ -247,3 +247,18 @@ export function fetchGraphEdges(
     signal,
   );
 }
+
+// TASK-1465 — mirror of the adapter's GET /workspaces (src/adapters/companion,
+// fans out over listProjects()/findWorkspaces()). Lets the Cockpit offer a
+// real dropdown instead of a manual workspaceId text-entry box.
+export interface Workspace {
+  id: string;
+  projectId: string;
+  label: string;
+  cwd: string;
+  archivedAt: string | null;
+}
+
+export function fetchWorkspaces(signal?: AbortSignal): Promise<{ workspaces: Workspace[] }> {
+  return getJson<{ workspaces: Workspace[] }>("/workspaces", signal);
+}
