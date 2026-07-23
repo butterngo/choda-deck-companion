@@ -63,6 +63,14 @@ function spawnAdapter({ entry, dataDir, nodePath, port = "0", env = process.env,
       CHODA_COMPANION_PORT: String(port),
       ...(dataDir ? { CHODA_DATA_DIR: dataDir } : {}),
       ...(nodePath ? { NODE_PATH: nodePath } : {}),
+      // process.execPath is the ELECTRON binary in a packaged app, not plain
+      // node — without this, spawning it just launches a second Electron
+      // instance (which quits immediately, exit code 0) instead of running
+      // `entry` as a script. Harmless/no-op when execPath really is node
+      // (dev, tests). Real bug found via an actual install, not testing —
+      // this env var name is Electron's own documented mechanism for
+      // exactly this ("run this script with Node, not as an app").
+      ELECTRON_RUN_AS_NODE: "1",
     },
     windowsHide: true,
   });

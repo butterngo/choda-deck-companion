@@ -92,4 +92,12 @@ describe("spawnAdapter", () => {
     const [, , opts] = spawnFn.mock.calls[0];
     expect(opts.env.CHODA_COMPANION_PORT).toBe("0");
   });
+
+  it("sets ELECTRON_RUN_AS_NODE=1 — without it, spawning process.execPath in a packaged app launches a second Electron instance instead of running the script (found via a real install: 'adapter exited during boot (code 0)')", () => {
+    const child = fakeChild();
+    const spawnFn = vi.fn(() => child);
+    spawnAdapter({ entry: "x.cjs", spawnFn, env: {} });
+    const [, , opts] = spawnFn.mock.calls[0];
+    expect(opts.env.ELECTRON_RUN_AS_NODE).toBe("1");
+  });
 });
