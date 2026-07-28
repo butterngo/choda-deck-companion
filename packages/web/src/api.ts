@@ -248,6 +248,27 @@ export function fetchGraphEdges(
   );
 }
 
+// TASK-1444 — the full-graph read (TASK-1443): GET /graph/edges with no `node`
+// but a `projectId` returns every node in the project (tasks + knowledge + code
+// refs) plus every edge whose endpoints are both in that set. Feeds the visual
+// GraphView. Node `type` is the coarse 3-way the adapter carries — the SVG view
+// colors by it (src/adapters/companion/graph.ts collectProjectNodes).
+export type GraphNodeType = "task" | "knowledge" | "code_ref";
+
+export interface GraphNode {
+  id: string;
+  type: GraphNodeType;
+}
+
+export interface FullGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export function fetchFullGraph(projectId: string, signal?: AbortSignal): Promise<FullGraph> {
+  return getJson<FullGraph>(`/graph/edges?projectId=${encodeURIComponent(projectId)}`, signal);
+}
+
 // TASK-1465 — mirror of the adapter's GET /workspaces (src/adapters/companion,
 // fans out over listProjects()/findWorkspaces()). Lets the Cockpit offer a
 // real dropdown instead of a manual workspaceId text-entry box.
