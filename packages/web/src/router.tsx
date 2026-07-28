@@ -6,6 +6,7 @@ import { Shell } from "./layouts/Shell";
 import { SyncView } from "./views/SyncView";
 import { CockpitView } from "./views/CockpitView";
 import { KnowledgeView } from "./views/KnowledgeView";
+import { GraphboardView } from "./views/GraphboardView";
 
 export const router = createHashRouter([
   {
@@ -16,6 +17,7 @@ export const router = createHashRouter([
       { path: "sync", element: <SyncView /> },
       { path: "cockpit", element: <CockpitView /> },
       { path: "knowledge", element: <KnowledgeView /> },
+      { path: "graph", element: <GraphboardView /> },
       { path: "*", element: <Navigate to="/sync" replace /> },
     ],
   },
