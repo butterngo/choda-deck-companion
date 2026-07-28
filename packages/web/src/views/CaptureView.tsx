@@ -9,20 +9,35 @@ import {
   readImageFileAsDataUrl,
 } from "../lib/capture";
 import { CapturePreview } from "../components/CapturePreview";
+import { CaptureRegion } from "../components/CaptureRegion";
+
+// idle → (screen capture) region → preview ; file share jumps straight to preview.
+type Stage = "idle" | "region" | "preview";
 
 export function CaptureView(): React.JSX.Element {
+  const [stage, setStage] = useState<Stage>("idle");
+  const [raw, setRaw] = useState<string | null>(null);
   const [dataUrl, setDataUrl] = useState<string | null>(null);
   const [filename, setFilename] = useState("choda-capture.png");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const reset = (): void => {
+    setStage("idle");
+    setRaw(null);
+    setDataUrl(null);
+    setError(null);
+  };
+
   const capture = async (): Promise<void> => {
     setBusy(true);
     setError(null);
     try {
-      const url = await captureScreenshotDataUrl();
-      setDataUrl(url);
+      // Snipping-Tool style: grab the whole screen, then let the user snip a
+      // region (CaptureRegion) before saving.
+      setRaw(await captureScreenshotDataUrl());
       setFilename(captureFilename(new Date()));
+      setStage("region");
     } catch (e) {
       // Rejection is normal if the user cancels the picker or capture isn't
       // granted (plain browser) — surface it, don't crash.
@@ -38,6 +53,7 @@ export function CaptureView(): React.JSX.Element {
     try {
       setDataUrl(await readImageFileAsDataUrl(file));
       setFilename(file.name || "shared-image.png");
+      setStage("preview");
     } catch (e) {
       setError(e instanceof Error ? e.message : "couldn’t read the image");
     }
@@ -73,13 +89,22 @@ export function CaptureView(): React.JSX.Element {
         </p>
       )}
 
-      {dataUrl === null ? (
-        <p className="text-sm text-zinc-500">
-          Capture the screen or share an image, then save it to disk or copy it to the clipboard.
-          Screen capture is granted inside the Choda Companion app.
-        </p>
+      {stage === "region" && raw !== null ? (
+        <CaptureRegion
+          src={raw}
+          onCropped={(url) => {
+            setDataUrl(url);
+            setStage("preview");
+          }}
+        />
+      ) : stage === "preview" && dataUrl !== null ? (
+        <CapturePreview dataUrl={dataUrl} filename={filename} onClear={reset} />
       ) : (
-        <CapturePreview dataUrl={dataUrl} filename={filename} onClear={() => setDataUrl(null)} />
+        <p className="text-sm text-zinc-500">
+          Capture the screen (then snip a region, Snipping-Tool style) or share an image, then save
+          it to disk or copy it to the clipboard. Screen capture is granted inside the Choda
+          Companion app.
+        </p>
       )}
     </section>
   );

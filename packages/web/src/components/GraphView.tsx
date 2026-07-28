@@ -76,6 +76,7 @@ export function GraphView({ nodes, edges, maxNodes = GRAPH_NODE_CEILING }: Graph
 
   const [view, setView] = useState<View>({ x: 0, y: 0, k: 1 });
   const [hoveredEdge, setHoveredEdge] = useState<number | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const pan = useRef<{ px: number; py: number; ox: number; oy: number } | null>(null);
 
@@ -128,6 +129,20 @@ export function GraphView({ nodes, edges, maxNodes = GRAPH_NODE_CEILING }: Graph
   const zoom = (factor: number): void => setView((v) => ({ ...v, k: v.k * factor }));
   const reset = (): void => setView({ x: 0, y: 0, k: 1 });
 
+  // AC-4 (extended) — click a node to inspect it: its type + every edge it
+  // participates in, with direction. Neighbors come from the already-loaded
+  // full-graph edges, so no extra fetch.
+  const neighbors =
+    selected === null
+      ? []
+      : drawEdges
+          .filter((e) => e.fromId === selected || e.toId === selected)
+          .map((e) => ({
+            other: e.fromId === selected ? e.toId : e.fromId,
+            type: e.type,
+            dir: e.fromId === selected ? ("out" as const) : ("in" as const),
+          }));
+
   return (
     <div className="flex flex-col gap-2">
       {capped && (
@@ -150,11 +165,12 @@ export function GraphView({ nodes, edges, maxNodes = GRAPH_NODE_CEILING }: Graph
         </span>
       </div>
 
+      <div className="flex gap-2 h-[calc(100vh-12rem)] min-h-[420px]">
       <svg
         ref={svgRef}
         aria-label="knowledge graph"
         viewBox={`0 0 ${DEFAULT_LAYOUT.width} ${DEFAULT_LAYOUT.height}`}
-        className="h-[480px] w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 touch-none cursor-grab"
+        className="h-full flex-1 rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 touch-none cursor-grab"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -191,9 +207,23 @@ export function GraphView({ nodes, edges, maxNodes = GRAPH_NODE_CEILING }: Graph
               const type = typeById.get(id) ?? ("task" as GraphNodeType);
               const r = 5 + Math.min(7, degree.get(id) ?? 0);
               const label = id.length > 26 ? `${id.slice(0, 25)}…` : id;
+              const isSel = selected === id;
               return (
-                <g key={id} data-node data-node-id={id} transform={`translate(${p.x} ${p.y})`}>
-                  <circle r={r} fill={nodeColor(type)} stroke="currentColor" strokeWidth={1} className="text-zinc-50 dark:text-zinc-900">
+                <g
+                  key={id}
+                  data-node
+                  data-node-id={id}
+                  transform={`translate(${p.x} ${p.y})`}
+                  style={{ cursor: "pointer" }}
+                  onClick={() => setSelected(id)}
+                >
+                  <circle
+                    r={isSel ? r + 2 : r}
+                    fill={nodeColor(type)}
+                    stroke={isSel ? "#2563eb" : "currentColor"}
+                    strokeWidth={isSel ? 3 : 1}
+                    className={isSel ? "" : "text-zinc-50 dark:text-zinc-900"}
+                  >
                     <title>{`${NODE_LABEL[type]}: ${id}`}</title>
                   </circle>
                   <text x={r + 3} y={4} className="fill-zinc-600 dark:fill-zinc-300" style={{ fontSize: 10, pointerEvents: "none" }}>
@@ -210,6 +240,48 @@ export function GraphView({ nodes, edges, maxNodes = GRAPH_NODE_CEILING }: Graph
           </text>
         )}
       </svg>
+
+      {selected !== null && (
+        <aside
+          aria-label="node detail"
+          className="w-72 shrink-0 overflow-y-auto rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3 text-sm"
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="font-mono text-xs text-zinc-400">
+                {NODE_LABEL[typeById.get(selected) ?? ("task" as GraphNodeType)]}
+              </div>
+              <div className="font-medium break-all">{selected}</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelected(null)}
+              className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+              aria-label="close detail"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="mt-3 text-xs font-medium uppercase tracking-wide text-zinc-400">
+            {neighbors.length} connection{neighbors.length === 1 ? "" : "s"}
+          </div>
+          <ul className="mt-1 flex flex-col gap-1">
+            {neighbors.map((n, i) => (
+              <li key={`${n.other}-${n.type}-${i}`}>
+                <button
+                  type="button"
+                  onClick={() => setSelected(n.other)}
+                  className="w-full text-left rounded px-1.5 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                >
+                  <span className="text-zinc-400">{n.type.toLowerCase()} {n.dir === "out" ? "→" : "←"}</span>{" "}
+                  <span className="break-all">{n.other}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </aside>
+      )}
+      </div>
     </div>
   );
 }

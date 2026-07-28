@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { GraphView } from "../GraphView";
 import type { GraphEdge, GraphNode } from "../../api";
 
@@ -42,5 +42,16 @@ describe("GraphView", () => {
     // TASK-1 (deg 2) + TASK-2 (deg 2) are the most-connected → kept.
     expect(container.querySelectorAll("[data-node]")).toHaveLength(2);
     expect(screen.getByRole("alert")).toHaveTextContent(/showing the 2 most-connected of 4/i);
+  });
+
+  it("clicking a node opens a detail panel listing its connections", () => {
+    const { container } = render(<GraphView nodes={nodes} edges={edges} />);
+    const node = container.querySelector('[data-node-id="TASK-1"]') as SVGGElement;
+    fireEvent.click(node);
+    const panel = screen.getByLabelText("node detail");
+    expect(panel).toHaveTextContent("TASK-1");
+    // TASK-1 connects to TASK-2 and ref-x.
+    expect(panel).toHaveTextContent("TASK-2");
+    expect(panel).toHaveTextContent("ref-x");
   });
 });
