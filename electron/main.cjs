@@ -3,7 +3,7 @@
 // server (see static-proxy-server.cjs for why), and opens one window. No
 // changes to the adapter (choda-deck repo) or packages/web's own source.
 
-const { app, BrowserWindow, dialog, Menu, Tray, Notification, nativeImage } = require("electron");
+const { app, BrowserWindow, dialog, Menu, Tray, Notification, nativeImage, session, desktopCapturer } = require("electron");
 const path = require("node:path");
 const { resolveAdapterEntry, resolveDataDir, resolveNodePath, spawnAdapter } = require("./adapter-launcher.cjs");
 const { createStaticProxyServer } = require("./static-proxy-server.cjs");
@@ -71,6 +71,20 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(async () => {
     configureLoginItem({ app, isPackaged: app.isPackaged });
+
+    // TASK-1494 — screen capture. Electron ships no built-in screen picker, so a
+    // renderer getDisplayMedia() call rejects unless we handle the request here.
+    // Grant the primary screen (video only — this is a screenshot, no audio).
+    // Same pattern as english-companion's Watch tab.
+    session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+      desktopCapturer
+        .getSources({ types: ["screen"] })
+        .then((sources) => {
+          if (!sources.length) return callback(); // no source → reject cleanly
+          callback({ video: sources[0] });
+        })
+        .catch(() => callback());
+    });
 
     const staticDir = path.join(__dirname, "..", "packages", "web", "dist");
     const entry = resolveAdapterEntry({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });

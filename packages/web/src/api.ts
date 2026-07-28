@@ -283,3 +283,28 @@ export interface Workspace {
 export function fetchWorkspaces(signal?: AbortSignal): Promise<{ workspaces: Workspace[] }> {
   return getJson<{ workspaces: Workspace[] }>("/workspaces", signal);
 }
+
+// TASK-1493 — cross-project search (GET /search?q=). Mirror of the adapter's
+// search route (src/adapters/companion/search.ts): task-title + knowledge hits
+// across ALL projects, each tagged with projectId. `knowledgeEnabled` is false
+// when the adapter's embedding search is degraded (packaged app) — surfaced so
+// the UI can say so rather than imply "no knowledge matches".
+export interface SearchHit {
+  kind: "task" | "knowledge";
+  id: string;
+  title: string;
+  projectId: string;
+  status?: string;
+}
+
+export interface SearchResult {
+  query: string;
+  tasks: SearchHit[];
+  knowledge: SearchHit[];
+  knowledgeEnabled: boolean;
+  knowledgeReason: string | null;
+}
+
+export function fetchSearch(q: string, signal?: AbortSignal): Promise<SearchResult> {
+  return getJson<SearchResult>(`/search?q=${encodeURIComponent(q)}`, signal);
+}
