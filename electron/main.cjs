@@ -3,12 +3,59 @@
 // server (see static-proxy-server.cjs for why), and opens one window. No
 // changes to the adapter (choda-deck repo) or packages/web's own source.
 
-const { app, BrowserWindow, dialog } = require("electron");
+const { app, BrowserWindow, dialog, Menu, Tray, Notification, nativeImage } = require("electron");
 const path = require("node:path");
 const { resolveAdapterEntry, resolveDataDir, resolveNodePath, spawnAdapter } = require("./adapter-launcher.cjs");
 const { createStaticProxyServer } = require("./static-proxy-server.cjs");
 const { configureLoginItem } = require("./login-item.cjs");
 const { initUpdater } = require("./updater.cjs");
+
+// PNG works for the window + tray; packaged builds also bake the .ico into the
+// exe via electron-builder. Same asset english-companion uses for its tray.
+const appIcon = nativeImage.createFromPath(path.join(__dirname, "..", "public", "icon.png"));
+
+// Set once initUpdater runs (packaged + token present); the tray grows a
+// "Restart to update" entry when a new version has been downloaded — mirrors
+// english-companion's update surface.
+let tray = null;
+let updater = null;
+
+function showWindow() {
+  const [win] = BrowserWindow.getAllWindows();
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+// The tray only carries the update affordance here (no close-to-tray) — closing
+// the last window still quits, same as before. The "Restart to update to vX"
+// item appears once an update has downloaded, exactly like english-companion.
+function setTrayMenu(updateVersion) {
+  if (!tray) return;
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "Open Choda Companion", click: () => showWindow() },
+      ...(updateVersion
+        ? [
+            {
+              label: `Restart to update to v${updateVersion}`,
+              click: () => updater?.quitAndInstall(),
+            },
+          ]
+        : []),
+      { type: "separator" },
+      { label: "Quit", click: () => app.quit() },
+    ]),
+  );
+}
+
+function createTray() {
+  tray = new Tray(appIcon.resize({ width: 16, height: 16 }));
+  tray.setToolTip("Choda Companion");
+  setTrayMenu(null);
+  tray.on("click", () => showWindow());
+}
 
 // AC-6 — a second launch (or a launch while auto-started instance is already
 // running) focuses the existing window instead of spawning a second adapter
@@ -17,11 +64,7 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    const [win] = BrowserWindow.getAllWindows();
-    if (!win) return;
-    if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
+    showWindow();
   });
 
   let adapterChild = null;
@@ -57,6 +100,7 @@ if (!app.requestSingleInstanceLock()) {
       const win = new BrowserWindow({
         width: 1280,
         height: 800,
+        icon: appIcon,
         webPreferences: {
           // NFR Security — no devtools/remote debugging surface in production.
           devTools: !app.isPackaged,
@@ -65,6 +109,7 @@ if (!app.requestSingleInstanceLock()) {
         },
       });
       win.loadURL(`http://127.0.0.1:${uiPort}/`);
+      createTray();
     });
 
     app.on("before-quit", () => {
@@ -76,10 +121,20 @@ if (!app.requestSingleInstanceLock()) {
     // without a token (see updater.cjs) or in dev.
     if (app.isPackaged) {
       const { autoUpdater } = require("electron-updater");
-      initUpdater({
+      updater = initUpdater({
         autoUpdater,
         userDataDir: app.getPath("userData"),
-        onUpdateReady: () => {}, // no tray/notification surface yet — installs on next quit regardless
+        // Same surface as english-companion: a desktop notification + a
+        // "Restart to update to vX" tray item. Falls back to install-on-quit if
+        // the user ignores both (autoInstallOnAppQuit in updater.cjs).
+        onUpdateReady: (info) => {
+          setTrayMenu(info.version);
+          new Notification({
+            title: "Choda Companion update ready",
+            body: `v${info.version} downloaded — restart from the tray menu to install.`,
+            icon: appIcon,
+          }).show();
+        },
       });
     }
   });
