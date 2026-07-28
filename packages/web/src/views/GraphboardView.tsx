@@ -4,7 +4,7 @@
 // disconnected/stale treatment as Sync / Cockpit / Knowledge — never a
 // fake-live graph when the API is down.
 
-import { useOutletContext } from "react-router-dom";
+import { useOutletContext, useSearchParams } from "react-router-dom";
 import type { HealthView } from "../hooks/use-health";
 import { useWorkspace } from "../hooks/use-workspace";
 import { useWorkspaces } from "../hooks/use-workspaces";
@@ -14,10 +14,16 @@ import { WorkspaceSelect } from "../components/WorkspaceSelect";
 
 export function GraphboardView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
+  const [searchParams] = useSearchParams();
   const { workspaceId, setWorkspaceId } = useWorkspace();
   const { workspaces } = useWorkspaces();
-  // The graph is scoped by project; a workspace resolves to exactly one project.
-  const projectId = workspaces.find((w) => w.id === workspaceId)?.projectId ?? null;
+  // Search deep-links here with ?project=&node= to open a specific node's graph
+  // (TASK-1493 → Graph). An explicit project query wins over the workspace pick
+  // so a search hit lands even before a workspace is chosen.
+  const projectFromQuery = searchParams.get("project");
+  const focusNode = searchParams.get("node");
+  const projectId =
+    projectFromQuery ?? workspaces.find((w) => w.id === workspaceId)?.projectId ?? null;
   const graph = useFullGraph(projectId);
 
   return (
@@ -27,7 +33,7 @@ export function GraphboardView(): React.JSX.Element {
         {projectId && <span className="text-xs text-zinc-400">project: {projectId}</span>}
       </div>
 
-      {workspaceId === null ? (
+      {workspaceId === null && !projectFromQuery ? (
         <WorkspaceSelect onSubmit={setWorkspaceId} />
       ) : health.conn === "disconnected" || graph.isError ? (
         <p role="alert" className="text-sm text-rose-700 dark:text-rose-400">
@@ -37,7 +43,7 @@ export function GraphboardView(): React.JSX.Element {
         <p className="text-sm text-zinc-500">Loading graph…</p>
       ) : (
         <>
-          <GraphView nodes={graph.data.nodes} edges={graph.data.edges} />
+          <GraphView nodes={graph.data.nodes} edges={graph.data.edges} focusNode={focusNode} />
           {health.conn === "stale" && (
             <p className="mt-3 text-xs text-zinc-400">Possibly stale — see the status bar.</p>
           )}

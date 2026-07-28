@@ -4,13 +4,14 @@
 // liveness (reuses the shell health context, same as the other pillars).
 
 import { useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useOutletContext, useNavigate } from "react-router-dom";
 import type { HealthView } from "../hooks/use-health";
 import { useSearch } from "../hooks/use-search";
 import { SearchResults } from "../components/SearchResults";
 
 export function SearchView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
+  const navigate = useNavigate();
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
   const search = useSearch(query);
@@ -51,7 +52,14 @@ export function SearchView(): React.JSX.Element {
       ) : search.isLoading || !search.result ? (
         <p className="text-sm text-zinc-500">Searching…</p>
       ) : (
-        <SearchResults result={search.result} />
+        <SearchResults
+          result={search.result}
+          onSelectHit={(h) =>
+            navigate(
+              `/graph?project=${encodeURIComponent(h.projectId)}&node=${encodeURIComponent(h.id)}`,
+            )
+          }
+        />
       )}
     </section>
   );

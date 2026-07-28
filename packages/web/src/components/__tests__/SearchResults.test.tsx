@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { SearchResults } from "../SearchResults";
 import type { SearchResult } from "../../api";
@@ -26,6 +26,15 @@ describe("SearchResults", () => {
   it("shows the empty state when nothing matched", () => {
     render(<SearchResults result={{ ...base, tasks: [], knowledge: [] }} />);
     expect(screen.getByRole("status")).toHaveTextContent(/no matches/i);
+  });
+
+  it("selecting a hit reports the node (to open it in the graph)", () => {
+    const onSelectHit = vi.fn();
+    render(<SearchResults result={base} onSelectHit={onSelectHit} />);
+    screen.getByRole("button", { name: /TASK-1/ }).click();
+    expect(onSelectHit).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "TASK-1", kind: "task", projectId: "p1" }),
+    );
   });
 
   it("warns honestly when knowledge search is degraded", () => {

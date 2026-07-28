@@ -14,7 +14,14 @@ function groupByProject(hits: SearchHit[]): Map<string, SearchHit[]> {
   return m;
 }
 
-export function SearchResults({ result }: { result: SearchResult }): React.JSX.Element {
+export interface SearchResultsProps {
+  result: SearchResult;
+  // A hit is a graph node (task / knowledge) — selecting one opens it in the
+  // Graph view, focused. Optional so the component stays testable without a router.
+  onSelectHit?: (hit: SearchHit) => void;
+}
+
+export function SearchResults({ result, onSelectHit }: SearchResultsProps): React.JSX.Element {
   const all = [...result.tasks, ...result.knowledge];
   const total = all.length;
   const byProject = groupByProject(all);
@@ -48,23 +55,26 @@ export function SearchResults({ result }: { result: SearchResult }): React.JSX.E
               </h3>
               <ul className="flex flex-col gap-1">
                 {hits.map((h) => (
-                  <li
-                    key={`${h.kind}-${h.id}`}
-                    data-hit
-                    className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200"
-                  >
-                    <span
-                      className={`inline-block rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${
-                        h.kind === "task"
-                          ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
-                          : "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300"
-                      }`}
+                  <li key={`${h.kind}-${h.id}`} data-hit>
+                    <button
+                      type="button"
+                      onClick={() => onSelectHit?.(h)}
+                      title="Open in graph"
+                      className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800"
                     >
-                      {h.kind}
-                    </span>
-                    <span className="font-mono text-xs text-zinc-400">{h.id}</span>
-                    <span className="truncate">{h.title}</span>
-                    {h.status && <span className="ml-auto text-xs text-zinc-400">{h.status}</span>}
+                      <span
+                        className={`inline-block rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${
+                          h.kind === "task"
+                            ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                            : "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300"
+                        }`}
+                      >
+                        {h.kind}
+                      </span>
+                      <span className="font-mono text-xs text-zinc-400">{h.id}</span>
+                      <span className="truncate">{h.title}</span>
+                      {h.status && <span className="ml-auto text-xs text-zinc-400">{h.status}</span>}
+                    </button>
                   </li>
                 ))}
               </ul>

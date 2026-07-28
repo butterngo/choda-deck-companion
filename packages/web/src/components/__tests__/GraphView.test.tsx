@@ -44,6 +44,12 @@ describe("GraphView", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(/showing the 2 most-connected of 4/i);
   });
 
+  it("pre-selects focusNode (Search → Graph deep-link) and shows its detail", () => {
+    render(<GraphView nodes={nodes} edges={edges} focusNode="TASK-2" />);
+    const panel = screen.getByLabelText("node detail");
+    expect(panel).toHaveTextContent("TASK-2");
+  });
+
   it("clicking a node opens a detail panel listing its connections", () => {
     const { container } = render(<GraphView nodes={nodes} edges={edges} />);
     const node = container.querySelector('[data-node-id="TASK-1"]') as SVGGElement;

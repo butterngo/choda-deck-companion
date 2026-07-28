@@ -40,9 +40,16 @@ export interface GraphViewProps {
   nodes: GraphNode[];
   edges: GraphEdge[];
   maxNodes?: number;
+  // Pre-select this node on mount / when it changes (Search → Graph deep-link).
+  focusNode?: string | null;
 }
 
-export function GraphView({ nodes, edges, maxNodes = GRAPH_NODE_CEILING }: GraphViewProps): React.JSX.Element {
+export function GraphView({
+  nodes,
+  edges,
+  maxNodes = GRAPH_NODE_CEILING,
+  focusNode = null,
+}: GraphViewProps): React.JSX.Element {
   const typeById = useMemo(() => {
     const m = new Map<string, GraphNodeType>();
     for (const n of nodes) m.set(n.id, n.type);
@@ -76,7 +83,12 @@ export function GraphView({ nodes, edges, maxNodes = GRAPH_NODE_CEILING }: Graph
 
   const [view, setView] = useState<View>({ x: 0, y: 0, k: 1 });
   const [hoveredEdge, setHoveredEdge] = useState<number | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(focusNode);
+
+  // Follow a Search → Graph deep-link: when focusNode changes, select it.
+  useEffect(() => {
+    if (focusNode) setSelected(focusNode);
+  }, [focusNode]);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const pan = useRef<{ px: number; py: number; ox: number; oy: number } | null>(null);
 
