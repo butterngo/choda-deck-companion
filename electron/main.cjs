@@ -100,6 +100,7 @@ if (!app.requestSingleInstanceLock()) {
       const win = new BrowserWindow({
         width: 1280,
         height: 800,
+        show: false, // show maximized once ready, to avoid a 1280×800 flash
         icon: appIcon,
         webPreferences: {
           // NFR Security — no devtools/remote debugging surface in production.
@@ -107,6 +108,12 @@ if (!app.requestSingleInstanceLock()) {
           contextIsolation: true,
           nodeIntegration: false,
         },
+      });
+      // Open filling the screen (maximized, title bar kept) — the shell is
+      // wide (boards, graph). ready-to-show avoids a small-then-grow flash.
+      win.once("ready-to-show", () => {
+        win.maximize();
+        win.show();
       });
       win.loadURL(`http://127.0.0.1:${uiPort}/`);
       createTray();
