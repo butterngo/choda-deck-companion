@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { GraphView } from "../GraphView";
 import type { GraphEdge, GraphNode } from "../../api";
@@ -48,6 +48,13 @@ describe("GraphView", () => {
     render(<GraphView nodes={nodes} edges={edges} focusNode="TASK-2" />);
     const panel = screen.getByLabelText("node detail");
     expect(panel).toHaveTextContent("TASK-2");
+  });
+
+  it("offers View detail for a task/knowledge node and reports the open request", () => {
+    const onOpenNode = vi.fn();
+    render(<GraphView nodes={nodes} edges={edges} focusNode="TASK-1" onOpenNode={onOpenNode} />);
+    screen.getByRole("button", { name: /view task detail/i }).click();
+    expect(onOpenNode).toHaveBeenCalledWith("TASK-1", "task");
   });
 
   it("clicking a node opens a detail panel listing its connections", () => {

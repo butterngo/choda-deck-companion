@@ -42,6 +42,8 @@ export interface GraphViewProps {
   maxNodes?: number;
   // Pre-select this node on mount / when it changes (Search → Graph deep-link).
   focusNode?: string | null;
+  // Open the full detail of a node (task/knowledge) — the panel's "View detail".
+  onOpenNode?: (id: string, type: GraphNodeType) => void;
 }
 
 export function GraphView({
@@ -49,6 +51,7 @@ export function GraphView({
   edges,
   maxNodes = GRAPH_NODE_CEILING,
   focusNode = null,
+  onOpenNode,
 }: GraphViewProps): React.JSX.Element {
   const typeById = useMemo(() => {
     const m = new Map<string, GraphNodeType>();
@@ -274,6 +277,20 @@ export function GraphView({
               ✕
             </button>
           </div>
+          {onOpenNode &&
+            (() => {
+              const t = typeById.get(selected) ?? ("task" as GraphNodeType);
+              // code_ref has no detail endpoint — only task/knowledge do.
+              return t === "task" || t === "knowledge" ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenNode(selected, t)}
+                  className="mt-2 w-full rounded-md bg-blue-600 text-white text-xs px-2 py-1.5 hover:bg-blue-700"
+                >
+                  View {t === "task" ? "task" : "knowledge"} detail
+                </button>
+              ) : null;
+            })()}
           <div className="mt-3 text-xs font-medium uppercase tracking-wide text-zinc-400">
             {neighbors.length} connection{neighbors.length === 1 ? "" : "s"}
           </div>

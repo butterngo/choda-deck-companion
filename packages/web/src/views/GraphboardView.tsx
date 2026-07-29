@@ -4,6 +4,7 @@
 // disconnected/stale treatment as Sync / Cockpit / Knowledge — never a
 // fake-live graph when the API is down.
 
+import { useState } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import type { HealthView } from "../hooks/use-health";
 import { useWorkspace } from "../hooks/use-workspace";
@@ -11,10 +12,12 @@ import { useWorkspaces } from "../hooks/use-workspaces";
 import { useFullGraph } from "../hooks/use-graph";
 import { GraphView } from "../components/GraphView";
 import { WorkspaceSelect } from "../components/WorkspaceSelect";
+import { NodeDetailDrawer, type NodeRef } from "../components/NodeDetailDrawer";
 
 export function GraphboardView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
   const [searchParams] = useSearchParams();
+  const [detailNode, setDetailNode] = useState<NodeRef | null>(null);
   const { workspaceId, setWorkspaceId } = useWorkspace();
   const { workspaces } = useWorkspaces();
   // Search deep-links here with ?project=&node= to open a specific node's graph
@@ -43,12 +46,19 @@ export function GraphboardView(): React.JSX.Element {
         <p className="text-sm text-zinc-500">Loading graph…</p>
       ) : (
         <>
-          <GraphView nodes={graph.data.nodes} edges={graph.data.edges} focusNode={focusNode} />
+          <GraphView
+            nodes={graph.data.nodes}
+            edges={graph.data.edges}
+            focusNode={focusNode}
+            onOpenNode={(id, type) => setDetailNode({ id, type })}
+          />
           {health.conn === "stale" && (
             <p className="mt-3 text-xs text-zinc-400">Possibly stale — see the status bar.</p>
           )}
         </>
       )}
+
+      {detailNode && <NodeDetailDrawer node={detailNode} onClose={() => setDetailNode(null)} />}
     </section>
   );
 }

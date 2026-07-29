@@ -308,3 +308,22 @@ export interface SearchResult {
 export function fetchSearch(q: string, signal?: AbortSignal): Promise<SearchResult> {
   return getJson<SearchResult>(`/search?q=${encodeURIComponent(q)}`, signal);
 }
+
+// Task detail for the graph node panel — mirror of the adapter's GET /tasks/:id
+// (src/adapters/companion/task-detail.ts → svc.getTask). Only the fields the
+// detail panel renders are declared.
+export interface TaskDetail {
+  id: string;
+  projectId: string;
+  parentTaskId: string | null;
+  title: string;
+  status: TaskStatus;
+  priority: string | null;
+  labels: string[];
+  body: string | null;
+  blockedBy: string[];
+}
+
+export function fetchTask(id: string, signal?: AbortSignal): Promise<TaskDetail> {
+  return getJson<TaskDetail>(`/tasks/${encodeURIComponent(id)}`, signal);
+}
