@@ -67,4 +67,37 @@ describe("GraphView", () => {
     expect(panel).toHaveTextContent("TASK-2");
     expect(panel).toHaveTextContent("ref-x");
   });
+
+  // TASK-1445 AC-1 — a search highlights matching nodes and dims the rest.
+  it("highlights matching nodes and dims non-matches when a search is active", () => {
+    const { container } = render(
+      <GraphView nodes={nodes} edges={edges} matchIds={new Set(["gotcha-a"])} />,
+    );
+    const match = container.querySelector('[data-node-id="gotcha-a"]') as SVGGElement;
+    const nonMatch = container.querySelector('[data-node-id="TASK-1"]') as SVGGElement;
+    expect(match.getAttribute("data-match")).toBe("true");
+    expect(match.style.opacity).toBe("1");
+    // Non-match keeps rendering (in context) but dimmed.
+    expect(nonMatch.getAttribute("data-match")).toBeNull();
+    expect(Number(nonMatch.style.opacity)).toBeLessThan(1);
+  });
+
+  it("renders normally (no dimming, no match markers) when matchIds is null", () => {
+    const { container } = render(<GraphView nodes={nodes} edges={edges} matchIds={null} />);
+    expect(container.querySelector("[data-match]")).toBeNull();
+    for (const g of container.querySelectorAll<SVGGElement>("[data-node]")) {
+      // No search → every node fully opaque.
+      expect(g.style.opacity === "" || g.style.opacity === "1").toBe(true);
+    }
+  });
+
+  // AC-5 — an enabled zero-match query passes an empty Set: nothing highlighted,
+  // no stale highlight survives from a prior query.
+  it("leaves no highlight on a zero-match (empty) matchIds set", () => {
+    const { container } = render(<GraphView nodes={nodes} edges={edges} matchIds={new Set()} />);
+    expect(container.querySelector("[data-match]")).toBeNull();
+    // Search is still active → all nodes dimmed (none is a match).
+    const anyNode = container.querySelector('[data-node-id="TASK-1"]') as SVGGElement;
+    expect(Number(anyNode.style.opacity)).toBeLessThan(1);
+  });
 });
