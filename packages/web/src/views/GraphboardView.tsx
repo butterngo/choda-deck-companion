@@ -4,12 +4,13 @@
 // disconnected/stale treatment as Sync / Cockpit / Knowledge — never a
 // fake-live graph when the API is down.
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import type { HealthView } from "../hooks/use-health";
 import { useWorkspace } from "../hooks/use-workspace";
 import { useWorkspaces } from "../hooks/use-workspaces";
 import { useFullGraph } from "../hooks/use-graph";
+import { useKnowledgeSearch } from "../hooks/use-knowledge-search";
 import { GraphView } from "../components/GraphView";
 import { WorkspaceSelect } from "../components/WorkspaceSelect";
 import { NodeDetailDrawer, type NodeRef } from "../components/NodeDetailDrawer";
@@ -20,6 +21,27 @@ export function GraphboardView(): React.JSX.Element {
   const [detailNode, setDetailNode] = useState<NodeRef | null>(null);
   const { workspaceId, setWorkspaceId } = useWorkspace();
   const { workspaces } = useWorkspaces();
+
+  // TASK-1445 — knowledge search highlights matching graph nodes in place.
+  // Reuses useKnowledgeSearch verbatim, so the disabled-provider degrade path is
+  // identical to KnowledgeSearchBox (AC-3): a disabled search shows a reason and
+  // highlights nothing, never an error state.
+  const [query, setQuery] = useState("");
+  const { result: searchResult, isSearching, isError, search } = useKnowledgeSearch();
+  // null → no active search (render normally); a Set → highlight these ids.
+  // A disabled provider yields null (degrade, don't dim); an enabled zero-match
+  // query yields an empty Set so any prior highlight is cleared (AC-5).
+  const matchIds = useMemo(
+    () =>
+      searchResult && searchResult.enabled
+        ? new Set(searchResult.results.map((r) => r.slug))
+        : null,
+    [searchResult],
+  );
+  const clearSearch = (): void => {
+    setQuery("");
+    search("");
+  };
   // Search deep-links here with ?project=&node= to open a specific node's graph
   // (TASK-1493 → Graph). An explicit project query wins over the workspace pick
   // so a search hit lands even before a workspace is chosen.
@@ -46,10 +68,60 @@ export function GraphboardView(): React.JSX.Element {
         <p className="text-sm text-zinc-500">Loading graph…</p>
       ) : (
         <>
+          <form
+            className="mb-3 flex items-center gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              search(query);
+            }}
+          >
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Highlight nodes matching…"
+              aria-label="highlight graph nodes"
+              className="px-2 py-1.5 rounded-md text-sm border border-zinc-300 dark:border-zinc-700 bg-transparent flex-1"
+            />
+            <button
+              type="submit"
+              disabled={isSearching}
+              className="px-3 py-1.5 rounded-md text-sm bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 disabled:opacity-50"
+            >
+              Highlight
+            </button>
+            {matchIds !== null && (
+              <button
+                type="button"
+                onClick={clearSearch}
+                className="px-3 py-1.5 rounded-md text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200"
+              >
+                Clear
+              </button>
+            )}
+          </form>
+          {isError && (
+            <p role="alert" className="mb-2 text-sm text-rose-700 dark:text-rose-400">
+              Search failed — try again.
+            </p>
+          )}
+          {searchResult && !searchResult.enabled && (
+            <p className="mb-2 text-sm text-zinc-500">
+              Search is disabled server-side{searchResult.reason ? `: ${searchResult.reason}` : "."}
+            </p>
+          )}
+          {matchIds !== null && searchResult?.enabled && (
+            <p className="mb-2 text-sm text-zinc-500">
+              {matchIds.size === 0
+                ? "No matches — nothing highlighted."
+                : `Highlighting ${matchIds.size} matching node${matchIds.size === 1 ? "" : "s"}.`}
+            </p>
+          )}
           <GraphView
             nodes={graph.data.nodes}
             edges={graph.data.edges}
             focusNode={focusNode}
+            matchIds={matchIds}
             onOpenNode={(id, type) => setDetailNode({ id, type })}
           />
           {health.conn === "stale" && (

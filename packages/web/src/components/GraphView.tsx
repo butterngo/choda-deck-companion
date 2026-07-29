@@ -42,6 +42,13 @@ export interface GraphViewProps {
   maxNodes?: number;
   // Pre-select this node on mount / when it changes (Search → Graph deep-link).
   focusNode?: string | null;
+  // TASK-1445 AC-1 — the ids matching the active knowledge search. `null` means
+  // no search is active (render normally); a Set (possibly empty) means a search
+  // is active — matching nodes are highlighted and the rest are dimmed, in place,
+  // so matches read against the whole graph rather than being filtered out of it.
+  // AC-5: an empty Set (zero-match query) simply highlights nothing — no stale
+  // highlight survives, because the drawn state is derived purely from this prop.
+  matchIds?: Set<string> | null;
   // Open the full detail of a node (task/knowledge) — the panel's "View detail".
   onOpenNode?: (id: string, type: GraphNodeType) => void;
 }
@@ -51,6 +58,7 @@ export function GraphView({
   edges,
   maxNodes = GRAPH_NODE_CEILING,
   focusNode = null,
+  matchIds = null,
   onOpenNode,
 }: GraphViewProps): React.JSX.Element {
   const typeById = useMemo(() => {
@@ -128,6 +136,13 @@ export function GraphView({
 
   const presentTypes = [...new Set(drawIds.map((id) => typeById.get(id) ?? ("task" as GraphNodeType)))];
 
+  // TASK-1445 — a search is "active" when matchIds is a Set (even an empty one);
+  // null means no query. When active, non-matching nodes/edges dim so the matches
+  // stand out without losing the surrounding graph structure.
+  const searchActive = matchIds !== null;
+  const isMatch = (id: string): boolean => matchIds?.has(id) ?? false;
+  const DIM = 0.15;
+
   const onPointerDown = (ev: React.PointerEvent<SVGSVGElement>): void => {
     if ((ev.target as Element).closest("[data-node]")) return;
     pan.current = { px: ev.clientX, py: ev.clientY, ox: view.x, oy: view.y };
@@ -196,6 +211,9 @@ export function GraphView({
               const s = layout.get(e.fromId);
               const t = layout.get(e.toId);
               if (!s || !t) return null;
+              // Dim an edge during a search unless it touches a match.
+              const edgeDim = searchActive && !isMatch(e.fromId) && !isMatch(e.toId);
+              const baseOpacity = hoveredEdge === i ? 0.9 : 0.45;
               return (
                 <line
                   key={`${e.fromId}-${e.type}-${e.toId}-${i}`}
@@ -205,7 +223,7 @@ export function GraphView({
                   x2={t.x}
                   y2={t.y}
                   stroke={hoveredEdge === i ? "#4E79A7" : "#9c9c9c"}
-                  strokeOpacity={hoveredEdge === i ? 0.9 : 0.45}
+                  strokeOpacity={edgeDim ? DIM * baseOpacity : baseOpacity}
                   strokeWidth={hoveredEdge === i ? 2 : 1.5}
                   onPointerEnter={() => setHoveredEdge(i)}
                   onPointerLeave={() => setHoveredEdge((h) => (h === i ? null : h))}
@@ -223,15 +241,22 @@ export function GraphView({
               const r = 5 + Math.min(7, degree.get(id) ?? 0);
               const label = id.length > 26 ? `${id.slice(0, 25)}…` : id;
               const isSel = selected === id;
+              const matched = isMatch(id);
+              const dim = searchActive && !matched;
               return (
                 <g
                   key={id}
                   data-node
                   data-node-id={id}
+                  data-match={matched ? "true" : undefined}
                   transform={`translate(${p.x} ${p.y})`}
-                  style={{ cursor: "pointer" }}
+                  style={{ cursor: "pointer", opacity: dim ? DIM : 1 }}
                   onClick={() => setSelected(id)}
                 >
+                  {matched && (
+                    // Halo ring marking a search match (AC-1).
+                    <circle r={r + 5} fill="none" stroke="#f59e0b" strokeWidth={2.5} strokeOpacity={0.9} />
+                  )}
                   <circle
                     r={isSel ? r + 2 : r}
                     fill={nodeColor(type)}
