@@ -4,6 +4,7 @@
 // the path-resolution/port-parsing logic is unit-testable without Electron.
 
 const path = require("node:path");
+const fs = require("node:fs");
 const { spawn } = require("node:child_process");
 
 // The adapter binds an OS-assigned ephemeral port when CHODA_COMPANION_PORT=0
@@ -45,6 +46,35 @@ function resolveDataDir({ isPackaged, userDataPath, env = process.env } = {}) {
   return undefined;
 }
 
+// Load persistent sync config from <dataDir>/sync-config.json and map it to the
+// adapter's CHODA_* env, so Push/Pull work on ANY launch (Start menu, auto-start)
+// without a special launcher or the single-instance-lock dance. Secrets are
+// referenced by FILE path (usernameFile/passwordFile/clientSecretFile), never
+// inlined. Missing/invalid file → {} (sync stays off, app works as before).
+function loadSyncEnv(dataDir) {
+  if (!dataDir) return {};
+  let cfg;
+  try {
+    cfg = JSON.parse(fs.readFileSync(path.join(dataDir, "sync-config.json"), "utf8"));
+  } catch {
+    return {};
+  }
+  const map = {
+    remoteUrl: "CHODA_PULL_REMOTE_URL",
+    token: "CHODA_PULL_REMOTE_TOKEN",
+    oidcIssuer: "CHODA_SYNC_OIDC_ISSUER",
+    oidcClientId: "CHODA_SYNC_OIDC_CLIENT_ID",
+    usernameFile: "CHODA_SYNC_OIDC_USERNAME_FILE",
+    passwordFile: "CHODA_SYNC_OIDC_PASSWORD_FILE",
+    clientSecretFile: "CHODA_SYNC_OIDC_CLIENT_SECRET_FILE",
+  };
+  const out = {};
+  for (const [key, envName] of Object.entries(map)) {
+    if (typeof cfg[key] === "string" && cfg[key].length > 0) out[envName] = cfg[key];
+  }
+  return out;
+}
+
 class AdapterBootError extends Error {
   constructor(message, cause) {
     super(message);
@@ -59,6 +89,9 @@ class AdapterBootError extends Error {
 function spawnAdapter({ entry, dataDir, nodePath, port = "0", env = process.env, spawnFn = spawn } = {}) {
   const child = spawnFn(process.execPath, [entry], {
     env: {
+      // File-based sync config first (defaults); a real process.env wins over it
+      // so an explicit launcher/env override still takes precedence.
+      ...(dataDir ? loadSyncEnv(dataDir) : {}),
       ...env,
       CHODA_COMPANION_PORT: String(port),
       ...(dataDir ? { CHODA_DATA_DIR: dataDir } : {}),
@@ -111,4 +144,4 @@ function spawnAdapter({ entry, dataDir, nodePath, port = "0", env = process.env,
   return { child, portPromise };
 }
 
-module.exports = { resolveAdapterEntry, resolveDataDir, resolveNodePath, spawnAdapter, AdapterBootError, LISTEN_LINE };
+module.exports = { resolveAdapterEntry, resolveDataDir, resolveNodePath, spawnAdapter, loadSyncEnv, AdapterBootError, LISTEN_LINE };

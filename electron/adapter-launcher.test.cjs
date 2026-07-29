@@ -1,6 +1,44 @@
 const path = require("node:path");
+const fs = require("node:fs");
+const os = require("node:os");
 const { EventEmitter } = require("node:events");
-const { resolveAdapterEntry, resolveDataDir, resolveNodePath, spawnAdapter, AdapterBootError } = require("./adapter-launcher.cjs");
+const { resolveAdapterEntry, resolveDataDir, resolveNodePath, spawnAdapter, loadSyncEnv, AdapterBootError } = require("./adapter-launcher.cjs");
+
+describe("loadSyncEnv", () => {
+  it("returns {} when no dataDir or no config file", () => {
+    expect(loadSyncEnv(undefined)).toEqual({});
+    expect(loadSyncEnv(fs.mkdtempSync(path.join(os.tmpdir(), "choda-sync-")))).toEqual({});
+  });
+
+  it("maps sync-config.json fields to CHODA_* env, skipping absent keys", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "choda-sync-"));
+    fs.writeFileSync(
+      path.join(dir, "sync-config.json"),
+      JSON.stringify({
+        remoteUrl: "https://mcp.choda.dev",
+        oidcIssuer: "https://id.choda.dev/realms/demo",
+        oidcClientId: "claude-connector",
+        usernameFile: "C:/s/u.txt",
+        passwordFile: "C:/s/p.txt",
+        clientSecretFile: "C:/s/c.txt",
+      }),
+    );
+    expect(loadSyncEnv(dir)).toEqual({
+      CHODA_PULL_REMOTE_URL: "https://mcp.choda.dev",
+      CHODA_SYNC_OIDC_ISSUER: "https://id.choda.dev/realms/demo",
+      CHODA_SYNC_OIDC_CLIENT_ID: "claude-connector",
+      CHODA_SYNC_OIDC_USERNAME_FILE: "C:/s/u.txt",
+      CHODA_SYNC_OIDC_PASSWORD_FILE: "C:/s/p.txt",
+      CHODA_SYNC_OIDC_CLIENT_SECRET_FILE: "C:/s/c.txt",
+    });
+  });
+
+  it("returns {} on malformed JSON (never throws)", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "choda-sync-"));
+    fs.writeFileSync(path.join(dir, "sync-config.json"), "{not json");
+    expect(loadSyncEnv(dir)).toEqual({});
+  });
+});
 
 describe("resolveAdapterEntry", () => {
   it("prefers CHODA_ADAPTER_ENTRY when set (dev/test override)", () => {
