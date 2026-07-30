@@ -35,11 +35,22 @@ function resolveStaticFile(staticDir, urlPath) {
   return fs.existsSync(candidate) && fs.statSync(candidate).isFile() ? candidate : path.join(staticDir, "index.html");
 }
 
-function createStaticProxyServer({ staticDir, apiPort, apiHost = "127.0.0.1" }) {
+// TASK-1503 — some adapter routes (POST /capture) are token-gated with
+// x-choda-bridge-token, but the web shell deliberately holds no credential
+// (packages/web/src/config.ts). Inject the token HERE, in the proxy the browser
+// never sees, so those routes are reachable while the invariant holds. Only on
+// /api proxying, never on static files; never overwrites a token the request
+// already carries (an extension-origin request); absent token → forward as-is
+// (the gated route then 401s, exactly as today).
+function createStaticProxyServer({ staticDir, apiPort, apiHost = "127.0.0.1", bridgeToken }) {
   return http.createServer((req, res) => {
     if (req.url.startsWith("/api")) {
+      const headers = { ...req.headers };
+      if (bridgeToken && !headers["x-choda-bridge-token"]) {
+        headers["x-choda-bridge-token"] = bridgeToken;
+      }
       const target = http.request(
-        { host: apiHost, port: apiPort, path: req.url.replace(/^\/api/, "") || "/", method: req.method, headers: req.headers },
+        { host: apiHost, port: apiPort, path: req.url.replace(/^\/api/, "") || "/", method: req.method, headers },
         (proxyRes) => {
           res.writeHead(proxyRes.statusCode ?? 502, proxyRes.headers);
           proxyRes.pipe(res);

@@ -82,3 +82,69 @@ describe("createStaticProxyServer (integration)", () => {
     deadUiServer.close();
   });
 });
+
+// TASK-1503 — the proxy injects x-choda-bridge-token so token-gated adapter
+// routes (POST /capture) are reachable from the tokenless web shell.
+describe("createStaticProxyServer bridge-token injection (integration)", () => {
+  const staticDir = fs.mkdtempSync(path.join(os.tmpdir(), "cdc-static-tok-"));
+  fs.writeFileSync(path.join(staticDir, "index.html"), "<html>hi</html>");
+  let apiServer;
+  let apiPort;
+  let lastSeenToken;
+
+  beforeAll(async () => {
+    // Upstream echoes the token header it received (or null) so the test can
+    // assert what the proxy forwarded.
+    apiServer = http.createServer((req, res) => {
+      lastSeenToken = req.headers["x-choda-bridge-token"] ?? null;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ token: lastSeenToken }));
+    });
+    await new Promise((resolve) => apiServer.listen(0, "127.0.0.1", resolve));
+    apiPort = apiServer.address().port;
+  });
+
+  afterAll(() => apiServer.close());
+
+  async function withProxy(opts, fn) {
+    const ui = createStaticProxyServer({ staticDir, apiPort, ...opts });
+    await new Promise((resolve) => ui.listen(0, "127.0.0.1", resolve));
+    try {
+      await fn(ui.address().port);
+    } finally {
+      ui.close();
+    }
+  }
+
+  it("injects the token on a proxied /api request when configured", async () => {
+    await withProxy({ bridgeToken: "tok-abc" }, async (uiPort) => {
+      const res = await fetch(`http://127.0.0.1:${uiPort}/api/capture`, { method: "POST" });
+      expect((await res.json()).token).toBe("tok-abc");
+    });
+  });
+
+  it("does not overwrite a token the request already carries", async () => {
+    await withProxy({ bridgeToken: "tok-proxy" }, async (uiPort) => {
+      const res = await fetch(`http://127.0.0.1:${uiPort}/api/capture`, {
+        method: "POST",
+        headers: { "x-choda-bridge-token": "tok-caller" },
+      });
+      expect((await res.json()).token).toBe("tok-caller");
+    });
+  });
+
+  it("forwards without a token when none is configured (route then 401s upstream, unchanged)", async () => {
+    await withProxy({}, async (uiPort) => {
+      const res = await fetch(`http://127.0.0.1:${uiPort}/api/capture`, { method: "POST" });
+      expect((await res.json()).token).toBeNull();
+    });
+  });
+
+  it("never adds the token to a static-file response", async () => {
+    await withProxy({ bridgeToken: "tok-abc" }, async (uiPort) => {
+      const res = await fetch(`http://127.0.0.1:${uiPort}/`);
+      expect(res.headers.get("x-choda-bridge-token")).toBeNull();
+      expect(await res.text()).toContain("hi");
+    });
+  });
+});

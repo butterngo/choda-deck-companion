@@ -2,7 +2,32 @@ const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
 const { EventEmitter } = require("node:events");
-const { resolveAdapterEntry, resolveDataDir, resolveNodePath, spawnAdapter, loadSyncEnv, AdapterBootError } = require("./adapter-launcher.cjs");
+const { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveBridgeToken, spawnAdapter, loadSyncEnv, AdapterBootError } = require("./adapter-launcher.cjs");
+
+describe("resolveBridgeToken", () => {
+  it("returns undefined with no dataDir and no env", () => {
+    expect(resolveBridgeToken({ env: {} })).toBeUndefined();
+  });
+
+  it("prefers CHODA_BRIDGE_TOKEN env over the file", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "choda-tok-"));
+    fs.writeFileSync(path.join(dir, "bridge-token.txt"), "from-file");
+    expect(resolveBridgeToken({ dataDir: dir, env: { CHODA_BRIDGE_TOKEN: "from-env" } })).toBe("from-env");
+  });
+
+  it("reads (trimmed) <dataDir>/bridge-token.txt when no env is set", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "choda-tok-"));
+    fs.writeFileSync(path.join(dir, "bridge-token.txt"), "  tok-xyz\n");
+    expect(resolveBridgeToken({ dataDir: dir, env: {} })).toBe("tok-xyz");
+  });
+
+  it("returns undefined when the token file is missing or empty (no crash)", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "choda-tok-"));
+    expect(resolveBridgeToken({ dataDir: dir, env: {} })).toBeUndefined();
+    fs.writeFileSync(path.join(dir, "bridge-token.txt"), "   \n");
+    expect(resolveBridgeToken({ dataDir: dir, env: {} })).toBeUndefined();
+  });
+});
 
 describe("loadSyncEnv", () => {
   it("returns {} when no dataDir or no config file", () => {
