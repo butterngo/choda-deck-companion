@@ -75,6 +75,26 @@ function loadSyncEnv(dataDir) {
   return out;
 }
 
+// TASK-1503 — the bridge token the /api proxy injects so token-gated adapter
+// routes (POST /capture) are reachable from the web shell. Resolution order:
+// an explicit CHODA_BRIDGE_TOKEN env (dev/electron:dev convenience) wins, else
+// read <dataDir>/bridge-token.txt (the file the adapter itself persists, mode
+// 600). Missing/unreadable → undefined: the proxy then forwards without the
+// header and gated routes 401 as they do today — never a crash. The token stays
+// in the main process; it is never handed to the renderer.
+function resolveBridgeToken({ dataDir, env = process.env } = {}) {
+  if (typeof env.CHODA_BRIDGE_TOKEN === "string" && env.CHODA_BRIDGE_TOKEN.length > 0) {
+    return env.CHODA_BRIDGE_TOKEN;
+  }
+  if (!dataDir) return undefined;
+  try {
+    const token = fs.readFileSync(path.join(dataDir, "bridge-token.txt"), "utf8").trim();
+    return token.length > 0 ? token : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 class AdapterBootError extends Error {
   constructor(message, cause) {
     super(message);
@@ -144,4 +164,4 @@ function spawnAdapter({ entry, dataDir, nodePath, port = "0", env = process.env,
   return { child, portPromise };
 }
 
-module.exports = { resolveAdapterEntry, resolveDataDir, resolveNodePath, spawnAdapter, loadSyncEnv, AdapterBootError, LISTEN_LINE };
+module.exports = { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveBridgeToken, spawnAdapter, loadSyncEnv, AdapterBootError, LISTEN_LINE };

@@ -5,7 +5,7 @@
 
 const { app, BrowserWindow, dialog, Menu, Tray, Notification, nativeImage, session, desktopCapturer } = require("electron");
 const path = require("node:path");
-const { resolveAdapterEntry, resolveDataDir, resolveNodePath, spawnAdapter } = require("./adapter-launcher.cjs");
+const { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveBridgeToken, spawnAdapter } = require("./adapter-launcher.cjs");
 const { createStaticProxyServer } = require("./static-proxy-server.cjs");
 const { configureLoginItem } = require("./login-item.cjs");
 const { initUpdater } = require("./updater.cjs");
@@ -107,7 +107,11 @@ if (!app.requestSingleInstanceLock()) {
       return;
     }
 
-    const uiServer = createStaticProxyServer({ staticDir, apiPort });
+    // TASK-1503 — read the bridge token from the same data dir the adapter uses
+    // and hand it to the proxy, so token-gated routes (POST /capture) work from
+    // the web shell. Stays in the main process; never reaches the renderer.
+    const bridgeToken = resolveBridgeToken({ dataDir });
+    const uiServer = createStaticProxyServer({ staticDir, apiPort, bridgeToken });
     uiServer.listen(0, "127.0.0.1", () => {
       const { port: uiPort } = uiServer.address();
       console.log(`[electron] serving UI on http://127.0.0.1:${uiPort} (adapter on 127.0.0.1:${apiPort})`);
