@@ -2,19 +2,32 @@
 // share an existing image, then Save/Copy it. Self-contained — no laptop API
 // call, so it works even when the adapter is down (unlike the other pillars).
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useOutletContext } from "react-router-dom";
 import {
   captureScreenshotDataUrl,
   captureFilename,
   readImageFileAsDataUrl,
+  imageFileFromClipboard,
 } from "../lib/capture";
 import { CapturePreview } from "../components/CapturePreview";
+import { CaptureSendPanel } from "../components/CaptureSendPanel";
 import { CaptureRegion } from "../components/CaptureRegion";
+import type { HealthView } from "../hooks/use-health";
+import { useWorkspace } from "../hooks/use-workspace";
+import { useWorkspaces } from "../hooks/use-workspaces";
 
 // idle → (screen capture) region → preview ; file share jumps straight to preview.
 type Stage = "idle" | "region" | "preview";
 
 export function CaptureView(): React.JSX.Element {
+  const health = useOutletContext<HealthView>();
+  const { workspaceId } = useWorkspace();
+  const { workspaces } = useWorkspaces();
+  // TASK-1498 — the conversation is opened under the selected workspace's
+  // project; null until one is chosen, which disables Send (AC-4).
+  const projectId = workspaces.find((w) => w.id === workspaceId)?.projectId ?? null;
+
   const [stage, setStage] = useState<Stage>("idle");
   const [raw, setRaw] = useState<string | null>(null);
   const [dataUrl, setDataUrl] = useState<string | null>(null);
@@ -59,6 +72,18 @@ export function CaptureView(): React.JSX.Element {
     }
   };
 
+  // TASK-1498 AC-1 — Ctrl+V an image to preview it. A non-image paste carries no
+  // image item, so imageFileFromClipboard returns null and we do nothing — normal
+  // paste behavior is left untouched.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent): void => {
+      const file = imageFileFromClipboard(e.clipboardData?.items);
+      if (file) void shareImage(file);
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, []);
+
   return (
     <section aria-label="capture">
       <h1 className="text-lg font-medium mb-3">Capture</h1>
@@ -98,12 +123,19 @@ export function CaptureView(): React.JSX.Element {
           }}
         />
       ) : stage === "preview" && dataUrl !== null ? (
-        <CapturePreview dataUrl={dataUrl} filename={filename} onClear={reset} />
+        <div className="flex flex-col gap-3">
+          <CapturePreview dataUrl={dataUrl} filename={filename} onClear={reset} />
+          <CaptureSendPanel
+            dataUrl={dataUrl}
+            projectId={projectId}
+            connected={health.conn !== "disconnected"}
+          />
+        </div>
       ) : (
         <p className="text-sm text-zinc-500">
-          Capture the screen (then snip a region, Snipping-Tool style) or share an image, then save
-          it to disk or copy it to the clipboard. Screen capture is granted inside the Choda
-          Companion app.
+          Capture the screen (then snip a region, Snipping-Tool style), share an image, or paste one
+          (Ctrl+V), then save it to disk, copy it, or send it to a conversation. Screen capture is
+          granted inside the Choda Companion app.
         </p>
       )}
     </section>

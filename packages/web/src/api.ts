@@ -71,6 +71,30 @@ export function fetchHealth(signal?: AbortSignal): Promise<SyncHealth> {
   return getJson<SyncHealth>("/sync/health", signal);
 }
 
+// TASK-1498 — send a captured/pasted image to a NEW conversation via the shared
+// capture bridge (POST /capture, kind:image). The dispatcher writes the image to
+// artifacts/ and opens a conversation whose title is payload.title. The bridge
+// token is injected by the proxy (TASK-1503), never sent from here. sourceUrl is
+// required + non-empty by the contract; the companion has no originating page, so
+// it sends a stable marker.
+export interface CaptureResult {
+  id: string;
+  destination: string;
+}
+
+export const COMPANION_CAPTURE_SOURCE = "companion-capture";
+
+export function sendImageToConversation(
+  args: { dataUrl: string; projectId: string; title: string },
+): Promise<CaptureResult> {
+  return postJson<CaptureResult>("/capture", {
+    kind: "image",
+    destination: "conversation",
+    payload: { dataUrl: args.dataUrl, projectId: args.projectId, title: args.title },
+    sourceUrl: COMPANION_CAPTURE_SOURCE,
+  });
+}
+
 export function fetchLedger(signal?: AbortSignal): Promise<{ ledger: LedgerRow[] }> {
   return getJson<{ ledger: LedgerRow[] }>("/sync/ledger", signal);
 }
