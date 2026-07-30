@@ -4,6 +4,29 @@
 // the track. The pure helpers (filename, dataURL↔blob, file read) are split out
 // so they're unit-testable without a real display.
 
+// TASK-1498 — the adapter caps an image capture body at 5 MB
+// (CAPTURE_MAX_IMAGE_BYTES in the choda-deck capture-contract); a larger POST is
+// rejected 413. Guard client-side against the data-URL string length (the base64
+// payload dominates the request body) so we never fire a doomed request.
+export const MAX_CAPTURE_BYTES = 5 * 1024 * 1024;
+
+export function isWithinCaptureCap(dataUrl: string): boolean {
+  return dataUrl.length <= MAX_CAPTURE_BYTES;
+}
+
+// Pull the first image out of a paste's clipboard items, or null if the paste
+// carries no image (e.g. plain text) — so a text paste is ignored, not hijacked.
+export function imageFileFromClipboard(items: DataTransferItemList | null | undefined): File | null {
+  if (!items) return null;
+  for (const item of Array.from(items)) {
+    if (item.kind === "file" && item.type.startsWith("image/")) {
+      const file = item.getAsFile();
+      if (file) return file;
+    }
+  }
+  return null;
+}
+
 export function captureFilename(d: Date): string {
   const pad = (n: number): string => String(n).padStart(2, "0");
   const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(
