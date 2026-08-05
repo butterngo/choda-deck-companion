@@ -396,3 +396,40 @@ export function fetchConversations(signal?: AbortSignal): Promise<{ conversation
 export function fetchConversation(id: string, signal?: AbortSignal): Promise<ConversationDetail> {
   return getJson<ConversationDetail>(`/conversations/${encodeURIComponent(id)}`, signal);
 }
+
+// TASK-1576 — vault notes. The vault is a separate store from the SQLite the
+// rest of this file reads: plain markdown under `30-Knowledge/`, served by the
+// adapter's read-only /vault routes. Notes written by /choda-watch embed frames
+// as relative `assets/...` paths, hence the asset helper below.
+export interface VaultNoteSummary {
+  slug: string;
+  title: string;
+  tags: string[];
+  captured: string | null;
+  generatedBy: string | null;
+  source: string | null;
+  url: string | null;
+}
+
+export function fetchVaultNotes(signal?: AbortSignal): Promise<VaultNoteSummary[]> {
+  return getJson<VaultNoteSummary[]>("/vault/notes", signal);
+}
+
+export async function fetchVaultNote(slug: string, signal?: AbortSignal): Promise<string> {
+  const res = await fetch(`${API_BASE}/vault/notes/${encodeURIComponent(slug)}`, { signal });
+  if (!res.ok) throw new Error(`HTTP ${res.status} for /vault/notes/${slug}`);
+  // Markdown, not JSON — this is the one read route that isn't application/json.
+  return await res.text();
+}
+
+/**
+ * Rewrite a note's relative image paths to the asset route.
+ *
+ * Notes embed `![10:11](assets/<slug>/10-11.jpg)`, which resolves on disk but
+ * not in the browser. Pointing them at `/api/vault/assets/...` also solves auth
+ * for free: an <img> cannot send the bridge-token header, but the same-origin
+ * proxy injects it on every /api/* request (vite.config.ts, TASK-1503).
+ */
+export function rewriteVaultAssetPaths(markdown: string): string {
+  return markdown.replace(/\]\(assets\//g, `](${API_BASE}/vault/assets/`);
+}
