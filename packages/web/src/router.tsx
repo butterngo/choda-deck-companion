@@ -9,6 +9,7 @@ import { KnowledgeView } from "./views/KnowledgeView";
 import { GraphboardView } from "./views/GraphboardView";
 import { SearchView } from "./views/SearchView";
 import { CaptureView } from "./views/CaptureView";
+import { ConversationsView } from "./views/ConversationsView";
 
 export const router = createHashRouter([
   {
@@ -22,6 +23,7 @@ export const router = createHashRouter([
       { path: "graph", element: <GraphboardView /> },
       { path: "search", element: <SearchView /> },
       { path: "capture", element: <CaptureView /> },
+      { path: "conversations", element: <ConversationsView /> },
       { path: "*", element: <Navigate to="/sync" replace /> },
     ],
   },
