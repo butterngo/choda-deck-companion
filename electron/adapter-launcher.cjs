@@ -14,6 +14,16 @@ const { spawn } = require("node:child_process");
 const LISTEN_LINE = /\[companion\] listening on http:\/\/127\.0\.0\.1:(\d+)/;
 const BOOT_TIMEOUT_MS = 8000;
 
+// TASK-1510 — the adapter checks whether its data dir actually holds a database and
+// says so on stderr when it does not while another location does (choda-deck
+// src/core/warn-empty-data-dir.ts). On a fresh install the packaged dataDir is an empty
+// %APPDATA% profile, so without this the app opens looking like it lost everything.
+//
+// The launcher used to read stderr for the listen line ONLY and discard the rest, so the
+// warning was emitted and thrown away. Captured here and handed back with the port; the
+// caller decides what to do, because only the app can prompt.
+const DATA_DIR_WARNING_LINE = /^\[choda-deck\] No database found in [\s\S]*?which is live\./m;
+
 // Dev: the adapter's build output lives in the sibling `choda-deck` checkout.
 // Packaged: electron-builder vendors a copy into extraResources (see
 // scripts/vendor-adapter.mjs + package.json `build.extraResources`).
@@ -128,6 +138,12 @@ function spawnAdapter({ entry, dataDir, nodePath, port = "0", env = process.env,
     windowsHide: true,
   });
 
+  // Accumulated across chunks: the warning is multi-line, and a stream boundary can land
+  // anywhere inside it. Matching per-chunk would miss it whenever the split is unlucky,
+  // which is exactly the kind of bug that reproduces only on someone else's machine.
+  let stderrSoFar = "";
+  const dataDirWarning = { text: null };
+
   const portPromise = new Promise((resolve, reject) => {
     let settled = false;
     const timer = setTimeout(() => {
@@ -138,7 +154,18 @@ function spawnAdapter({ entry, dataDir, nodePath, port = "0", env = process.env,
     }, BOOT_TIMEOUT_MS);
 
     child.stderr?.on("data", (chunk) => {
-      const match = LISTEN_LINE.exec(chunk.toString("utf8"));
+      const text = chunk.toString("utf8");
+      stderrSoFar += text;
+
+      if (dataDirWarning.text === null) {
+        const warn = DATA_DIR_WARNING_LINE.exec(stderrSoFar);
+        if (warn) dataDirWarning.text = warn[0];
+      }
+
+      // Matched against the accumulated buffer, not the chunk: the warning above can push
+      // the listen line across a chunk boundary, and matching per-chunk would then hang
+      // boot until the 8s timeout.
+      const match = LISTEN_LINE.exec(stderrSoFar);
       if (match && !settled) {
         settled = true;
         clearTimeout(timer);
@@ -161,7 +188,7 @@ function spawnAdapter({ entry, dataDir, nodePath, port = "0", env = process.env,
     });
   });
 
-  return { child, portPromise };
+  return { child, portPromise, dataDirWarning };
 }
 
-module.exports = { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveBridgeToken, spawnAdapter, loadSyncEnv, AdapterBootError, LISTEN_LINE };
+module.exports = { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveBridgeToken, spawnAdapter, loadSyncEnv, AdapterBootError, LISTEN_LINE, DATA_DIR_WARNING_LINE };

@@ -164,3 +164,55 @@ describe("spawnAdapter", () => {
     expect(opts.env.ELECTRON_RUN_AS_NODE).toBe("1");
   });
 });
+
+// TASK-1510 — the adapter warns on stderr when its data dir holds no database while
+// another location does. The launcher used to read stderr for the listen line only and
+// throw the rest away, so a fresh install opened blank with no explanation.
+describe("spawnAdapter — data-dir warning capture (TASK-1510)", () => {
+  const WARNING =
+    "[choda-deck] No database found in C:/Users/u/AppData/Roaming/choda-deck-companion/data, but 1 other location(s) hold one:\n" +
+    "  C:/dev/choda-deck/data/database/choda-deck.db — 14.8 MB, modified 2026-08-05T03:43:56.526Z\n" +
+    "Starting here would create a second database with no indication which is live.\n";
+  const LISTEN = "[companion] listening on http://127.0.0.1:54321 (db: x)\n";
+
+  it("captures the warning and still resolves the port", async () => {
+    const child = fakeChild();
+    const { portPromise, dataDirWarning } = spawnAdapter({ entry: "x.cjs", spawnFn: vi.fn(() => child) });
+    child.stderr.emit("data", Buffer.from(WARNING + LISTEN));
+    await expect(portPromise).resolves.toBe(54321);
+    expect(dataDirWarning.text).toContain("No database found in");
+    expect(dataDirWarning.text).toContain("which is live");
+  });
+
+  it("leaves the warning null on a normal boot", async () => {
+    const child = fakeChild();
+    const { portPromise, dataDirWarning } = spawnAdapter({ entry: "x.cjs", spawnFn: vi.fn(() => child) });
+    child.stderr.emit("data", Buffer.from(LISTEN));
+    await expect(portPromise).resolves.toBe(54321);
+    expect(dataDirWarning.text).toBeNull();
+  });
+
+  it("still finds the port when the warning splits the stream mid-line", async () => {
+    // The regression this guards: matching per-chunk instead of against the accumulated
+    // buffer. The warning pushes the listen line across a chunk boundary, and a
+    // per-chunk matcher then never sees a complete listen line — boot hangs for 8s and
+    // fails with a timeout that looks nothing like its cause.
+    const child = fakeChild();
+    const { portPromise, dataDirWarning } = spawnAdapter({ entry: "x.cjs", spawnFn: vi.fn(() => child) });
+    const all = WARNING + LISTEN;
+    const cut = WARNING.length + 20; // mid-way through "[companion] listening on http…"
+    child.stderr.emit("data", Buffer.from(all.slice(0, cut)));
+    child.stderr.emit("data", Buffer.from(all.slice(cut)));
+    await expect(portPromise).resolves.toBe(54321);
+    expect(dataDirWarning.text).toContain("No database found in");
+  });
+
+  it("captures a warning split across two chunks", async () => {
+    const child = fakeChild();
+    const { portPromise, dataDirWarning } = spawnAdapter({ entry: "x.cjs", spawnFn: vi.fn(() => child) });
+    child.stderr.emit("data", Buffer.from(WARNING.slice(0, 60)));
+    child.stderr.emit("data", Buffer.from(WARNING.slice(60) + LISTEN));
+    await expect(portPromise).resolves.toBe(54321);
+    expect(dataDirWarning.text).toContain("which is live");
+  });
+});
