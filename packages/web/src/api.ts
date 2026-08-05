@@ -351,3 +351,48 @@ export interface TaskDetail {
 export function fetchTask(id: string, signal?: AbortSignal): Promise<TaskDetail> {
   return getJson<TaskDetail>(`/tasks/${encodeURIComponent(id)}`, signal);
 }
+
+// TASK-1570 — conversations. Mirror of the adapter's GET /conversations (list,
+// TASK-1158) and GET /conversations/:id (detail, TASK-1568). Field names follow
+// the domain types verbatim — `authorName`, not `author` — because the adapter
+// passes domain objects straight through.
+export interface ConversationSummary {
+  id: string;
+  projectId: string;
+  title: string;
+  status: string;
+  createdBy: string;
+  decisionSummary: string | null;
+  signedOff: string[];
+  createdAt: string;
+  decidedAt: string | null;
+}
+
+export interface ConversationMessage {
+  id: string;
+  conversationId: string;
+  authorName: string;
+  content: string;
+  kind: "message" | "decision" | "signoff";
+  readBy: string[];
+  createdAt: string;
+}
+
+export interface ConversationParticipant {
+  conversationId: string;
+  name: string;
+}
+
+export interface ConversationDetail {
+  conversation: ConversationSummary;
+  messages: ConversationMessage[];
+  participants: ConversationParticipant[];
+}
+
+export function fetchConversations(signal?: AbortSignal): Promise<{ conversations: ConversationSummary[] }> {
+  return getJson<{ conversations: ConversationSummary[] }>("/conversations", signal);
+}
+
+export function fetchConversation(id: string, signal?: AbortSignal): Promise<ConversationDetail> {
+  return getJson<ConversationDetail>(`/conversations/${encodeURIComponent(id)}`, signal);
+}
