@@ -14,6 +14,7 @@ const TABS: ReadonlyArray<{ to: string; label: string; icon: string }> = [
   { to: "/search", label: "Search", icon: "ti-search" },
   { to: "/capture", label: "Capture", icon: "ti-camera" },
   { to: "/conversations", label: "Conversations", icon: "ti-messages" },
+  { to: "/vault", label: "Vault", icon: "ti-notebook" },
 ];
 
 export function Shell(): React.JSX.Element {
