@@ -3,6 +3,7 @@
 // the caller fetches via useTask.
 
 import type { TaskDetail } from "../api";
+import { CaptureMarkdown } from "./CaptureMarkdown";
 
 export function TaskDetailPanel({ task }: { task: TaskDetail }): React.JSX.Element {
   return (
@@ -27,10 +28,12 @@ export function TaskDetailPanel({ task }: { task: TaskDetail }): React.JSX.Eleme
           Blocked by: {task.blockedBy.join(", ")}
         </div>
       )}
+      {/* TASK-1569 — was a raw <pre>, which showed a captured task body's
+          markdown as literal text. Rendered now, with artifact refs resolved. */}
       {task.body && (
-        <pre className="whitespace-pre-wrap break-words rounded-md bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-2 text-xs leading-relaxed">
-          {task.body}
-        </pre>
+        <div className="rounded-md bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-2 text-xs leading-relaxed">
+          <CaptureMarkdown>{task.body}</CaptureMarkdown>
+        </div>
       )}
     </div>
   );
