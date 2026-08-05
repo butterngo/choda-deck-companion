@@ -92,10 +92,12 @@ if (!app.requestSingleInstanceLock()) {
     const nodePath = resolveNodePath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
 
     let apiPort;
+    let dataDirWarning;
     try {
-      const { child, portPromise } = spawnAdapter({ entry, dataDir, nodePath });
-      adapterChild = child;
-      apiPort = await portPromise;
+      const spawned = spawnAdapter({ entry, dataDir, nodePath });
+      adapterChild = spawned.child;
+      dataDirWarning = spawned.dataDirWarning;
+      apiPort = await spawned.portPromise;
     } catch (err) {
       // AC-7 — adapter crash/bind-failure during boot surfaces a visible
       // error, never a blank/frozen window.
@@ -105,6 +107,30 @@ if (!app.requestSingleInstanceLock()) {
       );
       app.quit();
       return;
+    }
+
+    // TASK-1510 AC-1 — the adapter found no database where it was told to look, while
+    // another location has one. Say so BEFORE the window opens showing an empty board,
+    // because "silently empty" is the failure mode that makes someone think their data
+    // is gone. Only the app can ask; the adapter can only warn to stderr.
+    //
+    // Non-blocking by design: the app still starts. An empty dir is legitimate on a
+    // genuine first run, and refusing to boot because a directory exists elsewhere would
+    // be worse than the bug. The dialog states the fix rather than performing it —
+    // migrating a live database behind someone's back is not a decision to take for them.
+    if (dataDirWarning?.text) {
+      dialog.showMessageBoxSync({
+        type: "warning",
+        title: "Choda Companion — no data found here",
+        message: "This install is starting with an empty database.",
+        detail:
+          `${dataDirWarning.text}\n\n` +
+          `Currently reading: ${dataDir ?? "(adapter default)"}\n\n` +
+          "Nothing has been deleted. To use the existing data, quit and set CHODA_DATA_DIR " +
+          "to that folder, or link it — see docs/data-directory.md in the choda-deck repo.",
+        buttons: ["Continue anyway"],
+        noLink: true,
+      });
     }
 
     // TASK-1503 — read the bridge token from the same data dir the adapter uses
