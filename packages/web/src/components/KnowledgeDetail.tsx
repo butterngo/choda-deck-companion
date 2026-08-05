@@ -1,9 +1,9 @@
 // TASK-1174 AC-1/AC-2 — detail view: frontmatter + markdown body + per-ref
 // staleness flag straight from the endpoint (isStale / staleness[]).
 
-import Markdown from "react-markdown";
 import type { KnowledgeEntry } from "../api";
 import { GraphEdgesList } from "./GraphEdgesList";
+import { CaptureMarkdown } from "./CaptureMarkdown";
 
 export function KnowledgeDetail({ entry }: { entry: KnowledgeEntry }): React.JSX.Element {
   return (
@@ -33,9 +33,9 @@ export function KnowledgeDetail({ entry }: { entry: KnowledgeEntry }): React.JSX
           ))}
         </ul>
       )}
-      <div className="prose prose-sm dark:prose-invert max-w-none">
-        <Markdown>{entry.body}</Markdown>
-      </div>
+      {/* TASK-1569 — capture-aware: an entry created from a screenshot embeds an
+          artifacts path that plain react-markdown cannot resolve. */}
+      <CaptureMarkdown>{entry.body}</CaptureMarkdown>
       <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-400 mt-4 mb-2">Linked edges</h3>
       <GraphEdgesList nodeId={entry.slug} />
     </div>
