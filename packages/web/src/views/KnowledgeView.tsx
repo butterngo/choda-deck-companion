@@ -34,19 +34,31 @@ export function KnowledgeView(): React.JSX.Element {
             {list.isLoading ? (
               <p className="text-sm text-zinc-500">Loading entries…</p>
             ) : (
-              <KnowledgeList
-                entries={list.entries}
-                selectedType={selectedType}
-                onSelectType={setSelectedType}
-                selectedSlug={selectedSlug}
-                onSelect={setSelectedSlug}
-              />
+              // TASK-1574 — same bounded pane as ConversationsView. The filter
+              // and search box masked this, but the underlying layout is
+              // identical: unbounded, the entry list made the page ~17,000px
+              // tall and pushed the detail out of the viewport.
+              <div
+                data-testid="knowledge-list-pane"
+                className="max-h-[calc(100vh-18rem)] overflow-y-auto pr-1"
+              >
+                <KnowledgeList
+                  entries={list.entries}
+                  selectedType={selectedType}
+                  onSelectType={setSelectedType}
+                  selectedSlug={selectedSlug}
+                  onSelect={setSelectedSlug}
+                />
+              </div>
             )}
             {health.conn === "stale" && (
               <p className="mt-3 text-xs text-zinc-400">Possibly stale — see the status bar.</p>
             )}
           </div>
-          <div>
+          <div
+            data-testid="knowledge-detail-pane"
+            className="max-h-[calc(100vh-14rem)] overflow-y-auto"
+          >
             {selectedSlug === null ? (
               <p className="text-sm text-zinc-500">Select an entry to view its detail.</p>
             ) : detail.isError ? (
