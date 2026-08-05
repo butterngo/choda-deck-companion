@@ -33,17 +33,34 @@ export function ConversationsView(): React.JSX.Element {
             {list.isLoading ? (
               <p className="text-sm text-zinc-500">Loading conversations…</p>
             ) : (
-              <ConversationList
-                conversations={list.conversations}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-              />
+              // TASK-1574 — the list scrolls INSIDE this pane instead of growing
+              // the page. Unbounded, ~300 conversations made the page ~10,900px
+              // tall, so selecting a row near the bottom rendered the detail far
+              // above the viewport (measured at top: -3502px) — and because
+              // capture images are loading="lazy", they were never even fetched.
+              // Bounding the list keeps the screen ~one viewport tall, so the
+              // detail is always in view and images load on their own.
+              <div
+                data-testid="conversation-list-pane"
+                className="max-h-[calc(100vh-14rem)] overflow-y-auto pr-1"
+              >
+                <ConversationList
+                  conversations={list.conversations}
+                  selectedId={selectedId}
+                  onSelect={setSelectedId}
+                />
+              </div>
             )}
             {health.conn === "stale" && (
               <p className="mt-3 text-xs text-zinc-400">Possibly stale — see the status bar.</p>
             )}
           </div>
-          <div>
+          {/* The thread scrolls in its own pane too — otherwise a long
+              conversation reintroduces the tall page the list fix removed. */}
+          <div
+            data-testid="conversation-detail-pane"
+            className="max-h-[calc(100vh-14rem)] overflow-y-auto"
+          >
             {selectedId === null ? (
               <p className="text-sm text-zinc-500">Select a conversation to read it.</p>
             ) : detail.isError ? (
