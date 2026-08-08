@@ -8,6 +8,7 @@ import { useOutletContext, useNavigate } from "react-router-dom";
 import type { HealthView } from "../hooks/use-health";
 import { useSearch } from "../hooks/use-search";
 import { SearchResults } from "../components/SearchResults";
+import { ErrorState } from "../components/state/ErrorState";
 
 export function SearchView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
@@ -43,10 +44,13 @@ export function SearchView(): React.JSX.Element {
         </button>
       </form>
 
-      {health.conn === "disconnected" || search.isError ? (
-        <p role="alert" className="text-sm text-rose-700 dark:text-rose-400">
-          Can’t reach the laptop API — search is unavailable.
-        </p>
+      {health.conn === "disconnected" ? (
+        // ADR-028 — unreachable is not the same fact as a failed query.
+        // A 401 from a token-gated route used to report "Can't reach the
+        // laptop API", which sent debugging in the wrong direction.
+        <ErrorState variant="unreachable" description="Search is unavailable." />
+      ) : search.isError ? (
+        <ErrorState variant="failed" subject="search" />
       ) : query.trim().length === 0 ? (
         <p className="text-sm text-zinc-500">Type a term and hit Search.</p>
       ) : search.isLoading || !search.result ? (

@@ -11,6 +11,7 @@ import { useKnowledgeList, useKnowledgeEntry } from "../hooks/use-knowledge";
 import { KnowledgeList } from "../components/KnowledgeList";
 import { KnowledgeDetail } from "../components/KnowledgeDetail";
 import { KnowledgeSearchBox } from "../components/KnowledgeSearchBox";
+import { ErrorState } from "../components/state/ErrorState";
 
 export function KnowledgeView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
@@ -23,12 +24,19 @@ export function KnowledgeView(): React.JSX.Element {
     <section aria-label="knowledgebase">
       <h1 className="text-lg font-medium mb-3">Knowledgebase</h1>
 
-      {health.conn === "disconnected" || list.isError ? (
-        <p role="alert" className="text-sm text-rose-700 dark:text-rose-400">
-          Can’t reach the laptop API — the knowledgebase is unavailable.
-        </p>
+      {health.conn === "disconnected" ? (
+        // ADR-028 — unreachable is not the same fact as a failed query.
+        // A 401 from a token-gated route used to report "Can't reach the
+        // laptop API", which sent debugging in the wrong direction.
+        <ErrorState variant="unreachable" description="The knowledgebase is unavailable — this is not an empty store." />
+      ) : list.isError ? (
+        <ErrorState variant="failed" subject="the knowledgebase" />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        // TASK-1614 — the detail is the point; the list is navigation. A 50/50
+        // split gave a list of titles the same room as the document you came to
+        // read. The list is bounded to 240–320px so the detail takes the rest,
+        // and the whole thing stacks below `lg` where there is no room to split.
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(240px,320px)_1fr] gap-6">
           <div>
             <KnowledgeSearchBox onSelect={setSelectedSlug} />
             {list.isLoading ? (

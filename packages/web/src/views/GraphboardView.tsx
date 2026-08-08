@@ -14,6 +14,7 @@ import { useKnowledgeSearch } from "../hooks/use-knowledge-search";
 import { GraphView } from "../components/GraphView";
 import { WorkspaceSelect } from "../components/WorkspaceSelect";
 import { NodeDetailDrawer, type NodeRef } from "../components/NodeDetailDrawer";
+import { ErrorState } from "../components/state/ErrorState";
 
 export function GraphboardView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
@@ -60,10 +61,13 @@ export function GraphboardView(): React.JSX.Element {
 
       {workspaceId === null && !projectFromQuery ? (
         <WorkspaceSelect onSubmit={setWorkspaceId} />
-      ) : health.conn === "disconnected" || graph.isError ? (
-        <p role="alert" className="text-sm text-rose-700 dark:text-rose-400">
-          Can’t reach the laptop API — the graph is unavailable. (Not “empty graph”.)
-        </p>
+      ) : health.conn === "disconnected" ? (
+        // ADR-028 — unreachable is not the same fact as a failed query.
+        // A 401 from a token-gated route used to report "Can't reach the
+        // laptop API", which sent debugging in the wrong direction.
+        <ErrorState variant="unreachable" description="The graph is unavailable — this is not an empty graph." />
+      ) : graph.isError ? (
+        <ErrorState variant="failed" subject="the graph" />
       ) : projectId === null || graph.isLoading || !graph.data ? (
         <p className="text-sm text-zinc-500">Loading graph…</p>
       ) : (
