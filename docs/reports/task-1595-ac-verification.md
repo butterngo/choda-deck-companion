@@ -5,9 +5,11 @@
 **PR:** [#53](https://github.com/butterngo/choda-deck-companion/pull/53) — squash-merged as `06a0f2f`
 **Merge proof:** `git merge-base --is-ancestor 06a0f2f48fc0601e60a0fc0e10f9e5a823f940b0 origin/main` → ancestor ✅
 
-**Result: 6/7 verified · 0 blocked · 1 needs a human.**
+**Result: 7/7 verified · 0 blocked · 0 outstanding.**
 
-**Status: IMPLEMENTED, not DONE.** AC-7 cannot be proven by this runner.
+**AC-7 initially FAILED and was fixed** — see the section below. Follow-up fix:
+PR [#55](https://github.com/butterngo/choda-deck-companion/pull/55), merged as
+`e666e42`.
 
 ## Criteria
 
@@ -19,24 +21,60 @@
 | 4 | Deep link to `/vault` expands and marks the parent active | ✅ | Renders at `/vault`, asserts `aria-expanded="true"`, then clicks to collapse and asserts it is **still** true |
 | 5 | `StatusBar` inside the `<aside>`, not a sibling of `<main>` | ✅ | Asserts present within sidebar **and** absent within main — mere presence wouldn't distinguish the two |
 | 6 | Shell owns scroll; no view viewport math added | ✅ | `<main …overflow-y-auto>` under `h-screen overflow-hidden`; `git diff` over `src/views` empty. **See the gap below** |
-| 7 | Icon rail below 860px, no horizontal scroll at 800px | ⬜ **NOT TICKED** | Human-driven — see below |
+| 7 | Icon rail below 860px, no horizontal scroll at 800px | ✅ **after fix** | Measured in a browser on the production build — see below. **Failed on first implementation** |
 
-## AC-7 is not ticked, and will not be by a runner
+## AC-7 failed, and this is the whole reason it existed
 
-It requires resizing the actual Electron window and judging the result,
-including against its real default size — which is the open question the design
-note still carries about the 216px sidebar width. No human is in this loop, so
-the only honest outcome is to leave it and name it.
+The first implementation **did not have an icon rail at all.** The
+collapse-to-rail lived only in the mockup's CSS and was never ported to React:
+`Shell.tsx` hardcoded `w-[216px]`, and grep for `md:` / `lg:` / `@media` across
+`Shell.tsx` and `SidebarNav.tsx` returned nothing.
 
-**To close it:** run `pnpm --filter web dev`, resize below 860px and confirm the
-sidebar becomes an icon rail, then at 800px confirm the page body never scrolls
-sideways. Then tick AC-7 and move the task to DONE.
+Measured on the merged code:
 
-This is also the moment to judge the shell visually. TASK-1593 established that
-**the gates cannot detect a visual regression** — all four stayed green through
-a `borderRadius` change that would have shifted every corner in the app. This
-PR changes what the app looks like; 146 passing tests say nothing about whether
-it looks right.
+| Viewport | sidebar | labels |
+|---|---|---|
+| 1440px | 216px | visible ✓ |
+| **800px** | **216px** ❌ | **visible** ❌ |
+
+**157 passing tests and four green gates said nothing**, because none of them
+render at a width. This is precisely the failure mode TASK-1593 flagged and
+that AC-7 was written to catch. It surfaced the moment someone measured, and
+not before.
+
+### The fix (PR #55)
+
+A named `rail: 860px` breakpoint, then the mockup's media query ported.
+
+Labels use `sr-only rail:not-sr-only`, **not** `hidden`: `display:none` would
+strip the accessible name and leave a column of unlabelled icons. Verified — at
+859px a nav link still reports `"Cockpit"` as its text content. Group labels
+and counts *do* use `hidden`, being redundant rather than load-bearing when
+there is no room.
+
+### Verified on the production build
+
+The dev server was still holding the previous `tailwind.config.js`, which is
+why the first browser check *after* the fix still showed 56px at 900px. Stale
+config, not a code fault — the compiled CSS contains
+`@media(min-width:860px){.rail\:not-sr-only{…}}`. Re-measured on
+`vite preview`:
+
+| Viewport | sidebar | Cockpit label | horizontal scroll |
+|---|---|---|---|
+| 900px (≥860) | **216px** | 47px visible | none |
+| 859px (<860) | **56px** | sr-only (1px) | none |
+| 800px | **56px** | sr-only | none (main 744px) |
+
+Two jsdom tests now guard the responsive prefixes. They assert *classes*, which
+is weaker than a rendered measurement, and say so in a comment — the browser
+measurement above is the real proof.
+
+### What is still unverified
+
+The **appearance** of the shell. AC-7 is now proven mechanically, but nobody
+has judged whether the sidebar looks right, or whether 216px suits the real
+Electron window. The gates cannot answer that, and neither can Playwright.
 
 ## Known gap, recorded not hidden
 
