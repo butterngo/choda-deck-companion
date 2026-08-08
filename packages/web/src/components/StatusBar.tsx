@@ -32,10 +32,10 @@ export function StatusBar({ view }: { view: HealthView }): React.JSX.Element {
         role="status"
         aria-label="connection status"
         data-conn="disconnected"
-        className="flex items-start gap-2 px-3 py-2 text-xs leading-relaxed text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40"
+        className="flex items-start gap-2 px-2 rail:px-3 py-2 text-xs leading-relaxed text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40"
       >
         <i className="ti ti-plug-connected-x mt-px" aria-hidden="true" />
-        <span>Disconnected from laptop API — data may be unavailable.</span>
+        <span className="sr-only rail:not-sr-only">Disconnected from laptop API — data may be unavailable.</span>
       </div>
     );
   }
@@ -48,21 +48,21 @@ export function StatusBar({ view }: { view: HealthView }): React.JSX.Element {
       role="status"
       aria-label="connection status"
       data-conn={conn}
-      className="flex flex-col gap-1 px-3 py-2 text-xs text-zinc-600 dark:text-zinc-300"
+      className="flex flex-col gap-1 items-center rail:items-start px-2 rail:px-3 py-2 text-xs text-zinc-600 dark:text-zinc-300"
     >
       <span className="flex items-center gap-1.5">
         <span className={`inline-block w-1.5 h-1.5 rounded-full ${dotClass}`} aria-hidden="true" />
-        <span>{loopAlive ? "sync loop live" : "loop down"}</span>
+        <span className="sr-only rail:not-sr-only">{loopAlive ? "sync loop live" : "loop down"}</span>
       </span>
-      <span className="text-zinc-500 dark:text-zinc-400 tabular-nums">
+      <span className="text-zinc-500 dark:text-zinc-400 tabular-nums sr-only rail:not-sr-only">
         last pull {health?.lastPullAgeSec != null ? `${health.lastPullAgeSec}s ago` : "—"}
       </span>
-      <span className="mono text-[11px] text-zinc-400">{loopLabel(health?.jwtState ?? "unknown")}</span>
+      <span className="mono text-[11px] text-zinc-400 sr-only rail:not-sr-only">{loopLabel(health?.jwtState ?? "unknown")}</span>
 
       {conn === "stale" && (
         <span
           data-stale="true"
-          className="flex items-start gap-1.5 leading-relaxed text-amber-700 dark:text-amber-400"
+          className="flex items-start gap-1.5 leading-relaxed text-amber-700 dark:text-amber-400 sr-only rail:not-sr-only"
         >
           <i className="ti ti-clock-exclamation mt-px" aria-hidden="true" />
           <span>may be stale — last fetched {lastFetchedAgoSec ?? "?"}s ago</span>
