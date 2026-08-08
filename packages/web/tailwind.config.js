@@ -11,9 +11,10 @@ export default {
         sans: ["system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
         mono: ["ui-monospace", "SF Mono", "Cascadia Mono", "Menlo", "monospace"],
       },
-      maxWidth: {
-        page: "1024px",
-      },
+      // TASK-1595 — `maxWidth.page: "1024px"` removed here. It came from
+      // TASK-857 and was the direct cause of the cramped two-pane views and
+      // their calc() clamps. The shell now owns width; content panes set their
+      // own max-width where prose readability calls for it.
       // TASK-1593 — shadcn's semantic colour names, resolved from the CSS
       // variables in index.css. Additive: every existing `zinc-*` / `blue-*`
       // utility keeps working, because this extends the palette instead of
