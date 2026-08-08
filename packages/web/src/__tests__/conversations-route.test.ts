@@ -16,10 +16,15 @@ describe("conversations route wiring", () => {
     expect(router).toContain('from "./views/ConversationsView"');
   });
 
-  it("Shell exposes a Conversations tab", () => {
-    const shell = readFileSync(join(SRC, "layouts", "Shell.tsx"), "utf8");
-    expect(shell).toContain('to: "/conversations"');
-    expect(shell).toContain('label: "Conversations"');
+  it("the sidebar exposes a Conversations entry", () => {
+    // TASK-1595 — the nav moved out of Shell.tsx's TABS array into
+    // SidebarNav.tsx as JSX. The assertion's intent is unchanged (a
+    // Conversations entry exists in the nav); only the file and the syntax it
+    // matches moved. /conversations remains reachable, which the rendered
+    // assertion in layouts/__tests__/Shell.test.tsx also covers.
+    const nav = readFileSync(join(SRC, "components", "nav", "SidebarNav.tsx"), "utf8");
+    expect(nav).toContain('to="/conversations"');
+    expect(nav).toContain('label="Conversations"');
   });
 
   it("the catch-all redirect still comes last so it cannot shadow the new route", () => {
