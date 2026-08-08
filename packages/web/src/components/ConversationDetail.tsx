@@ -5,7 +5,6 @@
 
 import type { ConversationDetail as ConversationDetailData } from "../api";
 import { CaptureMarkdown } from "./CaptureMarkdown";
-import { Readable } from "./layout/Readable";
 
 const KIND_STYLE: Record<string, string> = {
   decision: "border-blue-300 dark:border-blue-800",
@@ -15,8 +14,7 @@ const KIND_STYLE: Record<string, string> = {
 export function ConversationDetail({ detail }: { detail: ConversationDetailData }): React.JSX.Element {
   const { conversation, messages, participants } = detail;
   return (
-    <Readable>
-      <div aria-label="conversation detail">
+    <div aria-label="conversation detail">
       <div className="flex items-center justify-between gap-2 mb-1">
         <h2 className="text-base font-medium">{conversation.title}</h2>
         <span className="text-xs px-2 py-0.5 rounded bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
@@ -54,7 +52,6 @@ export function ConversationDetail({ detail }: { detail: ConversationDetailData 
           ))}
         </ul>
       )}
-      </div>
-    </Readable>
+    </div>
   );
 }

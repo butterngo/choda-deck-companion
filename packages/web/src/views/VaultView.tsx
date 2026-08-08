@@ -11,7 +11,6 @@ import type { HealthView } from "../hooks/use-health";
 import { rewriteVaultAssetPaths, type VaultNoteSummary } from "../api";
 import { useVaultNote, useVaultNotes } from "../hooks/use-vault";
 import { CaptureMarkdown } from "../components/CaptureMarkdown";
-import { Readable } from "../components/layout/Readable";
 
 function NoteRow({
   note,
@@ -109,9 +108,7 @@ export function VaultView(): React.JSX.Element {
             ) : (
               // Relative `assets/...` paths resolve on disk but not in a browser,
               // so they are rewritten to the asset route before rendering.
-              <Readable>
-                <CaptureMarkdown>{rewriteVaultAssetPaths(detail.markdown)}</CaptureMarkdown>
-              </Readable>
+              <CaptureMarkdown>{rewriteVaultAssetPaths(detail.markdown)}</CaptureMarkdown>
             )}
           </div>
         </div>
