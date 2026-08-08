@@ -4,10 +4,12 @@
 import type { KnowledgeEntry } from "../api";
 import { GraphEdgesList } from "./GraphEdgesList";
 import { CaptureMarkdown } from "./CaptureMarkdown";
+import { Readable } from "./layout/Readable";
 
 export function KnowledgeDetail({ entry }: { entry: KnowledgeEntry }): React.JSX.Element {
   return (
-    <div aria-label="knowledge detail">
+    <Readable>
+      <div aria-label="knowledge detail">
       <div className="flex items-center justify-between gap-2 mb-1">
         <h2 className="text-base font-medium">{entry.frontmatter.title}</h2>
         <span
@@ -38,6 +40,7 @@ export function KnowledgeDetail({ entry }: { entry: KnowledgeEntry }): React.JSX
       <CaptureMarkdown>{entry.body}</CaptureMarkdown>
       <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-400 mt-4 mb-2">Linked edges</h3>
       <GraphEdgesList nodeId={entry.slug} />
-    </div>
+      </div>
+    </Readable>
   );
 }
