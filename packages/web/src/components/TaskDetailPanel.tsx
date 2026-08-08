@@ -4,10 +4,12 @@
 
 import type { TaskDetail } from "../api";
 import { CaptureMarkdown } from "./CaptureMarkdown";
+import { Readable } from "./layout/Readable";
 
 export function TaskDetailPanel({ task }: { task: TaskDetail }): React.JSX.Element {
   return (
-    <div className="flex flex-col gap-3 text-sm">
+    <Readable>
+      <div className="flex flex-col gap-3 text-sm">
       <div>
         <div className="font-mono text-xs text-zinc-400">{task.id}</div>
         <div className="font-medium">{task.title}</div>
@@ -35,6 +37,7 @@ export function TaskDetailPanel({ task }: { task: TaskDetail }): React.JSX.Eleme
           <CaptureMarkdown>{task.body}</CaptureMarkdown>
         </div>
       )}
-    </div>
+      </div>
+    </Readable>
   );
 }
