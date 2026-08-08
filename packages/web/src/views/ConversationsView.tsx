@@ -12,6 +12,7 @@ import type { HealthView } from "../hooks/use-health";
 import { useConversation, useConversationList } from "../hooks/use-conversations";
 import { ConversationList } from "../components/ConversationList";
 import { ConversationDetail } from "../components/ConversationDetail";
+import { ErrorState } from "../components/state/ErrorState";
 
 export function ConversationsView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
@@ -23,10 +24,13 @@ export function ConversationsView(): React.JSX.Element {
     <section aria-label="conversations">
       <h1 className="text-lg font-medium mb-3">Conversations</h1>
 
-      {health.conn === "disconnected" || list.isError ? (
-        <p role="alert" className="text-sm text-rose-700 dark:text-rose-400">
-          Can’t reach the laptop API — conversations are unavailable.
-        </p>
+      {health.conn === "disconnected" ? (
+        // ADR-028 — unreachable is not the same fact as a failed query.
+        // A 401 from a token-gated route used to report "Can't reach the
+        // laptop API", which sent debugging in the wrong direction.
+        <ErrorState variant="unreachable" description="Conversations are unavailable — this is not an empty list." />
+      ) : list.isError ? (
+        <ErrorState variant="failed" subject="the conversation list" />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>

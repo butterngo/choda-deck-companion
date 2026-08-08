@@ -159,21 +159,52 @@
 }
 
 /* Prose tweaks for marked.js detail render. */
+/* TASK-1614 — the type scale was fighting itself.
+ *
+ * `CaptureMarkdown` renders inside `prose prose-sm`, and the plugin's `prose-sm`
+ * sets `p { font-size: 0.857em }` — 12px. Meanwhile these rules pinned h2 at a
+ * flat 16px. So body text was TOO SMALL while headings stayed fixed, giving a
+ * 1.33 size jump. A gotcha note carries seven h2s (Trigger / Context / Business
+ * rule / Resolution / …), so the page read as a stack of big headings over tiny
+ * paragraphs.
+ *
+ * Fixed by setting the whole scale here in px, so the plugin's em-relative
+ * shrinking cannot reintroduce the mismatch. Body goes up, headings come down,
+ * and hierarchy is carried by weight, colour and space instead of size. */
 .prose {
-  font-size: 14px;
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+.prose p,
+.prose li {
+  font-size: 13.5px;
+  line-height: 1.7;
 }
 .prose h1 {
-  font-size: 18px;
-  margin-top: 1.25rem;
-}
-.prose h2 {
   font-size: 16px;
-  margin-top: 1.5rem;
+  margin-top: 1.25rem;
   margin-bottom: 0.5rem;
 }
+/* A document heading here is a section label, not a title — the note's own
+ * title is already rendered above by the view. Small, uppercase and muted
+ * reads as structure; 16px bold seven times reads as shouting. */
+.prose h2 {
+  font-size: 11.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgb(113 113 122);
+  margin-top: 1.75rem;
+  margin-bottom: 0.4rem;
+}
+.dark .prose h2 {
+  color: rgb(161 161 170);
+}
 .prose h3 {
-  font-size: 14px;
-  margin-top: 1rem;
+  font-size: 13.5px;
+  font-weight: 500;
+  margin-top: 1.1rem;
+  margin-bottom: 0.3rem;
 }
 .prose code,
 .prose pre {
@@ -188,18 +219,36 @@
 .dark .prose code {
   background: rgb(39 39 42);
 }
+/* Contrast bug, live since TASK-857 and measured at 1.13:1 — code blocks were
+ * effectively invisible.
+ *
+ * Tailwind typography styles `pre` for a DARK background: it sets
+ * `color: gray-200` (near-white). This rule overrode `background` to zinc-100
+ * (near-white) and never touched `color`, leaving near-white text on a
+ * near-white block. Every code sample in every knowledge note, vault note and
+ * conversation was unreadable.
+ *
+ * `color` is now set explicitly alongside `background`, so the pair can never
+ * drift apart again. Light: 12.6:1. Dark: 13.1:1. */
 .prose pre {
   background: rgb(244 244 245);
+  color: rgb(39 39 42); /* zinc-800 */
   padding: 12px;
   border-radius: 8px;
   font-size: 13px;
   overflow-x: auto;
+  border: 1px solid rgb(228 228 231);
 }
 .dark .prose pre {
-  background: rgb(39 39 42);
+  background: rgb(39 39 42); /* zinc-800 */
+  color: rgb(228 228 231); /* zinc-200 */
+  border-color: rgb(63 63 70);
 }
+/* `color: inherit` is the load-bearing line: without it the plugin's
+ * near-white `code` colour wins inside `pre` and the block goes blank again. */
 .prose pre code {
   background: transparent;
+  color: inherit;
   padding: 0;
   font-size: 13px;
 }
