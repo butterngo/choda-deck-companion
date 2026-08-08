@@ -23,6 +23,7 @@ const KNOWLEDGE_PATHS = ["/knowledge", "/vault"];
 function itemClass({ isActive }: { isActive: boolean }): string {
   return [
     "relative flex items-center gap-2.5 w-full px-2 py-1.5 rounded-md text-sm text-left",
+    "justify-center rail:justify-start",
     isActive
       ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium"
       : "text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50",
@@ -31,7 +32,9 @@ function itemClass({ isActive }: { isActive: boolean }): string {
 
 function Count({ n }: { n?: number }): React.JSX.Element | null {
   if (n === undefined) return null;
-  return <span className="ml-auto text-xs tabular-nums text-zinc-400">{n}</span>;
+  return (
+    <span className="ml-auto text-xs tabular-nums text-zinc-400 hidden rail:inline">{n}</span>
+  );
 }
 
 function Item({
@@ -47,8 +50,8 @@ function Item({
 }): React.JSX.Element {
   return (
     <NavLink to={to} className={itemClass}>
-      <i className={`ti ${icon} text-zinc-400`} aria-hidden="true" />
-      <span>{label}</span>
+      <i className={`ti ${icon} text-zinc-400`} aria-hidden="true" title={label} />
+      <span className="sr-only rail:not-sr-only">{label}</span>
       <Count n={count} />
     </NavLink>
   );
@@ -56,7 +59,7 @@ function Item({
 
 function GroupLabel({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
-    <div className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-zinc-400">
+    <div className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-zinc-400 hidden rail:block">
       {children}
     </div>
   );
@@ -86,7 +89,7 @@ export function SidebarNav({ counts = {} }: { counts?: NavCounts }): React.JSX.E
     childCounts.length > 0 ? childCounts.reduce((a, b) => a + b, 0) : undefined;
 
   return (
-    <nav className="flex-1 min-h-0 overflow-y-auto px-2.5 pb-2.5" aria-label="Sections">
+    <nav className="flex-1 min-h-0 overflow-y-auto px-1.5 rail:px-2.5 pb-2.5" aria-label="Sections">
       <div className="mb-3.5">
         <GroupLabel>Work</GroupLabel>
         <Item to="/cockpit" icon="ti-layout-kanban" label="Cockpit" count={counts.cockpit} />
@@ -105,6 +108,7 @@ export function SidebarNav({ counts = {} }: { counts?: NavCounts }): React.JSX.E
           onClick={() => setOpen((v) => !v)}
           className={[
             "flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-sm text-left",
+            "justify-center rail:justify-start",
             insideKnowledge
               ? "text-zinc-900 dark:text-zinc-100 font-medium"
               : "text-zinc-600 dark:text-zinc-300",
@@ -112,7 +116,7 @@ export function SidebarNav({ counts = {} }: { counts?: NavCounts }): React.JSX.E
           ].join(" ")}
         >
           <i
-            className={`ti ti-chevron-down text-zinc-400 transition-transform ${
+            className={`ti ti-chevron-down text-zinc-400 transition-transform hidden rail:inline ${
               expanded ? "" : "-rotate-90"
             }`}
             aria-hidden="true"
@@ -121,14 +125,14 @@ export function SidebarNav({ counts = {} }: { counts?: NavCounts }): React.JSX.E
             className={`ti ti-book-2 ${insideKnowledge ? "text-blue-600 dark:text-blue-400" : "text-zinc-400"}`}
             aria-hidden="true"
           />
-          <span>Knowledge</span>
+          <span className="sr-only rail:not-sr-only">Knowledge</span>
           <Count n={knowledgeTotal} />
         </button>
 
         {/* Collapsed children leave the accessibility tree entirely — hidden
             links a screen reader can still tab to are worse than no links. */}
         {expanded && (
-          <div className="ml-4 pl-3 border-l border-zinc-200 dark:border-zinc-800">
+          <div className="rail:ml-4 rail:pl-3 rail:border-l border-zinc-200 dark:border-zinc-800">
             <Item
               to="/knowledge"
               icon="ti-database"

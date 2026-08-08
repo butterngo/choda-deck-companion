@@ -114,3 +114,35 @@ describe("Shell layout contract", () => {
     expect(screen.getByRole("status").className).toMatch(/flex-col/);
   });
 });
+
+// TASK-1595 AC-7 — the icon rail.
+//
+// This existed only in the mockup's CSS and was never ported to React: the
+// sidebar stayed 216px with labels visible at every width, and 157 green tests
+// plus four green gates said nothing. Measured in a real browser, not inferred.
+//
+// jsdom applies no CSS, so these assert the CLASSES that encode the breakpoint.
+// That is weaker than a rendered measurement — the browser check in
+// docs/reports/task-1595-ac-verification.md is the real proof — but it is
+// enough to fail loudly if someone drops the responsive prefixes again.
+describe("Shell icon rail (AC-7)", () => {
+  it("SidebarNav labels are sr-only until the rail breakpoint", () => {
+    const { container } = nav("/cockpit");
+    const labels = container.querySelectorAll("nav a span");
+    expect(labels.length).toBeGreaterThan(0);
+    for (const el of labels) {
+      // sr-only keeps the accessible name while hiding it visually; `hidden`
+      // would strip the name from the a11y tree and leave unlabelled icons.
+      if (el.className.includes("tabular-nums")) continue; // counts
+      expect(el.className).toMatch(/sr-only/);
+      expect(el.className).toMatch(/rail:not-sr-only/);
+    }
+  });
+
+  it("group labels and counts are display-hidden below the breakpoint", () => {
+    const { container } = nav("/cockpit", { knowledge: 2, vault: 3 });
+    expect(screen.getByText("Work").className).toMatch(/hidden rail:block/);
+    const count = container.querySelector("span.tabular-nums");
+    expect(count?.className).toMatch(/hidden rail:inline/);
+  });
+});

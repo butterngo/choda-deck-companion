@@ -7,6 +7,13 @@ export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      // TASK-1595 AC-7 — the sidebar collapses to an icon rail below this.
+      // Named rather than an arbitrary `max-[860px]:` so the threshold lives in
+      // one place; Tailwind is mobile-first, so `rail:` means "≥860px, expanded"
+      // and the un-prefixed class is the rail itself.
+      screens: {
+        rail: "860px",
+      },
       fontFamily: {
         sans: ["system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
         mono: ["ui-monospace", "SF Mono", "Cascadia Mono", "Menlo", "monospace"],
