@@ -230,6 +230,20 @@ export interface KnowledgeEntry {
 
 export interface KnowledgeSearchHit extends KnowledgeListItem {
   distance: number;
+  /**
+   * TASK-1602 — leading prose of the entry, added to the adapter by TASK-1599.
+   *
+   * OPTIONAL on purpose, even though the adapter now declares it required. The
+   * companion is a long-lived client talking to whatever adapter build happens
+   * to be running, and a running instance that predates TASK-1599 simply omits
+   * it — confirmed against the live one while building this. Typing it as
+   * required would have TypeScript assert a string that is `undefined` at
+   * runtime.
+   *
+   * NOT a matched-term snippet: search is semantic, so a hit may share no
+   * literal term with the query. Never highlight it.
+   */
+  excerpt?: string;
 }
 
 export interface KnowledgeSearchResult {

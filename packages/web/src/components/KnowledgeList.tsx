@@ -9,7 +9,7 @@ const TYPES: KnowledgeType[] = ["spike", "decision", "postmortem", "learning", "
 // TASK-1614 — type as a dot rather than a word competing with the title for
 // row width. Colour is the coarse signal ("is this a decision or a gotcha?");
 // the word stays alongside it for anyone who needs the exact type.
-const TYPE_DOT: Record<string, string> = {
+export const TYPE_DOT: Record<string, string> = {
   decision: "bg-violet-500",
   gotcha: "bg-amber-500",
   learning: "bg-sky-500",
