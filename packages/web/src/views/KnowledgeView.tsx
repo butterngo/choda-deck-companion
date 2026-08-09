@@ -60,9 +60,26 @@ export function KnowledgeView(): React.JSX.Element {
       const hits = search.result?.results ?? [];
       return (
         <>
+          {/* "N results" was a lie. Search is semantic: it returns the top-K
+              NEAREST entries by vector distance, with no relevance threshold,
+              so a nonsense query still comes back with a full page. Verified
+              live — `zzzqqqxyzzy` returned 5 "results" at distances 1.286-1.313
+              (spread 0.027, the flat profile that `a-flat-distance-profile-from
+              -knowledge-search-means-no-match` in this very store describes).
+              Calling them "nearest" is true whatever the distances are.
+
+              A relevance cutoff is NOT guessed here on purpose: the sibling
+              gotcha `sweep-threshold-constants-against-real-fixtures` is about
+              exactly this mistake. It needs a sweep against real queries. */}
           <div className="flex items-center gap-2 pb-2 text-[11px] text-zinc-400">
-            <span className="tabular-nums">
-              {hits.length === 0 ? "No results" : `${hits.length} result${hits.length === 1 ? "" : "s"}`} for “{submitted}”
+            <span
+              className="tabular-nums"
+              title="Semantic search returns the closest entries by meaning, not keyword matches — so it always returns some, however distant."
+            >
+              {hits.length === 0
+                ? "Nothing returned"
+                : `${hits.length} nearest to`}{" "}
+              “{submitted}”
             </span>
             <span className="flex-1" />
             <button
@@ -80,8 +97,11 @@ export function KnowledgeView(): React.JSX.Element {
             {hits.length === 0 ? (
               <EmptyState
                 icon="ti-search"
-                title={`No entries match “${submitted}”`}
-                description="Search covers titles and bodies. Try a shorter term, or browse by type."
+                title={`Nothing returned for “${submitted}”`}
+                // Kept as a guard, not as a state you will normally reach: with
+                // `enabled: true` the provider always returns its top-K, so an
+                // empty array means the store itself is empty or unembedded.
+                description="Semantic search returns the closest entries by meaning, so an empty answer means nothing is indexed yet."
                 action={
                   <button
                     type="button"

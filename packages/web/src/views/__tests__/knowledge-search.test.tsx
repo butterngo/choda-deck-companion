@@ -190,14 +190,35 @@ describe("Knowledge search", () => {
     expect(within(results).queryByText("undefined")).toBeNull();
   });
 
-  it("shows an empty state naming the query when nothing matches", async () => {
+  it("says NEAREST, not results — semantic search never reports a miss", async () => {
+    // Found by testing against the live adapter: `zzzqqqxyzzy` came back with
+    // 5 "results" at distances 1.286-1.313. There is no relevance threshold, so
+    // the provider always returns its top-K and calling them "results" claims
+    // matches that do not exist.
+    //
+    // No cutoff is guessed here — the sibling gotcha
+    // `sweep-threshold-constants-against-real-fixtures` is about exactly that
+    // mistake. The wording is what can be made honest without one.
+    vi.spyOn(api, "searchKnowledgeEntries").mockResolvedValue({
+      enabled: true,
+      results: [
+        { ...entry("far-1", "A distant entry"), distance: 1.31 },
+        { ...entry("far-2", "Another distant entry"), distance: 1.32 },
+      ],
+    });
+    view();
+    await searchFor("zzzqqqxyzzy");
+    await waitFor(() => expect(screen.getByText(/nearest to/i)).toBeInTheDocument());
+    expect(screen.queryByText(/\d+ results? for/i)).toBeNull();
+  });
+
+  it("keeps an empty answer distinguishable from a distant one", async () => {
+    // Reachable only when the store is empty or unembedded, since an enabled
+    // provider always returns its top-K. Kept as a guard.
     vi.spyOn(api, "searchKnowledgeEntries").mockResolvedValue({ enabled: true, results: [] });
     view();
     await searchFor("xyzzy");
-    await waitFor(() => expect(screen.getByText(/No entries match/i)).toBeInTheDocument());
-    // The query is echoed twice on purpose — once in the result bar, once in
-    // the empty state — so scope the assertion instead of matching globally.
-    expect(screen.getByText(/No entries match/i)).toHaveTextContent("xyzzy");
-    expect(screen.getByText(/No results for/i)).toHaveTextContent("xyzzy");
+    await waitFor(() => expect(screen.getByText(/Nothing returned for/i)).toBeInTheDocument());
+    expect(screen.getByText(/Nothing returned for/i)).toHaveTextContent("xyzzy");
   });
 });
