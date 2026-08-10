@@ -92,7 +92,7 @@ export function KnowledgeView(): React.JSX.Element {
           </div>
           <div
             data-testid="knowledge-list-pane"
-            className="max-h-[calc(100vh-18rem)] overflow-y-auto pr-1"
+            className="flex-1 min-h-0 overflow-y-auto pr-1"
           >
             {hits.length === 0 ? (
               <EmptyState
@@ -123,7 +123,7 @@ export function KnowledgeView(): React.JSX.Element {
     return (
       <div
         data-testid="knowledge-list-pane"
-        className="max-h-[calc(100vh-18rem)] overflow-y-auto pr-1"
+        className="flex-1 min-h-0 overflow-y-auto pr-1"
       >
         <KnowledgeList
           entries={list.entries}
@@ -149,8 +149,12 @@ export function KnowledgeView(): React.JSX.Element {
     if (list.isError) return <ErrorState variant="failed" subject="the knowledgebase" />;
 
     return (
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(240px,320px)_1fr] gap-6">
-        <div className="min-w-0">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(240px,320px)_1fr] gap-6 flex-1 min-h-0 lg:grid-rows-[minmax(0,1fr)]">
+        {/* The grid item, not the pane. It has to be a flex column that can
+            shrink, or the pane inside it grows to content and its own
+            overflow-y-auto never engages — measured at 19069px tall before
+            this was added. */}
+        <div className="min-w-0 min-h-0 flex flex-col">
           <KnowledgeSearchBox
             query={query}
             onQueryChange={setQuery}
@@ -187,7 +191,7 @@ export function KnowledgeView(): React.JSX.Element {
 
         <div
           data-testid="knowledge-detail-pane"
-          className="min-w-0 max-h-[calc(100vh-14rem)] overflow-y-auto"
+          className="min-w-0 min-h-0 overflow-y-auto"
         >
           {selectedSlug === null ? (
             <EmptyState
@@ -208,7 +212,7 @@ export function KnowledgeView(): React.JSX.Element {
   }
 
   return (
-    <section aria-label="knowledgebase">
+    <section aria-label="knowledgebase" className="flex-1 min-h-0 flex flex-col">
       <h1 className="text-lg font-medium mb-4">Choda knowledge</h1>
       {body()}
     </section>

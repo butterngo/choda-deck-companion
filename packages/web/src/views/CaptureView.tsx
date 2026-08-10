@@ -85,7 +85,7 @@ export function CaptureView(): React.JSX.Element {
   }, []);
 
   return (
-    <section aria-label="capture">
+    <section aria-label="capture" className="flex-1 min-h-0 overflow-y-auto">
       <h1 className="text-lg font-medium mb-3">Capture</h1>
 
       <div className="flex items-center gap-2 mb-4">

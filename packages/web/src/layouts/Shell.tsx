@@ -56,8 +56,20 @@ export function Shell(): React.JSX.Element {
         </div>
       </aside>
 
-      {/* The single scrolling container. Views must not add their own. */}
-      <main className="flex-1 min-w-0 overflow-y-auto px-4 rail:px-6 py-5">
+      {/* TASK-1623 — the shell hands each view the exact height it has, and the
+          view decides whether to scroll as a page or fill and scroll inside its
+          panes.
+
+          It used to be `overflow-y-auto` here, which forced split views to
+          guess their own height with `max-h-[calc(100vh - 18rem)]`. That
+          arithmetic was wrong twice over: `18rem` was a guess at the chrome
+          above the pane, and subtracting from `100vh` double-counts this
+          element's own padding. Measured at 1080px tall it left 183px of dead
+          space below both panes.
+
+          `min-h-0` is load-bearing: without it a flex child refuses to shrink
+          below its content and the inner `overflow-y-auto` never engages. */}
+      <main className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col px-4 rail:px-6 py-5">
         <Outlet context={view} />
       </main>
     </div>

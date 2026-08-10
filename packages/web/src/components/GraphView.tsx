@@ -195,7 +195,7 @@ export function GraphView({
         </span>
       </div>
 
-      <div className="flex gap-2 h-[calc(100vh-12rem)] min-h-[420px]">
+      <div className="flex gap-2 flex-1 min-h-[420px]">
       <svg
         ref={svgRef}
         aria-label="knowledge graph"

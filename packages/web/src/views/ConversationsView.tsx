@@ -39,7 +39,7 @@ export function ConversationsView(): React.JSX.Element {
     if (list.isLoading) return <Skeleton shape="list" label="Loading conversations…" />;
 
     return (
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,340px)_1fr] gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,340px)_1fr] gap-6 flex-1 min-h-0 lg:grid-rows-[minmax(0,1fr)]">
         <ConversationList
           conversations={list.conversations}
           selectedId={selectedId}
@@ -50,7 +50,7 @@ export function ConversationsView(): React.JSX.Element {
             reintroduces the tall page TASK-1574 removed. */}
         <div
           data-testid="conversation-detail-pane"
-          className="min-w-0 max-h-[calc(100vh-14rem)] overflow-y-auto"
+          className="min-w-0 min-h-0 overflow-y-auto"
         >
           {selectedId === null ? (
             <EmptyState
@@ -77,7 +77,7 @@ export function ConversationsView(): React.JSX.Element {
   }
 
   return (
-    <section aria-label="conversations">
+    <section aria-label="conversations" className="flex-1 min-h-0 flex flex-col">
       <h1 className="text-lg font-medium mb-4">Conversations</h1>
       {body()}
       {health.conn === "stale" && (
