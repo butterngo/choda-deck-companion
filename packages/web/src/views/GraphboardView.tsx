@@ -53,7 +53,7 @@ export function GraphboardView(): React.JSX.Element {
   const graph = useFullGraph(projectId);
 
   return (
-    <section aria-label="knowledge graph">
+    <section aria-label="knowledge graph" className="flex-1 min-h-0 flex flex-col">
       <div className="flex items-center justify-between mb-3">
         <h1 className="text-lg font-medium">Knowledge Graph</h1>
         {projectId && <span className="text-xs text-zinc-400">project: {projectId}</span>}

@@ -72,12 +72,12 @@ export function VaultView(): React.JSX.Element {
     }
 
     return (
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,340px)_1fr] gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,340px)_1fr] gap-6 flex-1 min-h-0 lg:grid-rows-[minmax(0,1fr)]">
         <VaultList notes={list.notes} selectedSlug={selectedSlug} onSelect={setSelectedSlug} />
 
         <div
           data-testid="vault-detail-pane"
-          className="min-w-0 max-h-[calc(100vh-14rem)] overflow-y-auto"
+          className="min-w-0 min-h-0 overflow-y-auto"
         >
           {selectedSlug === null ? (
             <EmptyState
@@ -139,7 +139,7 @@ export function VaultView(): React.JSX.Element {
   }
 
   return (
-    <section aria-label="vault">
+    <section aria-label="vault" className="flex-1 min-h-0 flex flex-col">
       <div className="flex items-baseline gap-2 mb-4">
         <h1 className="text-lg font-medium">Vault</h1>
         <span className="text-xs text-zinc-400">30-Knowledge · read-only</span>

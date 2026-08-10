@@ -18,7 +18,7 @@ export function SearchView(): React.JSX.Element {
   const search = useSearch(query);
 
   return (
-    <section aria-label="cross-project search">
+    <section aria-label="cross-project search" className="flex-1 min-h-0 overflow-y-auto">
       <h1 className="text-lg font-medium mb-3">Search</h1>
 
       <form

@@ -73,7 +73,7 @@ export function SyncView(): React.JSX.Element {
   }
 
   return (
-    <section aria-label="sync observatory">
+    <section aria-label="sync observatory" className="flex-1 min-h-0 overflow-y-auto">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-lg font-medium">Sync Observatory</h1>
         <SyncActions onDone={refetchAll} />

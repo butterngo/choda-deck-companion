@@ -112,7 +112,7 @@ export function VaultList({
 
       <div
         data-testid="vault-list-pane"
-        className="flex-1 min-h-0 max-h-[calc(100vh-20rem)] overflow-y-auto pr-1"
+        className="flex-1 min-h-0 overflow-y-auto pr-1"
       >
         {shown.length === 0 ? (
           <EmptyState

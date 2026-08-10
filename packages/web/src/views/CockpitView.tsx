@@ -79,7 +79,7 @@ export function CockpitView(): React.JSX.Element {
   }
 
   return (
-    <section aria-label="workflow cockpit">
+    <section aria-label="workflow cockpit" className="flex-1 min-h-0 overflow-y-auto">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-lg font-medium">Workflow Cockpit</h1>
         {focus.feed && (
