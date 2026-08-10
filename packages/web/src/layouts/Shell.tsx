@@ -8,23 +8,66 @@
 //
 // The 1024px page cap from TASK-857 is removed — see that task's note. It is the
 // direct cause of the cramped two-pane views this frame exists to fix.
+//
+// TASK-1626 — the sidebar also collapses on demand, not only by viewport. The
+// state lives on this element as `data-collapsed` so descendants can react with
+// `group-data-*` variants; the `rail:` breakpoint classes stay exactly as they
+// were, because the manual state layers on top of the automatic one rather than
+// replacing it.
 
 import { NavLink, Outlet } from "react-router-dom";
 import { useHealth } from "../hooks/use-health";
+import { useSidebar } from "../hooks/use-sidebar";
 import { StatusBar } from "../components/StatusBar";
 import { SidebarNav } from "../components/nav/SidebarNav";
 
 export function Shell(): React.JSX.Element {
   const view = useHealth();
+  const sidebar = useSidebar();
 
   return (
-    <div className="h-screen flex overflow-hidden">
-      <aside className="w-14 rail:w-[216px] flex-none flex flex-col min-h-0 bg-zinc-50 dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800">
-        <div className="flex items-center justify-center rail:justify-start gap-2 px-2 rail:px-3.5 pt-3.5 pb-2.5">
-          <span className="grid place-items-center w-5 h-5 rounded bg-blue-600 text-white text-[11px] font-medium">
+    <div
+      className="h-screen flex overflow-hidden group/shell"
+      data-collapsed={sidebar.collapsed}
+    >
+      <aside
+        data-testid="sidebar"
+        className="w-14 rail:w-[216px] rail:group-data-[collapsed=true]/shell:w-14 flex-none flex flex-col min-h-0 bg-zinc-50 dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800"
+      >
+        {/* ONE toggle, not two. An earlier pass had a header button and a
+            separate collapsed-mode button, which meant two controls answering
+            to "Expand sidebar" — a screen reader hears the same name twice and
+            cannot tell which does what. The header simply becomes a column
+            when there is no room for a row. */}
+        <div className="flex flex-col rail:flex-row rail:group-data-[collapsed=true]/shell:flex-col items-center rail:group-data-[collapsed=true]/shell:items-center gap-2 px-2 rail:px-3.5 rail:group-data-[collapsed=true]/shell:px-2 pt-3.5 pb-2.5">
+          <span className="grid place-items-center w-5 h-5 flex-none rounded bg-blue-600 text-white text-[11px] font-medium">
             C
           </span>
-          <span className="font-medium sr-only rail:not-sr-only">Companion</span>
+          <span className="font-medium sr-only rail:not-sr-only rail:group-data-[collapsed=true]/shell:sr-only">
+            Companion
+          </span>
+
+          {/* Below the rail breakpoint there is nothing to expand into, so the
+              control is hidden rather than left promising something it cannot
+              do. The viewport wins there — see use-sidebar. */}
+          <button
+            type="button"
+            data-testid="sidebar-toggle"
+            onClick={sidebar.toggle}
+            aria-expanded={!sidebar.collapsed}
+            aria-controls="sidebar-nav"
+            className="hidden rail:flex rail:ml-auto rail:group-data-[collapsed=true]/shell:ml-0 flex-none p-1 rounded text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-200/60 dark:hover:bg-zinc-800"
+          >
+            <i
+              className={`ti ${sidebar.collapsed ? "ti-layout-sidebar-left-expand" : "ti-layout-sidebar-left-collapse"}`}
+              aria-hidden="true"
+            />
+            {/* The name says what the click will DO, which is what a screen
+                reader user needs — not what the sidebar currently is. */}
+            <span className="sr-only">
+              {sidebar.collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            </span>
+          </button>
         </div>
 
         <SidebarNav />
@@ -34,7 +77,7 @@ export function Shell(): React.JSX.Element {
             content is reserved for something you should act on. */}
         <div className="flex-none border-t border-zinc-200 dark:border-zinc-800">
           <StatusBar view={view} />
-          <div className="flex flex-col rail:flex-row gap-1.5 px-1.5 rail:px-2.5 pb-2.5">
+          <div className="flex flex-col rail:flex-row rail:group-data-[collapsed=true]/shell:flex-col gap-1.5 px-1.5 rail:px-2.5 rail:group-data-[collapsed=true]/shell:px-1.5 pb-2.5">
             {/* Actions, not places — these two stopped being tabs. Search keeps
                 a control until the ⌘K palette lands; without one, /search would
                 be unreachable. */}
@@ -43,14 +86,18 @@ export function Shell(): React.JSX.Element {
               className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
             >
               <i className="ti ti-search" aria-hidden="true" title="Search" />
-              <span className="sr-only rail:not-sr-only">Search</span>
+              <span className="sr-only rail:not-sr-only rail:group-data-[collapsed=true]/shell:sr-only">
+                Search
+              </span>
             </NavLink>
             <NavLink
               to="/capture"
               className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md border border-zinc-200 dark:border-zinc-800 text-sm text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
             >
               <i className="ti ti-camera" aria-hidden="true" title="Capture" />
-              <span className="sr-only rail:not-sr-only">Capture</span>
+              <span className="sr-only rail:not-sr-only rail:group-data-[collapsed=true]/shell:sr-only">
+                Capture
+              </span>
             </NavLink>
           </div>
         </div>
