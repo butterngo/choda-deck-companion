@@ -14,11 +14,12 @@
     "build": "pnpm --filter web build",
     "electron:dev": "pnpm run build && electron .",
     "vendor:adapter": "node scripts/vendor-adapter.mjs",
-    "dist": "pnpm run build && pnpm run vendor:adapter && electron-builder --win",
-    "dist:publish": "pnpm run build && pnpm run vendor:adapter && electron-builder --win --publish always",
+    "dist": "pnpm run build && pnpm run vendor:adapter && electron-builder --win && pnpm run verify:signature",
+    "dist:publish": "pnpm run build && pnpm run vendor:adapter && electron-builder --win --publish always && pnpm run verify:signature",
     "test": "pnpm -r --filter=./packages/* run test && vitest run -c electron/vitest.config.cjs",
     "typecheck": "pnpm -r --filter=./packages/* run typecheck",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "verify:signature": "node scripts/verify-signature.mjs"
   },
   "build": {
     "appId": "com.butter.choda-companion",
