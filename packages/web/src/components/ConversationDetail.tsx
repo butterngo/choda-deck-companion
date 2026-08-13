@@ -53,14 +53,35 @@ function initials(name: string): string {
   return `${first[0]}${second[0]}`.toUpperCase();
 }
 
-export function ConversationDetail({ detail }: { detail: ConversationDetailData }): React.JSX.Element {
+export function ConversationDetail({
+  detail,
+  onClose,
+}: {
+  detail: ConversationDetailData;
+  /** Dismisses the thread and returns the pane to its empty state. This closes
+   *  the reader, not the conversation — thread status is not writable here. */
+  onClose?: () => void;
+}): React.JSX.Element {
   const { conversation, messages, participants } = detail;
 
   return (
     <div aria-label="conversation detail">
-      <h2 className="text-[17px] leading-snug font-medium text-balance mb-2">
-        {conversation.title}
-      </h2>
+      <div className="flex items-start gap-2 mb-2">
+        <h2 className="flex-1 min-w-0 text-[17px] leading-snug font-medium text-balance">
+          {conversation.title}
+        </h2>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close conversation"
+            title="Close conversation"
+            className="flex-none p-1 rounded text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          >
+            <i className="ti ti-x" aria-hidden="true" />
+          </button>
+        )}
+      </div>
       <div className="flex items-center gap-2 flex-wrap pb-3.5 mb-4 border-b border-zinc-100 dark:border-zinc-800 text-[11.5px] text-zinc-500">
         <span
           className={`rounded-full px-2 py-0.5 font-medium ${

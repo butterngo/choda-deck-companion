@@ -1,14 +1,19 @@
 // TASK-1570 — the picker.
 
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { ConversationList } from "../ConversationList";
 import type { ConversationSummary } from "../../api";
 
-function conv(id: string, title: string, status: string): ConversationSummary {
+function conv(
+  id: string,
+  title: string,
+  status: string,
+  projectId = "choda-deck",
+): ConversationSummary {
   return {
     id,
-    projectId: "choda-deck",
+    projectId,
     title,
     status,
     createdBy: "companion",
@@ -59,6 +64,58 @@ describe("ConversationList", () => {
       "aria-current",
       "true",
     );
+  });
+
+  it("searches by title text", () => {
+    render(
+      <ConversationList
+        conversations={[conv("CONV-1", "First thread", "open"), conv("CONV-2", "Second", "open")]}
+        selectedId={null}
+        onSelect={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Search conversations"), {
+      target: { value: "second" },
+    });
+    expect(screen.queryByText("First thread")).not.toBeInTheDocument();
+    expect(screen.getByText("Second")).toBeInTheDocument();
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+  });
+
+  it("searches by conversation id, which is never shown in the row", () => {
+    render(
+      <ConversationList
+        conversations={[conv("CONV-1", "First thread", "open"), conv("CONV-2", "Second", "open")]}
+        selectedId={null}
+        onSelect={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Search conversations"), {
+      target: { value: "conv-1" },
+    });
+    expect(screen.getByText("First thread")).toBeInTheDocument();
+    expect(screen.queryByText("Second")).not.toBeInTheDocument();
+  });
+
+  it("filters by project, and offers the picker only when there is more than one", () => {
+    const single = [conv("CONV-1", "First thread", "open")];
+    const { rerender } = render(
+      <ConversationList conversations={single} selectedId={null} onSelect={vi.fn()} />,
+    );
+    expect(screen.queryByLabelText("Filter by project")).not.toBeInTheDocument();
+
+    rerender(
+      <ConversationList
+        conversations={[...single, conv("CONV-2", "Second", "open", "other-project")]}
+        selectedId={null}
+        onSelect={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Filter by project"), {
+      target: { value: "other-project" },
+    });
+    expect(screen.queryByText("First thread")).not.toBeInTheDocument();
+    expect(screen.getByText("Second")).toBeInTheDocument();
   });
 
   it("says so when there are no conversations", () => {

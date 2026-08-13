@@ -2,7 +2,7 @@
 // TASK-1565 chain: a screenshot sent to a conversation must reach an <img> with a
 // fetchable src.
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ConversationDetail } from "../ConversationDetail";
 import type { ConversationDetail as Data } from "../../api";
@@ -88,6 +88,16 @@ describe("ConversationDetail", () => {
   it("handles an empty thread without blowing up", () => {
     render(<ConversationDetail detail={BASE} />);
     expect(screen.getByText(/No messages in this conversation/)).toBeInTheDocument();
+  });
+
+  it("offers a close button only when the pane can be dismissed", () => {
+    const onClose = vi.fn();
+    const { rerender } = render(<ConversationDetail detail={BASE} />);
+    expect(screen.queryByRole("button", { name: "Close conversation" })).not.toBeInTheDocument();
+
+    rerender(<ConversationDetail detail={BASE} onClose={onClose} />);
+    screen.getByRole("button", { name: "Close conversation" }).click();
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("surfaces a decision summary when the thread has one", () => {

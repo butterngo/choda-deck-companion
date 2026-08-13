@@ -69,7 +69,10 @@ export function ConversationsView(): React.JSX.Element {
           ) : detail.isLoading || !detail.detail ? (
             <Skeleton shape="text" label="Loading thread…" />
           ) : (
-            <ConversationDetail detail={detail.detail} />
+            <ConversationDetail
+              detail={detail.detail}
+              onClose={() => setSelectedId(null)}
+            />
           )}
         </div>
       </div>
