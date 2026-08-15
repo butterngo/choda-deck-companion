@@ -16,6 +16,7 @@ import { CaptureRegion } from "../components/CaptureRegion";
 import type { HealthView } from "../hooks/use-health";
 import { useWorkspace } from "../hooks/use-workspace";
 import { useWorkspaces } from "../hooks/use-workspaces";
+import { EmptyState } from "../components/state/EmptyState";
 
 // idle → (screen capture) region → preview ; file share jumps straight to preview.
 type Stage = "idle" | "region" | "preview";
@@ -132,11 +133,13 @@ export function CaptureView(): React.JSX.Element {
           />
         </div>
       ) : (
-        <p className="text-sm text-zinc-500">
-          Capture the screen (then snip a region, Snipping-Tool style), share an image, or paste one
-          (Ctrl+V), then save it to disk, copy it, or send it to a conversation. Screen capture is
-          granted inside the Choda Companion app.
-        </p>
+        // Idle is empty by nature, not by failure — nothing has been captured
+        // yet, and the description is the instructions for changing that.
+        <EmptyState
+          icon="ti-camera"
+          title="Nothing captured yet"
+          description="Capture the screen (then snip a region, Snipping-Tool style), share an image, or paste one (Ctrl+V), then save it to disk, copy it, or send it to a conversation. Screen capture is granted inside the Choda Companion app."
+        />
       )}
     </section>
   );

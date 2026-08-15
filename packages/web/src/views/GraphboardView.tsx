@@ -15,6 +15,9 @@ import { GraphView } from "../components/GraphView";
 import { WorkspaceSelect } from "../components/WorkspaceSelect";
 import { NodeDetailDrawer, type NodeRef } from "../components/NodeDetailDrawer";
 import { ErrorState } from "../components/state/ErrorState";
+import { Skeleton } from "../components/state/Skeleton";
+import { EmptyState } from "../components/state/EmptyState";
+import { CapabilityNote } from "../components/state/CapabilityNote";
 
 export function GraphboardView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
@@ -69,7 +72,7 @@ export function GraphboardView(): React.JSX.Element {
       ) : graph.isError ? (
         <ErrorState variant="failed" subject="the graph" />
       ) : projectId === null || graph.isLoading || !graph.data ? (
-        <p className="text-sm text-zinc-500">Loading graph…</p>
+        <Skeleton shape="card" label="Loading graph…" />
       ) : (
         <>
           <form
@@ -110,24 +113,40 @@ export function GraphboardView(): React.JSX.Element {
             </p>
           )}
           {searchResult && !searchResult.enabled && (
-            <p className="mb-2 text-sm text-zinc-500">
-              Search is disabled server-side{searchResult.reason ? `: ${searchResult.reason}` : "."}
-            </p>
+            // A switched-off provider is a gap, not a failure — CapabilityNote is
+            // neutral zinc and sits above the graph, which keeps rendering.
+            <div className="mb-2">
+              <CapabilityNote>
+                Search is disabled server-side{searchResult.reason ? `: ${searchResult.reason}` : "."}
+              </CapabilityNote>
+            </div>
           )}
           {matchIds !== null && searchResult?.enabled && (
-            <p className="mb-2 text-sm text-zinc-500">
+            // An inline outcome line above a graph that keeps rendering — not a
+            // pane-sized empty state (the FocusBoard call from TASK-1596).
+            <p role="status" className="mb-2 text-sm text-zinc-500">
               {matchIds.size === 0
                 ? "No matches — nothing highlighted."
                 : `Highlighting ${matchIds.size} matching node${matchIds.size === 1 ? "" : "s"}.`}
             </p>
           )}
-          <GraphView
-            nodes={graph.data.nodes}
-            edges={graph.data.edges}
-            focusNode={focusNode}
-            matchIds={matchIds}
-            onOpenNode={(id, type) => setDetailNode({ id, type })}
-          />
+          {graph.data.nodes.length === 0 ? (
+            // Reached the API and it answered with nothing — distinct from the
+            // unreachable branch above, which must never read as "empty".
+            <EmptyState
+              icon="ti-affiliate"
+              title="No nodes in this graph"
+              description={`Nothing is recorded for ${projectId} yet — tasks and knowledge entries appear here once they exist.`}
+            />
+          ) : (
+            <GraphView
+              nodes={graph.data.nodes}
+              edges={graph.data.edges}
+              focusNode={focusNode}
+              matchIds={matchIds}
+              onOpenNode={(id, type) => setDetailNode({ id, type })}
+            />
+          )}
           {health.conn === "stale" && (
             <p className="mt-3 text-xs text-zinc-400">Possibly stale — see the status bar.</p>
           )}

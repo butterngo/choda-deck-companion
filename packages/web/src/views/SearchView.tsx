@@ -9,6 +9,8 @@ import type { HealthView } from "../hooks/use-health";
 import { useSearch } from "../hooks/use-search";
 import { SearchResults } from "../components/SearchResults";
 import { ErrorState } from "../components/state/ErrorState";
+import { EmptyState } from "../components/state/EmptyState";
+import { Skeleton } from "../components/state/Skeleton";
 
 export function SearchView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
@@ -52,9 +54,15 @@ export function SearchView(): React.JSX.Element {
       ) : search.isError ? (
         <ErrorState variant="failed" subject="search" />
       ) : query.trim().length === 0 ? (
-        <p className="text-sm text-zinc-500">Type a term and hit Search.</p>
+        // Not empty results — no query has been asked yet. The copy says what
+        // this box reaches, so the pane is useful before the first search.
+        <EmptyState
+          icon="ti-search"
+          title="Search across every project"
+          description="Tasks and knowledge entries from all workspaces, grouped by project. Type a term and hit Search."
+        />
       ) : search.isLoading || !search.result ? (
-        <p className="text-sm text-zinc-500">Searching…</p>
+        <Skeleton shape="list" label="Searching…" />
       ) : (
         <SearchResults
           result={search.result}
