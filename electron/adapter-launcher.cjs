@@ -34,15 +34,35 @@ function resolveAdapterEntry({ isPackaged, resourcesPath, env = process.env } = 
 }
 
 // The vendored adapter's require('better-sqlite3') needs its native module
-// resolvable — vendor-adapter.mjs copies it to <resources>/adapter/deps (NOT
-// node_modules: electron-builder's extraResources file-matcher silently drops
-// any nested `node_modules` dir, so the vendored copy is deliberately named
-// something else), so NODE_PATH must point there in packaged mode. In dev the
-// sibling choda-deck checkout already has its own node_modules, so no
-// override is needed (Node resolves it via the entry's own directory).
+// resolvable, and TASK-1743's embedding library needs it under that exact
+// name: the adapter reaches it through a real dynamic `import()`, and ESM
+// resolution only looks in directories literally called `node_modules`. It
+// ignores NODE_PATH entirely — NODE_PATH is a CommonJS-only mechanism.
+//
+// vendor-adapter.mjs still stages the tree as `deps` (electron-builder's
+// extraResources matcher drops any nested `node_modules` segment from a SOURCE
+// path); package.json maps that source onto a `adapter/node_modules`
+// DESTINATION, which the matcher is happy with. So NODE_PATH below points at
+// the destination name. It is strictly redundant — Node resolves a
+// `node_modules` sibling of the entry unaided — but stays explicit. In dev the
+// sibling choda-deck checkout has its own node_modules, so no override.
 function resolveNodePath({ isPackaged, resourcesPath, env = process.env } = {}) {
   if (env.CHODA_ADAPTER_NODE_PATH) return path.resolve(env.CHODA_ADAPTER_NODE_PATH);
-  if (isPackaged) return path.join(resourcesPath, "adapter", "deps");
+  if (isPackaged) return path.join(resourcesPath, "adapter", "node_modules");
+  return undefined;
+}
+
+// TASK-1743 — where the adapter should load the embedding model from.
+// Packaged: vendor-adapter.mjs ships the model files under
+// <resources>/adapter/models in the `<modelId>/<file>` layout transformers.js'
+// `env.localModelPath` expects, and the adapter is told to load from there and
+// never touch the network. Dev: no override, so the sibling checkout keeps
+// downloading + caching into its own node_modules exactly as before — the
+// packaged app is the only context where an install directory would otherwise
+// grow a 90 MB model cache on first search.
+function resolveModelDir({ isPackaged, resourcesPath, env = process.env } = {}) {
+  if (env.CHODA_EMBEDDING_MODEL_DIR) return path.resolve(env.CHODA_EMBEDDING_MODEL_DIR);
+  if (isPackaged) return path.join(resourcesPath, "adapter", "models");
   return undefined;
 }
 
@@ -116,7 +136,7 @@ class AdapterBootError extends Error {
 // Spawns the adapter and resolves { child, port } once its boot line appears
 // on stderr, or rejects with AdapterBootError if it exits/times out first —
 // the caller (main.cjs) turns that into the visible error state (AC-7).
-function spawnAdapter({ entry, dataDir, nodePath, port = "0", env = process.env, spawnFn = spawn } = {}) {
+function spawnAdapter({ entry, dataDir, nodePath, modelDir, port = "0", env = process.env, spawnFn = spawn } = {}) {
   const child = spawnFn(process.execPath, [entry], {
     env: {
       // File-based sync config first (defaults); a real process.env wins over it
@@ -126,6 +146,7 @@ function spawnAdapter({ entry, dataDir, nodePath, port = "0", env = process.env,
       CHODA_COMPANION_PORT: String(port),
       ...(dataDir ? { CHODA_DATA_DIR: dataDir } : {}),
       ...(nodePath ? { NODE_PATH: nodePath } : {}),
+      ...(modelDir ? { CHODA_EMBEDDING_MODEL_DIR: modelDir } : {}),
       // process.execPath is the ELECTRON binary in a packaged app, not plain
       // node — without this, spawning it just launches a second Electron
       // instance (which quits immediately, exit code 0) instead of running
@@ -191,4 +212,4 @@ function spawnAdapter({ entry, dataDir, nodePath, port = "0", env = process.env,
   return { child, portPromise, dataDirWarning };
 }
 
-module.exports = { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveBridgeToken, spawnAdapter, loadSyncEnv, AdapterBootError, LISTEN_LINE, DATA_DIR_WARNING_LINE };
+module.exports = { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveModelDir, resolveBridgeToken, spawnAdapter, loadSyncEnv, AdapterBootError, LISTEN_LINE, DATA_DIR_WARNING_LINE };

@@ -5,7 +5,7 @@
 
 const { app, BrowserWindow, dialog, Menu, Tray, Notification, nativeImage, session, desktopCapturer } = require("electron");
 const path = require("node:path");
-const { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveBridgeToken, spawnAdapter } = require("./adapter-launcher.cjs");
+const { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveModelDir, resolveBridgeToken, spawnAdapter } = require("./adapter-launcher.cjs");
 const { createStaticProxyServer } = require("./static-proxy-server.cjs");
 const { configureLoginItem } = require("./login-item.cjs");
 const { initUpdater } = require("./updater.cjs");
@@ -90,11 +90,12 @@ if (!app.requestSingleInstanceLock()) {
     const entry = resolveAdapterEntry({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
     const dataDir = resolveDataDir({ isPackaged: app.isPackaged, userDataPath: app.getPath("userData") });
     const nodePath = resolveNodePath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
+    const modelDir = resolveModelDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
 
     let apiPort;
     let dataDirWarning;
     try {
-      const spawned = spawnAdapter({ entry, dataDir, nodePath });
+      const spawned = spawnAdapter({ entry, dataDir, nodePath, modelDir });
       adapterChild = spawned.child;
       dataDirWarning = spawned.dataDirWarning;
       apiPort = await spawned.portPromise;
