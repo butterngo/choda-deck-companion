@@ -40,6 +40,14 @@
         "from": "electron/vendor",
         "to": "adapter",
         "filter": [
+          "**/*",
+          "!deps/**"
+        ]
+      },
+      {
+        "from": "electron/vendor/deps",
+        "to": "adapter/node_modules",
+        "filter": [
           "**/*"
         ]
       }

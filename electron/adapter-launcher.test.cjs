@@ -2,7 +2,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
 const { EventEmitter } = require("node:events");
-const { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveBridgeToken, spawnAdapter, loadSyncEnv, AdapterBootError } = require("./adapter-launcher.cjs");
+const { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveModelDir, resolveBridgeToken, spawnAdapter, loadSyncEnv, AdapterBootError } = require("./adapter-launcher.cjs");
 
 describe("resolveBridgeToken", () => {
   it("returns undefined with no dataDir and no env", () => {
@@ -105,14 +105,32 @@ describe("resolveNodePath", () => {
     );
   });
 
-  it("points at the vendored deps dir when packaged (not node_modules — electron-builder drops that)", () => {
+  it("points at the vendored node_modules dir when packaged (after-pack renames deps -> node_modules)", () => {
     expect(resolveNodePath({ isPackaged: true, resourcesPath: "C:/app/resources", env: {} })).toBe(
-      path.join("C:/app/resources", "adapter", "deps"),
+      path.join("C:/app/resources", "adapter", "node_modules"),
     );
   });
 
   it("returns undefined in dev with no override (sibling repo resolves its own deps)", () => {
     expect(resolveNodePath({ isPackaged: false, resourcesPath: "C:/app/resources", env: {} })).toBeUndefined();
+  });
+});
+
+describe("resolveModelDir", () => {
+  it("prefers CHODA_EMBEDDING_MODEL_DIR when set", () => {
+    expect(
+      resolveModelDir({ isPackaged: true, resourcesPath: "C:/app/resources", env: { CHODA_EMBEDDING_MODEL_DIR: "C:/m" } }),
+    ).toBe(path.resolve("C:/m"));
+  });
+
+  it("points at the vendored models dir when packaged", () => {
+    expect(resolveModelDir({ isPackaged: true, resourcesPath: "C:/app/resources", env: {} })).toBe(
+      path.join("C:/app/resources", "adapter", "models"),
+    );
+  });
+
+  it("returns undefined in dev, so the sibling checkout keeps its own download+cache behaviour", () => {
+    expect(resolveModelDir({ isPackaged: false, resourcesPath: "C:/app/resources", env: {} })).toBeUndefined();
   });
 });
 
@@ -146,6 +164,16 @@ describe("spawnAdapter", () => {
     const { portPromise } = spawnAdapter({ entry: "x.cjs", spawnFn });
     child.emit("error", new Error("ENOENT"));
     await expect(portPromise).rejects.toBeInstanceOf(AdapterBootError);
+  });
+
+  it("passes CHODA_EMBEDDING_MODEL_DIR only when a modelDir is given", () => {
+    const spawnFn = vi.fn(() => fakeChild());
+    spawnAdapter({ entry: "x.cjs", spawnFn, env: {}, modelDir: "C:/app/resources/adapter/models" });
+    expect(spawnFn.mock.calls[0][2].env.CHODA_EMBEDDING_MODEL_DIR).toBe("C:/app/resources/adapter/models");
+
+    const devSpawnFn = vi.fn(() => fakeChild());
+    spawnAdapter({ entry: "x.cjs", spawnFn: devSpawnFn, env: {} });
+    expect(devSpawnFn.mock.calls[0][2].env.CHODA_EMBEDDING_MODEL_DIR).toBeUndefined();
   });
 
   it("passes CHODA_COMPANION_PORT=0 by default so the OS picks a free port (avoids the legacy-service collision)", () => {
