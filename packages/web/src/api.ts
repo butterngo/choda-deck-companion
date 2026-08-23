@@ -360,6 +360,103 @@ export interface TaskDetail {
   labels: string[];
   body: string | null;
   blockedBy: string[];
+  // TASK-1748 — provenance. Optional because an older adapter answers without
+  // them, and a companion talking to one must render the task rather than
+  // crash on a missing key.
+  adrs?: ProvenanceAdr[];
+  files?: ProvenanceFile[];
+  commits?: ProvenanceCommit[];
+  filesConfidence?: FilesConfidence;
+}
+
+/** How an ADR was linked to the task. `body` is an inference, not a declaration. */
+export type AdrMatch = "frontmatter" | "body";
+
+export interface ProvenanceAdr {
+  slug: string;
+  title: string;
+  via: AdrMatch;
+}
+
+export interface ProvenanceFile {
+  path: string;
+  workspaceId: string | null;
+  relation: "modifies" | "reference";
+  /** False when the path no longer resolves on disk — the row must not link. */
+  exists: boolean;
+}
+
+export interface ProvenanceCommit {
+  raw: string;
+  sha: string;
+  subject: string;
+  workspaceId: string | null;
+  sessionId: string;
+}
+
+/**
+ * `undeterminable` means the task has commits but no recorded file edits: the
+ * edits went through a path the hook cannot see, so the empty list is a gap in
+ * the record and not a fact about the work.
+ */
+export type FilesConfidence = "known" | "undeterminable";
+
+// TASK-1749 — a workspace's own .md docs.
+export interface WorkspaceDoc {
+  path: string;
+  size: number;
+  modifiedAt: string;
+}
+
+export interface WorkspaceDocsResult {
+  workspaceId: string;
+  label: string;
+  cwd: string;
+  docs: WorkspaceDoc[];
+}
+
+/**
+ * A workspace whose folder is gone. Distinct from an empty docs list, which is
+ * a true statement about the repo — this one is a failure to look.
+ */
+export class WorkspaceFolderMissingError extends Error {
+  constructor(
+    readonly label: string,
+    readonly cwd: string
+  ) {
+    super(`workspace folder is missing: ${cwd}`);
+    this.name = "WorkspaceFolderMissingError";
+  }
+}
+
+export async function fetchWorkspaceDocs(
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<WorkspaceDocsResult> {
+  const res = await fetch(
+    `${API_BASE}/workspace-docs?workspaceId=${encodeURIComponent(workspaceId)}`,
+    { signal }
+  );
+  if (res.status === 409) {
+    const body = (await res.json()) as { label?: string; cwd?: string };
+    throw new WorkspaceFolderMissingError(body.label ?? workspaceId, body.cwd ?? "");
+  }
+  if (!res.ok) throw new Error(`GET /workspace-docs failed: ${res.status}`);
+  return (await res.json()) as WorkspaceDocsResult;
+}
+
+export async function fetchWorkspaceDoc(
+  workspaceId: string,
+  path: string,
+  signal?: AbortSignal
+): Promise<string> {
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
+  const res = await fetch(
+    `${API_BASE}/workspace-docs/${encodeURIComponent(workspaceId)}/${encoded}`,
+    { signal }
+  );
+  if (!res.ok) throw new Error(`GET /workspace-docs/:id/:path failed: ${res.status}`);
+  return await res.text();
 }
 
 export function fetchTask(id: string, signal?: AbortSignal): Promise<TaskDetail> {
