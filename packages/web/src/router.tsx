@@ -11,6 +11,7 @@ import { SearchView } from "./views/SearchView";
 import { CaptureView } from "./views/CaptureView";
 import { ConversationsView } from "./views/ConversationsView";
 import { VaultView } from "./views/VaultView";
+import { TaskDetailView } from "./views/TaskDetailView";
 
 export const router = createHashRouter([
   {
@@ -26,6 +27,9 @@ export const router = createHashRouter([
       { path: "capture", element: <CaptureView /> },
       { path: "conversations", element: <ConversationsView /> },
       { path: "vault", element: <VaultView /> },
+      // TASK-1748 — a task is a place you can link to, from Cockpit, Search or
+      // Graph. The graph's own drawer is unchanged.
+      { path: "tasks/:id", element: <TaskDetailView /> },
       { path: "*", element: <Navigate to="/sync" replace /> },
     ],
   },

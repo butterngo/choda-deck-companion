@@ -360,7 +360,46 @@ export interface TaskDetail {
   labels: string[];
   body: string | null;
   blockedBy: string[];
+  // TASK-1748 — provenance. Optional because an older adapter answers without
+  // them, and a companion talking to one must render the task rather than
+  // crash on a missing key.
+  adrs?: ProvenanceAdr[];
+  files?: ProvenanceFile[];
+  commits?: ProvenanceCommit[];
+  filesConfidence?: FilesConfidence;
 }
+
+/** How an ADR was linked to the task. `body` is an inference, not a declaration. */
+export type AdrMatch = "frontmatter" | "body";
+
+export interface ProvenanceAdr {
+  slug: string;
+  title: string;
+  via: AdrMatch;
+}
+
+export interface ProvenanceFile {
+  path: string;
+  workspaceId: string | null;
+  relation: "modifies" | "reference";
+  /** False when the path no longer resolves on disk — the row must not link. */
+  exists: boolean;
+}
+
+export interface ProvenanceCommit {
+  raw: string;
+  sha: string;
+  subject: string;
+  workspaceId: string | null;
+  sessionId: string;
+}
+
+/**
+ * `undeterminable` means the task has commits but no recorded file edits: the
+ * edits went through a path the hook cannot see, so the empty list is a gap in
+ * the record and not a fact about the work.
+ */
+export type FilesConfidence = "known" | "undeterminable";
 
 export function fetchTask(id: string, signal?: AbortSignal): Promise<TaskDetail> {
   return getJson<TaskDetail>(`/tasks/${encodeURIComponent(id)}`, signal);
