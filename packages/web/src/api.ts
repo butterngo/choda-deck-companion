@@ -401,6 +401,64 @@ export interface ProvenanceCommit {
  */
 export type FilesConfidence = "known" | "undeterminable";
 
+// TASK-1749 — a workspace's own .md docs.
+export interface WorkspaceDoc {
+  path: string;
+  size: number;
+  modifiedAt: string;
+}
+
+export interface WorkspaceDocsResult {
+  workspaceId: string;
+  label: string;
+  cwd: string;
+  docs: WorkspaceDoc[];
+}
+
+/**
+ * A workspace whose folder is gone. Distinct from an empty docs list, which is
+ * a true statement about the repo — this one is a failure to look.
+ */
+export class WorkspaceFolderMissingError extends Error {
+  constructor(
+    readonly label: string,
+    readonly cwd: string
+  ) {
+    super(`workspace folder is missing: ${cwd}`);
+    this.name = "WorkspaceFolderMissingError";
+  }
+}
+
+export async function fetchWorkspaceDocs(
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<WorkspaceDocsResult> {
+  const res = await fetch(
+    `${API_BASE}/workspace-docs?workspaceId=${encodeURIComponent(workspaceId)}`,
+    { signal }
+  );
+  if (res.status === 409) {
+    const body = (await res.json()) as { label?: string; cwd?: string };
+    throw new WorkspaceFolderMissingError(body.label ?? workspaceId, body.cwd ?? "");
+  }
+  if (!res.ok) throw new Error(`GET /workspace-docs failed: ${res.status}`);
+  return (await res.json()) as WorkspaceDocsResult;
+}
+
+export async function fetchWorkspaceDoc(
+  workspaceId: string,
+  path: string,
+  signal?: AbortSignal
+): Promise<string> {
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
+  const res = await fetch(
+    `${API_BASE}/workspace-docs/${encodeURIComponent(workspaceId)}/${encoded}`,
+    { signal }
+  );
+  if (!res.ok) throw new Error(`GET /workspace-docs/:id/:path failed: ${res.status}`);
+  return await res.text();
+}
+
 export function fetchTask(id: string, signal?: AbortSignal): Promise<TaskDetail> {
   return getJson<TaskDetail>(`/tasks/${encodeURIComponent(id)}`, signal);
 }

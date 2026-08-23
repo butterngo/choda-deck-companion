@@ -59,6 +59,9 @@ const CASES = [
   { name: "Conversations", view: "ConversationsView.tsx", list: "ConversationList.tsx", prefix: "conversation" },
   { name: "Knowledge", view: "KnowledgeView.tsx", list: "KnowledgeList.tsx", prefix: "knowledge" },
   { name: "Vault", view: "VaultView.tsx", list: "VaultList.tsx", prefix: "vault" },
+  // TASK-1749 — the docs browser is a two-pane view like the three above, so it
+  // is held to the same contract rather than being trusted to have got it right.
+  { name: "Workspace docs", view: "WorkspaceDocsView.tsx", list: "DocTree.tsx", prefix: "workspace-doc" },
 ] as const;
 
 describe("bounded list/detail panes (TASK-1574)", () => {
