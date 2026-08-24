@@ -6,7 +6,10 @@ const { defineConfig } = require("vitest/config");
 
 module.exports = defineConfig({
   test: {
-    include: ["electron/**/*.test.cjs"],
+    // scripts/ joins this config rather than growing a third one: the release
+    // guards (TASK-1763) are plain node scripts with no package of their own,
+    // and an untested release guard is worth very little.
+    include: ["electron/**/*.test.cjs", "scripts/**/*.test.mjs"],
     environment: "node",
     globals: true,
   },
