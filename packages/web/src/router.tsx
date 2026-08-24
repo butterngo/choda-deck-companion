@@ -14,6 +14,7 @@ import { VaultView } from "./views/VaultView";
 import { TaskDetailView } from "./views/TaskDetailView";
 import { WorkspaceDocsView } from "./views/WorkspaceDocsView";
 import { ProjectsView } from "./views/ProjectsView";
+import { WorkspaceView } from "./views/WorkspaceView";
 
 export const router = createHashRouter([
   {
@@ -25,6 +26,9 @@ export const router = createHashRouter([
       // TASK-1765 — the top of the browse hierarchy: projects → workspaces →
       // docs and tasks. Before this, nothing enumerated projects at all.
       { path: "projects", element: <ProjectsView /> },
+      // TASK-1766 — a workspace as a place: its docs and its tasks, and from a
+      // task the ADR/files/commits behind it.
+      { path: "workspaces/:id", element: <WorkspaceView /> },
       { path: "cockpit", element: <CockpitView /> },
       { path: "knowledge", element: <KnowledgeView /> },
       { path: "graph", element: <GraphboardView /> },

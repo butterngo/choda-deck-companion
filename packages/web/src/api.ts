@@ -337,6 +337,24 @@ export function fetchProjects(signal?: AbortSignal): Promise<{ projects: Project
   return getJson<{ projects: Project[] }>("/projects", signal);
 }
 
+// TASK-1766 — GET /tasks. Measured 2026-08-24: it takes NO filter (?projectId=
+// and ?workspaceId= are both ignored, byte-identical responses) and returns
+// every task in every project WITH its full body — 1420 tasks, 4,042,663 bytes.
+// Callers must therefore narrow client-side, and must not poll this.
+export interface TaskSummary {
+  id: string;
+  projectId: string;
+  parentTaskId: string | null;
+  title: string;
+  status: string;
+  priority: string;
+  labels: string[];
+}
+
+export function fetchAllTasks(signal?: AbortSignal): Promise<{ tasks: TaskSummary[] }> {
+  return getJson<{ tasks: TaskSummary[] }>("/tasks", signal);
+}
+
 // TASK-1493 — cross-project search (GET /search?q=). Mirror of the adapter's
 // search route (src/adapters/companion/search.ts): task-title + knowledge hits
 // across ALL projects, each tagged with projectId. `knowledgeEnabled` is false

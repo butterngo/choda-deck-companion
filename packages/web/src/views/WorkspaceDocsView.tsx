@@ -12,7 +12,7 @@
 // statement about the repository that isn't true.
 
 import { useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useOutletContext, useSearchParams } from "react-router-dom";
 import type { HealthView } from "../hooks/use-health";
 import { useWorkspaceDoc, useWorkspaceDocs } from "../hooks/use-workspace-docs";
 import { CaptureMarkdown } from "../components/CaptureMarkdown";
@@ -22,10 +22,30 @@ import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { Skeleton } from "../components/state/Skeleton";
 
-export function WorkspaceDocsView(): React.JSX.Element {
+// `workspaceId` prop: when the parent already knows which workspace (the
+// WorkspaceView tabs), the picker is noise — you cannot be "on" a workspace and
+// still be asked which one. Absent, the view keeps its standalone behaviour.
+export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: string } = {}): React.JSX.Element {
   const health = useOutletContext<HealthView>();
-  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  // TASK-1766 — honour ?workspaceId= and ?path=.
+  //
+  // These were NOT read before, and two callers had been linking with them
+  // anyway: TaskProvenance.tsx has deep-linked `?workspaceId=…&path=…` since
+  // TASK-1748, and ProjectsView since TASK-1765. Both landed on the picker with
+  // the query string silently discarded — a link that looks like it works,
+  // arrives at the right route, and quietly does nothing it promised.
+  //
+  // Used as the INITIAL value only: once here, picking a different workspace
+  // must not be fought by the URL on every render.
+  const [params] = useSearchParams();
+  const [pickedId, setPickedId] = useState<string | null>(
+    () => params.get("workspaceId") || null,
+  );
+  const workspaceId = fixedId ?? pickedId;
+  const setWorkspaceId = setPickedId;
+  const [selectedPath, setSelectedPath] = useState<string | null>(
+    () => params.get("path") || null,
+  );
   const list = useWorkspaceDocs(workspaceId);
   const detail = useWorkspaceDoc(workspaceId, selectedPath);
 
@@ -134,16 +154,23 @@ export function WorkspaceDocsView(): React.JSX.Element {
 
   return (
     <section aria-label="workspace docs" className="flex min-h-0 flex-1 flex-col">
-      <div className="mb-4 flex items-baseline gap-2">
-        <h1 className="text-lg font-medium">Workspace docs</h1>
-        <span className="text-xs text-zinc-400">markdown · read-only</span>
-        {list.cwd && (
-          <span className="ml-auto truncate font-mono text-[11px] text-zinc-400">{list.cwd}</span>
-        )}
-      </div>
-      <div className="mb-4">
-        <WorkspaceSelect onSubmit={pickWorkspace} />
-      </div>
+      {/* Embedded (fixedId): the parent already shows the workspace name, cwd
+          and its own tabs, so a second title and a picker asking which
+          workspace would contradict the page you are standing on. */}
+      {fixedId === undefined && (
+        <>
+          <div className="mb-4 flex items-baseline gap-2">
+            <h1 className="text-lg font-medium">Workspace docs</h1>
+            <span className="text-xs text-zinc-400">markdown · read-only</span>
+            {list.cwd && (
+              <span className="ml-auto truncate font-mono text-[11px] text-zinc-400">{list.cwd}</span>
+            )}
+          </div>
+          <div className="mb-4">
+            <WorkspaceSelect onSubmit={pickWorkspace} />
+          </div>
+        </>
+      )}
       {body()}
       {health.conn === "stale" && (
         <p className="mt-3 text-xs text-zinc-400">Possibly stale — see the status bar.</p>

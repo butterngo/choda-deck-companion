@@ -7,6 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import type { HealthView } from "../../hooks/use-health";
 import type { WorkspaceDoc } from "../../api";
 
@@ -79,7 +80,11 @@ beforeEach(() => {
 function renderWithWorkspace(): void {
   listState.cwd = MISSING_CWD;
   listState.label = "Companion";
-  render(<WorkspaceDocsView />);
+  render(
+    <MemoryRouter>
+      <WorkspaceDocsView />
+    </MemoryRouter>,
+  );
   fireEvent.click(screen.getByTestId("workspace-select"));
 }
 
@@ -107,7 +112,11 @@ describe("WorkspaceDocsView — the states that look alike", () => {
 
   it("a silent laptop API is `unreachable` — nothing on screen can be trusted", () => {
     outletValue = health("disconnected");
-    render(<WorkspaceDocsView />);
+    render(
+    <MemoryRouter>
+      <WorkspaceDocsView />
+    </MemoryRouter>,
+  );
     expect(screen.getByTestId("error-state")).toHaveAttribute("data-variant", "unreachable");
   });
 
@@ -118,7 +127,11 @@ describe("WorkspaceDocsView — the states that look alike", () => {
   });
 
   it("no workspace chosen yet is an EmptyState, not an error", () => {
-    render(<WorkspaceDocsView />);
+    render(
+    <MemoryRouter>
+      <WorkspaceDocsView />
+    </MemoryRouter>,
+  );
     expect(screen.getByTestId("empty-state")).toHaveTextContent("No workspace selected");
     expect(screen.queryByTestId("error-state")).not.toBeInTheDocument();
   });
@@ -145,5 +158,59 @@ describe("WorkspaceDocsView — the panes", () => {
     expect(screen.getByText("knowledge")).toBeInTheDocument();
     expect(screen.getByText("INDEX.md")).toBeInTheDocument();
     expect(screen.getByText("README.md")).toBeInTheDocument();
+  });
+});
+
+// TASK-1766 — deep-linking. Two callers had been passing ?workspaceId= (and
+// ?path=) for weeks while the view ignored both: TaskProvenance since TASK-1748
+// and ProjectsView since TASK-1765. The links resolved to the right route and
+// then quietly did nothing they promised — the worst kind of broken, because
+// every part of it looks correct in the diff.
+//
+// These tests exist because injections that deleted BOTH the prop and the query
+// handling left all 257 tests green. The fix had no coverage at all.
+describe("WorkspaceDocsView — arriving with a workspace already chosen (TASK-1766)", () => {
+  it("honours ?workspaceId= instead of asking again", () => {
+    listState.docs = DOCS;
+    render(
+      <MemoryRouter initialEntries={["/workspace-docs?workspaceId=main"]}>
+        <WorkspaceDocsView />
+      </MemoryRouter>,
+    );
+    // The picker prompt is what a discarded query string produces.
+    expect(screen.queryByText("No workspace selected")).not.toBeInTheDocument();
+    expect(screen.getByTestId("workspace-doc-list-pane")).toBeInTheDocument();
+  });
+
+  it("CONTROL: with no query string it still asks — so the check above can fail", () => {
+    listState.docs = DOCS;
+    render(
+      <MemoryRouter initialEntries={["/workspace-docs"]}>
+        <WorkspaceDocsView />
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId("empty-state")).toHaveTextContent("No workspace selected");
+  });
+
+  it("honours ?path= so a provenance link lands ON the file, not beside it", () => {
+    listState.docs = DOCS;
+    docState.markdown = "# hello";
+    render(
+      <MemoryRouter initialEntries={["/workspace-docs?workspaceId=main&path=docs/a.md"]}>
+        <WorkspaceDocsView />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByText("No document selected")).not.toBeInTheDocument();
+  });
+
+  it("a fixed workspaceId prop wins and hides the picker — the embedded case", () => {
+    listState.docs = DOCS;
+    render(
+      <MemoryRouter>
+        <WorkspaceDocsView workspaceId="main" />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByTestId("workspace-select")).not.toBeInTheDocument();
+    expect(screen.getByTestId("workspace-doc-list-pane")).toBeInTheDocument();
   });
 });
