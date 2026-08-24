@@ -125,6 +125,88 @@ function resolveBridgeToken({ dataDir, env = process.env } = {}) {
   }
 }
 
+// TASK-1590 — the adapter binds an EPHEMERAL port (see the port="0" default in
+// spawnAdapter below), so its address is unknowable to anything outside this
+// process. main.cjs used to only console.log it. That is why the Chrome
+// extension still hardcodes 127.0.0.1:7338 and cannot reach the app's adapter,
+// and why three browser-verification passes probed 7338, found nothing, and
+// concluded the app was dead when it was serving fine on a high port.
+//
+// The file carries `pid` as well as `port` precisely so a reader can tell a
+// LIVE adapter from a stale file left by a hard kill: a port number alone is
+// indistinguishable from a port number that stopped being true. Written only
+// after boot succeeds; cleared before boot and on clean quit.
+const PORT_FILE_NAME = "companion-port.txt";
+
+function portFilePath(dataDir) {
+  return dataDir ? path.join(dataDir, PORT_FILE_NAME) : undefined;
+}
+
+function writePortFile({ dataDir, port, pid } = {}) {
+  const file = portFilePath(dataDir);
+  if (!file) return undefined;
+  try {
+    fs.mkdirSync(dataDir, { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ port, pid, startedAt: new Date().toISOString() }), "utf8");
+    return file;
+  } catch {
+    // Discovery is a convenience: a read-only or missing data dir must never
+    // stop the app from starting. The adapter is already up by this point.
+    return undefined;
+  }
+}
+
+function clearPortFile(dataDir) {
+  const file = portFilePath(dataDir);
+  if (!file) return;
+  try {
+    fs.rmSync(file, { force: true });
+  } catch {
+    /* nothing to clear */
+  }
+}
+
+// Reads the port file and reports whether the process it names is still alive.
+// Exported so the same staleness rule is testable and reusable by any reader
+// (the extension follow-up in choda-deck will want exactly this).
+function readPortFile(dataDir) {
+  const file = portFilePath(dataDir);
+  if (!file) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+  if (typeof parsed?.port !== "number") return null;
+  let alive = false;
+  try {
+    // Signal 0 tests for existence without delivering anything.
+    process.kill(parsed.pid, 0);
+    alive = true;
+  } catch {
+    alive = false;
+  }
+  return { ...parsed, alive };
+}
+
+// TASK-1590 — spawnAdapter's promise settles at BOOT and then stops caring.
+// Nothing watched the child afterwards, so an adapter that died at minute two
+// left the window open and the proxy forwarding to a closed port: the app
+// looked healthy while serving nothing, which is exactly what let the original
+// misdiagnosis survive for weeks. Calling `onDeath` is what makes the failure
+// reachable by the UI; the caller decides how to show it.
+function watchAdapter({ child, dataDir, onDeath } = {}) {
+  const handler = (code, signal) => {
+    clearPortFile(dataDir);
+    onDeath?.({ code, signal });
+  };
+  child.once("exit", handler);
+  // Returned so before-quit can detach: a deliberate shutdown is not a death,
+  // and reporting one would train the eye to ignore the real thing.
+  return () => child.removeListener("exit", handler);
+}
+
 class AdapterBootError extends Error {
   constructor(message, cause) {
     super(message);
@@ -212,4 +294,4 @@ function spawnAdapter({ entry, dataDir, nodePath, modelDir, port = "0", env = pr
   return { child, portPromise, dataDirWarning };
 }
 
-module.exports = { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveModelDir, resolveBridgeToken, spawnAdapter, loadSyncEnv, AdapterBootError, LISTEN_LINE, DATA_DIR_WARNING_LINE };
+module.exports = { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveModelDir, resolveBridgeToken, spawnAdapter, loadSyncEnv, AdapterBootError, LISTEN_LINE, DATA_DIR_WARNING_LINE, PORT_FILE_NAME, writePortFile, clearPortFile, readPortFile, watchAdapter };
