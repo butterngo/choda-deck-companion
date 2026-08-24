@@ -6,17 +6,17 @@ workspaceId: choda-deck-companion
 scope: project
 refs:
   - path: packages/web/src/components/state/EmptyState.tsx
-    commitSha: 27c87082304c0a7f92c3260cf7feaefafbd41faf
+    commitSha: b86f0eebee0c3a16c6b4370a7d4fcb0b02116b75
   - path: packages/web/src/components/state/CapabilityNote.tsx
-    commitSha: 27c87082304c0a7f92c3260cf7feaefafbd41faf
+    commitSha: b86f0eebee0c3a16c6b4370a7d4fcb0b02116b75
   - path: packages/web/src/components/state/ErrorState.tsx
-    commitSha: 27c87082304c0a7f92c3260cf7feaefafbd41faf
+    commitSha: b86f0eebee0c3a16c6b4370a7d4fcb0b02116b75
   - path: packages/web/src/components/state/Skeleton.tsx
-    commitSha: 27c87082304c0a7f92c3260cf7feaefafbd41faf
+    commitSha: b86f0eebee0c3a16c6b4370a7d4fcb0b02116b75
   - path: packages/web/src/components/TaskProvenance.tsx
-    commitSha: 27c87082304c0a7f92c3260cf7feaefafbd41faf
+    commitSha: b86f0eebee0c3a16c6b4370a7d4fcb0b02116b75
 createdAt: 2026-08-15
-lastVerifiedAt: 2026-08-23
+lastVerifiedAt: 2026-08-24
 affectedFeatureId: feature-companion-ui
 ---
 
