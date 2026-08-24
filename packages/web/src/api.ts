@@ -322,6 +322,21 @@ export function fetchWorkspaces(signal?: AbortSignal): Promise<{ workspaces: Wor
   return getJson<{ workspaces: Workspace[] }>("/workspaces", signal);
 }
 
+// TASK-1765 — GET /projects, the top of the browse hierarchy. The adapter
+// returns FLAT projects with no nested workspaces[], so a project's workspaces
+// come from grouping fetchWorkspaces() by projectId client-side. That is not a
+// workaround: /workspaces already carries projectId, so no second round-trip
+// per project is needed.
+export interface Project {
+  id: string;
+  name: string;
+  cwd: string;
+}
+
+export function fetchProjects(signal?: AbortSignal): Promise<{ projects: Project[] }> {
+  return getJson<{ projects: Project[] }>("/projects", signal);
+}
+
 // TASK-1493 — cross-project search (GET /search?q=). Mirror of the adapter's
 // search route (src/adapters/companion/search.ts): task-title + knowledge hits
 // across ALL projects, each tagged with projectId. `knowledgeEnabled` is false
