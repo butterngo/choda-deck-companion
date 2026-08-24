@@ -1,0 +1,161 @@
+// TASK-1766 — a workspace as a PLACE: its docs and its tasks behind one header,
+// with each task leading to the ADR/files/commits behind it.
+//
+// This is what finally makes /tasks/:id reachable. It shipped in v0.7.0 with no
+// inbound link from anywhere in the app, and a packaged Electron window has no
+// address bar to type a hash route into — so it was dead code that looked alive
+// in the diff, the test run and the release notes (INBOX-1875).
+//
+// Docs are rendered by WorkspaceDocsView with a fixed workspaceId, not by a
+// second doc tree. Two implementations of the same surface would drift, and the
+// one nobody is looking at drifts first.
+
+import { useState } from "react";
+import { Link, useOutletContext, useParams } from "react-router-dom";
+import type { HealthView } from "../hooks/use-health";
+import { useWorkspaces } from "../hooks/use-workspaces";
+import { useWorkspaceTasks } from "../hooks/use-workspace-tasks";
+import { WorkspaceDocsView } from "./WorkspaceDocsView";
+import { ErrorState } from "../components/state/ErrorState";
+import { EmptyState } from "../components/state/EmptyState";
+import { Skeleton } from "../components/state/Skeleton";
+
+type Tab = "docs" | "tasks";
+
+export function WorkspaceView(): React.JSX.Element {
+  const health = useOutletContext<HealthView>();
+  const { id } = useParams<{ id: string }>();
+  const [tab, setTab] = useState<Tab>("docs");
+
+  const ws = useWorkspaces();
+  const workspace = ws.workspaces.find((w) => w.id === id) ?? null;
+  const tasks = useWorkspaceTasks(workspace?.projectId ?? null);
+
+  function tasksPane(): React.JSX.Element {
+    if (tasks.isError) return <ErrorState variant="failed" subject="tasks" />;
+    if (tasks.isLoading) return <Skeleton shape="list" label="Loading tasks…" />;
+    if (tasks.tasks.length === 0) {
+      return (
+        <EmptyState
+          icon="ti-checklist"
+          title="No open tasks"
+          description="Everything in this project is DONE or CANCELLED."
+        />
+      );
+    }
+    return (
+      <>
+        {/* The scope is stated, never implied. These are the PROJECT's tasks:
+            the adapter serves no per-workspace filter and no touches surface,
+            so claiming workspace precision here would be a claim we cannot
+            back. Under-claiming is the safe direction. */}
+        <p data-testid="task-scope-note" className="mb-3 text-[11.5px] text-zinc-500">
+          Open tasks across the <span className="font-medium">{workspace?.projectId}</span> project —
+          not yet narrowed to this workspace.
+        </p>
+        <ul data-testid="workspace-task-list" className="space-y-1.5">
+          {tasks.tasks.map((t) => (
+            <li key={t.id}>
+              <Link
+                to={`/tasks/${encodeURIComponent(t.id)}`}
+                data-testid={`workspace-task-${t.id}`}
+                className="block rounded-md border border-zinc-200 dark:border-zinc-800 px-3 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+              >
+                <div className="flex items-baseline gap-2">
+                  <span className="font-mono text-[11.5px] text-zinc-400">{t.id}</span>
+                  <span className="ml-auto text-[11px] text-zinc-400">{t.status}</span>
+                </div>
+                <p className="mt-0.5 text-sm">{t.title}</p>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </>
+    );
+  }
+
+  function body(): React.JSX.Element {
+    if (health.conn === "disconnected") {
+      return (
+        <ErrorState
+          variant="unreachable"
+          description="This workspace is unavailable — this is not an empty workspace."
+        />
+      );
+    }
+    if (ws.isError) return <ErrorState variant="failed" subject="workspaces" />;
+    if (ws.isLoading) return <Skeleton shape="list" label="Loading workspace…" />;
+    if (workspace === null) {
+      // A URL naming a workspace that is not registered is a failed lookup, not
+      // an empty one — saying "no docs" here would describe a repository that
+      // does not exist.
+      return (
+        <ErrorState
+          variant="failed"
+          subject={id ?? "workspace"}
+          description="No workspace is registered under this id."
+        />
+      );
+    }
+
+    return (
+      <>
+        <div
+          role="tablist"
+          aria-label="workspace sections"
+          className="mb-4 flex gap-1 border-b border-zinc-200 dark:border-zinc-800"
+        >
+          {(["docs", "tasks"] as Tab[]).map((t) => (
+            <button
+              key={t}
+              type="button"
+              role="tab"
+              aria-selected={tab === t}
+              data-testid={`workspace-tab-${t}`}
+              onClick={() => setTab(t)}
+              className={[
+                "px-3 py-1.5 text-sm -mb-px border-b-2",
+                tab === t
+                  ? "border-zinc-900 dark:border-zinc-100 text-zinc-900 dark:text-zinc-100 font-medium"
+                  : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200",
+              ].join(" ")}
+            >
+              {t === "docs" ? "Docs" : "Tasks"}
+            </button>
+          ))}
+        </div>
+
+        {tab === "docs" ? (
+          <div data-testid="workspace-docs-pane" className="flex min-h-0 flex-1 flex-col">
+            <WorkspaceDocsView workspaceId={workspace.id} />
+          </div>
+        ) : (
+          <div data-testid="workspace-tasks-pane" className="min-h-0 flex-1 overflow-y-auto">
+            {tasksPane()}
+          </div>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <section aria-label="workspace" className="flex min-h-0 flex-1 flex-col">
+      <div className="mb-4">
+        <div className="flex items-baseline gap-2">
+          <Link to="/projects" className="text-xs text-zinc-500 hover:underline">
+            Projects
+          </Link>
+          <span className="text-xs text-zinc-300 dark:text-zinc-600">/</span>
+          <h1 className="text-lg font-medium">{workspace?.label ?? id}</h1>
+        </div>
+        {workspace && (
+          <p className="mt-1 font-mono text-[11.5px] text-zinc-500">{workspace.cwd}</p>
+        )}
+      </div>
+      {body()}
+      {health.conn === "stale" && (
+        <p className="mt-3 text-xs text-zinc-400">Possibly stale — see the status bar.</p>
+      )}
+    </section>
+  );
+}

@@ -49,7 +49,7 @@ export function ProjectsView(): React.JSX.Element {
         {workspaces.map((w) => (
           <li key={w.id}>
             <Link
-              to={`/workspace-docs?workspaceId=${encodeURIComponent(w.id)}`}
+              to={`/workspaces/${encodeURIComponent(w.id)}`}
               data-testid={`workspace-row-${w.id}`}
               className="block rounded-md border border-zinc-200 dark:border-zinc-800 px-3 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
             >

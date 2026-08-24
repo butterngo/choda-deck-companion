@@ -102,12 +102,13 @@ describe("ProjectsView (TASK-1765)", () => {
     expect(screen.getByTestId("project-row-choda-deck").textContent).toContain("2");
   });
 
-  it("links each workspace to its docs, so the route is reachable by click", () => {
+  it("links each workspace to its workspace page, so the route is reachable by click", () => {
     mount();
     fireEvent.click(screen.getByTestId("project-row-choda-deck"));
     const href = screen.getByTestId("workspace-row-main").getAttribute("href");
-    expect(href).toContain("/workspace-docs");
-    expect(href).toContain("workspaceId=main");
+    // TASK-1766 moved this from a docs deep-link to the workspace PLACE, which
+    // carries both docs and tasks.
+    expect(href).toBe("/workspaces/main");
   });
 
   it("renders unreachable as ErrorState, NOT as an empty list", () => {
