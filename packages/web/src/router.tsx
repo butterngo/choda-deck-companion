@@ -13,6 +13,7 @@ import { ConversationsView } from "./views/ConversationsView";
 import { VaultView } from "./views/VaultView";
 import { TaskDetailView } from "./views/TaskDetailView";
 import { WorkspaceDocsView } from "./views/WorkspaceDocsView";
+import { ProjectsView } from "./views/ProjectsView";
 
 export const router = createHashRouter([
   {
@@ -21,6 +22,9 @@ export const router = createHashRouter([
     children: [
       { index: true, element: <Navigate to="/sync" replace /> },
       { path: "sync", element: <SyncView /> },
+      // TASK-1765 — the top of the browse hierarchy: projects → workspaces →
+      // docs and tasks. Before this, nothing enumerated projects at all.
+      { path: "projects", element: <ProjectsView /> },
       { path: "cockpit", element: <CockpitView /> },
       { path: "knowledge", element: <KnowledgeView /> },
       { path: "graph", element: <GraphboardView /> },
