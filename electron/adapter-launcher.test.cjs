@@ -2,7 +2,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
 const { EventEmitter } = require("node:events");
-const { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveModelDir, resolveBridgeToken, spawnAdapter, loadSyncEnv, AdapterBootError } = require("./adapter-launcher.cjs");
+const { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveModelDir, resolveBridgeToken, spawnAdapter, loadSyncEnv, AdapterBootError, PORT_FILE_NAME, writePortFile, clearPortFile, readPortFile, watchAdapter } = require("./adapter-launcher.cjs");
 
 describe("resolveBridgeToken", () => {
   it("returns undefined with no dataDir and no env", () => {
@@ -242,5 +242,80 @@ describe("spawnAdapter — data-dir warning capture (TASK-1510)", () => {
     child.stderr.emit("data", Buffer.from(WARNING.slice(60) + LISTEN));
     await expect(portPromise).resolves.toBe(54321);
     expect(dataDirWarning.text).toContain("which is live");
+  });
+});
+
+// TASK-1590 — the adapter's port is ephemeral, so discovery and post-boot death
+// are the two things that make it usable and honest. Both were absent: the port
+// was only console.logged, and nothing watched the child once boot succeeded.
+describe("port file — discovery (TASK-1590 AC-1/AC-2)", () => {
+  it("writes port + pid so a reader can find the adapter at all", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "choda-port-"));
+    writePortFile({ dataDir: dir, port: 62300, pid: process.pid });
+    const raw = JSON.parse(fs.readFileSync(path.join(dir, PORT_FILE_NAME), "utf8"));
+    expect(raw.port).toBe(62300);
+    expect(raw.pid).toBe(process.pid);
+  });
+
+  it("reports a file whose process is alive as alive", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "choda-port-"));
+    writePortFile({ dataDir: dir, port: 62300, pid: process.pid });
+    expect(readPortFile(dir)).toMatchObject({ port: 62300, alive: true });
+  });
+
+  // The discriminating half: without the pid, a stale file is indistinguishable
+  // from a live one — both are just a number. A check that cannot report
+  // "stale" would pass on a dead adapter, which is the failure this exists to
+  // prevent.
+  it("reports a file whose process is gone as STALE, not merely as a port", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "choda-port-"));
+    // A pid that cannot be running: process.kill(0) on it throws ESRCH.
+    writePortFile({ dataDir: dir, port: 62300, pid: 0x7ffffff0 });
+    expect(readPortFile(dir)).toMatchObject({ port: 62300, alive: false });
+  });
+
+  it("clears the file, so between boots there is no port to misread", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "choda-port-"));
+    writePortFile({ dataDir: dir, port: 62300, pid: process.pid });
+    clearPortFile(dir);
+    expect(fs.existsSync(path.join(dir, PORT_FILE_NAME))).toBe(false);
+    expect(readPortFile(dir)).toBeNull();
+  });
+
+  it("never throws when the data dir is absent or unwritable (discovery is not load-bearing for boot)", () => {
+    expect(() => writePortFile({ dataDir: undefined, port: 1, pid: 1 })).not.toThrow();
+    expect(() => clearPortFile(undefined)).not.toThrow();
+    expect(readPortFile(undefined)).toBeNull();
+  });
+});
+
+describe("watchAdapter — post-boot death (TASK-1590 AC-3)", () => {
+  it("reports a death that happens AFTER boot succeeded", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "choda-port-"));
+    const child = fakeChild();
+    const onDeath = vi.fn();
+    watchAdapter({ child, dataDir: dir, onDeath });
+    child.emit("exit", 1, null);
+    expect(onDeath).toHaveBeenCalledWith({ code: 1, signal: null });
+  });
+
+  it("clears the port file on death, so nothing keeps pointing at a dead port", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "choda-port-"));
+    writePortFile({ dataDir: dir, port: 62300, pid: process.pid });
+    const child = fakeChild();
+    watchAdapter({ child, dataDir: dir, onDeath: vi.fn() });
+    child.emit("exit", 1, null);
+    expect(fs.existsSync(path.join(dir, PORT_FILE_NAME))).toBe(false);
+  });
+
+  // The control case. An error state that fires on every path proves nothing —
+  // a deliberate quit detaches the watcher and must stay silent.
+  it("stays SILENT when the watcher was detached first (deliberate quit)", () => {
+    const child = fakeChild();
+    const onDeath = vi.fn();
+    const detach = watchAdapter({ child, dataDir: undefined, onDeath });
+    detach();
+    child.emit("exit", 0, null);
+    expect(onDeath).not.toHaveBeenCalled();
   });
 });

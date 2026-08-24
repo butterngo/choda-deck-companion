@@ -5,7 +5,7 @@
 
 const { app, BrowserWindow, dialog, Menu, Tray, Notification, nativeImage, session, desktopCapturer } = require("electron");
 const path = require("node:path");
-const { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveModelDir, resolveBridgeToken, spawnAdapter } = require("./adapter-launcher.cjs");
+const { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveModelDir, resolveBridgeToken, spawnAdapter, writePortFile, clearPortFile, watchAdapter } = require("./adapter-launcher.cjs");
 const { createStaticProxyServer } = require("./static-proxy-server.cjs");
 const { configureLoginItem } = require("./login-item.cjs");
 const { initUpdater } = require("./updater.cjs");
@@ -92,6 +92,13 @@ if (!app.requestSingleInstanceLock()) {
     const nodePath = resolveNodePath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
     const modelDir = resolveModelDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
 
+    // TASK-1590 AC-2 — clear any port file left by a previous run BEFORE the
+    // adapter is spawned. Between here and a successful boot there is no file
+    // at all, so a reader can never catch a stale port that looks current;
+    // combined with the pid in the file, staleness is unrepresentable rather
+    // than merely detectable.
+    clearPortFile(dataDir);
+
     let apiPort;
     let dataDirWarning;
     try {
@@ -109,6 +116,28 @@ if (!app.requestSingleInstanceLock()) {
       app.quit();
       return;
     }
+
+    // TASK-1590 AC-1 — publish the adapter's real address now that it is known
+    // and confirmed listening. Anything outside this process (the extension, a
+    // curl check, a verification pass) reads it from here instead of guessing
+    // 7338, which the app has never bound.
+    writePortFile({ dataDir, port: apiPort, pid: adapterChild.pid });
+
+    // TASK-1590 AC-3 — from here on the adapter dying is a visible event, not a
+    // silent one. Without this the window stays open, the proxy keeps
+    // forwarding to a dead port, and the app reports nothing wrong.
+    const detachAdapterWatch = watchAdapter({
+      child: adapterChild,
+      dataDir,
+      onDeath: ({ code, signal }) => {
+        dialog.showErrorBox(
+          "Choda Companion stopped serving",
+          `The local adapter exited (${signal ? `signal ${signal}` : `code ${code}`}).\n\n` +
+            "The window is still open but nothing behind it is running — data will not load or save. " +
+            "Quit and reopen Choda Companion.",
+        );
+      },
+    });
 
     // TASK-1510 AC-1 — the adapter found no database where it was told to look, while
     // another location has one. Say so BEFORE the window opens showing an empty board,
@@ -165,6 +194,10 @@ if (!app.requestSingleInstanceLock()) {
     });
 
     app.on("before-quit", () => {
+      // Detach first: a deliberate shutdown must not raise the death dialog
+      // (AC-3's control case — the error state has to be able to NOT fire).
+      detachAdapterWatch();
+      clearPortFile(dataDir);
       adapterChild?.kill();
     });
 
