@@ -429,6 +429,60 @@ export async function fetchWorkspaceDoc(
   return await res.text();
 }
 
+// TASK-1779/1782 — a workspace's git history. Mirror of the adapter's
+// GET /workspaces/:id/commits (src/adapters/companion/workspace-commits.ts).
+export interface WorkspaceCommit {
+  sha: string;
+  shortSha: string;
+  /** ISO 8601 with offset, as git reports it. */
+  authorDate: string;
+  subject: string;
+  /** Every TASK-id in the subject, deduped. Empty means nobody tagged it. */
+  taskIds: string[];
+}
+
+export interface WorkspaceCommitsResult {
+  workspaceId: string;
+  label: string;
+  cwd: string;
+  commits: WorkspaceCommit[];
+  hasMore: boolean;
+}
+
+/**
+ * The adapter could not read git for this workspace — the cwd is gone, or it is
+ * not a repository. Carried as its own error type for the same reason as
+ * WorkspaceFolderMissingError: `isError` alone would collapse it into "the
+ * request failed", and an audit view has to say which. It must never surface as
+ * an empty commit list, which would read as "this repo has no history".
+ */
+export class GitUnavailableError extends Error {
+  constructor(
+    readonly label: string,
+    readonly cwd: string
+  ) {
+    super(`git is unavailable for: ${cwd}`);
+    this.name = "GitUnavailableError";
+  }
+}
+
+export async function fetchWorkspaceCommits(
+  workspaceId: string,
+  limit: number,
+  signal?: AbortSignal
+): Promise<WorkspaceCommitsResult> {
+  const res = await fetch(
+    `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/commits?limit=${limit}`,
+    { signal }
+  );
+  if (res.status === 409) {
+    const body = (await res.json()) as { label?: string; cwd?: string };
+    throw new GitUnavailableError(body.label ?? workspaceId, body.cwd ?? "");
+  }
+  if (!res.ok) throw new Error(`GET /workspaces/:id/commits failed: ${res.status}`);
+  return (await res.json()) as WorkspaceCommitsResult;
+}
+
 export function fetchTask(id: string, signal?: AbortSignal): Promise<TaskDetail> {
   return getJson<TaskDetail>(`/tasks/${encodeURIComponent(id)}`, signal);
 }
