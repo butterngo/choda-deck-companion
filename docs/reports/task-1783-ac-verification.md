@@ -1,50 +1,52 @@
 # TASK-1783 — AC verification
 
-Session SESSION-1787656788701-28 · 2026-08-25 · **STOPPED at research, before any code was written.**
+Session SESSION-1787663432681-69 · 2026-08-25 · merged as `44f1eaf` (PR #77)
 
-**0 of 5 ticked. Nothing was implemented.** The task cannot be built as specified; blocked on TASK-1785.
+**6 of 6 ticked.** All machine-class.
 
-| AC | Verdict | Why |
+> Supersedes the earlier report at this path, which recorded **0/5, stopped at research**. That run is not erased — it is what produced TASK-1785 and the AC-4 rewrite. See *How this task failed first*.
+
+| AC | Verdict | Evidence |
 |---|---|---|
-| AC-1 subject + body + stat | ⬜ not attempted | Depends on the panel that could not be built |
-| AC-2 task title + link | ⬜ **blocked** | Needs `GET /tasks/:id` per opened commit — measured at **~15 s** |
-| AC-3 ADRs with declared/mentioned | ⬜ **blocked** | Same call |
-| AC-4 knowledge index fetched once | ⬜ **premise false** | The route the AC named cannot support it — see below |
-| AC-5 untagged commit panel | ⬜ not attempted | Depends on the panel |
+| AC-1 subject, body, per-file stat | ✅ | `+25 / 1` on a text file, `binary` on a binary one — never `+0/−0` |
+| AC-2 task title + link | ✅ | Live twice: `9dfe9c4`→TASK-1767, `00f9f6b`→TASK-985 |
+| AC-3 ADRs, declared vs mentioned | ✅ | Both badges asserted; **live control picked deliberately** |
+| AC-4 reopen makes no request | ✅ | fetch spy: 1 call across two opens; two controls |
+| AC-5 untagged commit | ✅ | `CapabilityNote`, not `ErrorState`; paired control |
+| AC-6 reachability mark | ✅ | Injection reddens exactly the two controls |
 
-## What stopped it
+## How this task failed first
 
-Two findings, both measured against the live adapter rather than inferred.
+The first attempt stopped at research with **0/5** and wrote no code. Two findings did that:
 
-**1. `GET /tasks/:id` costs ~15 seconds, and blocks the adapter while it runs.**
+1. `GET /tasks/:id` — the only route carrying task title and ADRs together — took **~15 s** and blocked the single-threaded adapter. Filed as TASK-1785, fixed, now **19 ms**.
+2. AC-4's premise was false: `GET /knowledge?type=decision` returns no bodies, so the client-side matching it assumed is impossible.
+
+Neither was worked around quietly. The first became a critical task; the second became an AC rewrite with the reasoning written into the task body, so a reader six months from now sees that the criterion changed and why.
+
+## The live control was chosen, not stumbled into
+
+AC-3 needed a commit whose task actually has ADRs. The obvious candidate — `9dfe9c4` → `TASK-1767` — has `adrs: []`. Checking it would have "passed" while proving nothing about ADR rendering.
+
+Searched for one that does:
 
 ```
-/healthz            200 in 0.003s     (idle)
-/tasks/TASK-1767    200 in 14.994s
-/tasks/TASK-1782    200 in 14.754s
-/healthz            200 in 0.002s     (idle again)
+00f9f6b  docs(adr): draft ADR-031 session_end field derivation (TASK-985)
+  reachability: default-branch   taskIds: [TASK-985]   files: 1
+    → TASK-985  "session_end: auto-derive handoff fields…"
+        ADR-032-unified-knowledge-graph-v2   via: body
+        ADR-031-session-end-derivation       via: body
 ```
 
-Cause: `collectAdrs` calls `getKnowledge` on all 44 decision entries to scan their bodies, and `getKnowledge` computes ref staleness on every read (`knowledge-service.ts:300-301`) — a `git log` subprocess per ref. Proportional and visible per entry: ADR-032 (4 refs) 0.567 s, ADR-031 (0 refs) 0.006 s.
+Same trap as TASK-1785's AC-2, caught the same way.
 
-Provenance never uses that staleness. Every git invocation on this path is wasted.
+## Findings worth carrying
 
-The adapter is single-threaded, so this is not only the caller's 15 s: five abandoned requests left `/healthz` timing out at 25 s while `/knowledge` and the commits route answered in 3 ms and 300 ms once the queue drained.
+1. **A component gaining a dependency silently breaks a fake that never named it.** Adding `useWorkspaceCommit` to `WorkspaceView` took down all 15 tests in `workspace-view.test.tsx` — the real hook ran without a `QueryClientProvider`. Second instance this run; the first was the `task-detail` fake in TASK-1785, which failed at *runtime while typecheck stayed green*.
+2. **Restore an injection from the index, not from HEAD.** `git checkout --` on a file that was never committed discards the implementation. That cost a re-write in TASK-1780; here `git checkout-index -f` was used instead.
+3. **The stale adapter is visible from the app's side.** The long-running adapter on 7338 returned `reachability: MISSING` because it predates TASK-1784 — a live demonstration of INBOX-1888's vendoring gap, not a theory.
 
-**2. AC-4's premise is false.** The AC said the ADR index should be fetched once per page and matched client-side, and that `GET /knowledge?type=decision&projectId=` already made that possible. It does not: the list returns 44 entries carrying `slug, projectId, workspaceId, scope, type, title, filePath, createdAt, lastVerifiedAt` and **no body**. Since 38 of 39 ADRs link to their task by prose mention in the body, client-side matching cannot be done from that payload.
+## Gates
 
-So neither route can serve the panel: the one with the data is 15 s, and the fast one lacks the data.
-
-## Why the AC was not quietly rewritten
-
-Reaching for `GET /tasks/:id` per opened panel would have satisfied a literal reading of AC-4 — the client would fetch the knowledge index zero times, which does not "scale with the number of commits opened". It would also have shipped a panel that takes 15 seconds to open and freezes the rest of the app while it does. That is the shape of change this repo files rather than makes.
-
-## Blocker
-
-**TASK-1785** — `GET /tasks/:id` takes 15 seconds and blocks the whole adapter. Filed critical, with the three directions and a control AC (the fast route must still return the same `adrs[]`, so a fix that loses the data cannot pass on speed alone).
-
-Note it is not only this task's problem: **`TaskDetailView` already ships this path** (TASK-1748, v0.7.0). Opening any task in the companion today stalls ~15 s. It appears nobody filed it, which suggests it reads as "the app is slow" rather than as a defect.
-
-## State left behind
-
-No code written. Branch `feat/commit-detail` created and deleted. Session cancelled rather than ended, so the task returns to READY rather than claiming to be IMPLEMENTED. Working tree clean, on main.
+typecheck 0 · web 47 files / 300 tests 0 (+16) · electron+scripts 5 files / 72 tests 0 · lint 0 · build 0
+No CI on this repo. Merge proven: `44f1eaf` is an ancestor of `origin/main`.
