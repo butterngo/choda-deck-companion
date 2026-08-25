@@ -1,6 +1,6 @@
 // TASK-1493 — the Search pillar: one box that queries across ALL project
-// workspaces (tasks + knowledge), results grouped by project. Unlike Cockpit /
-// Graph it needs no WorkspaceSelect — cross-project is the whole point. Honest
+// workspaces (tasks + knowledge), results grouped by project. Unlike Graph it
+// needs no WorkspaceSelect — cross-project is the whole point. Honest
 // liveness (reuses the shell health context, same as the other pillars).
 
 import { useState } from "react";

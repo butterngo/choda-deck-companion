@@ -1,7 +1,7 @@
 // TASK-1444 — the Graph pillar: a visual force-directed knowledge graph over the
 // full-graph read (TASK-1443), for the project behind the selected workspace.
 // Honest liveness (AC-5): reuses the shell's health context, same
-// disconnected/stale treatment as Sync / Cockpit / Knowledge — never a
+// disconnected/stale treatment as Sync / Knowledge — never a
 // fake-live graph when the API is down.
 
 import { useMemo, useState } from "react";

@@ -13,7 +13,6 @@ import { useEffect, useState } from "react";
 
 export interface NavCounts {
   projects?: number;
-  cockpit?: number;
   conversations?: number;
   knowledge?: number;
   vault?: number;
@@ -95,12 +94,10 @@ export function SidebarNav({ counts = {} }: { counts?: NavCounts }): React.JSX.E
       aria-label="Sections">
       <div className="mb-3.5 rail:group-data-[collapsed=true]/shell:mb-0 rail:group-data-[collapsed=true]/shell:pb-1.5 rail:group-data-[collapsed=true]/shell:mt-1.5 rail:group-data-[collapsed=true]/shell:border-b rail:group-data-[collapsed=true]/shell:border-zinc-200 dark:rail:group-data-[collapsed=true]/shell:border-zinc-800">
         <GroupLabel>Work</GroupLabel>
-        {/* TASK-1765 — first, because it is the only entry point to a workspace
-            and therefore to its docs and tasks. Placement is provisional: the
-            question of whether browsing or Cockpit is the natural landing screen
-            is Butter's to answer after seeing it (TASK-1764). */}
+        {/* TASK-1765 — the only entry point to a workspace and therefore to its
+            docs and tasks. It is now the first place in WORK outright: the
+            Cockpit that used to sit beside it was removed, browsing won. */}
         <Item to="/projects" icon="ti-folders" label="Projects" count={counts.projects} />
-        <Item to="/cockpit" icon="ti-layout-kanban" label="Cockpit" count={counts.cockpit} />
         <Item
           to="/conversations"
           icon="ti-messages"

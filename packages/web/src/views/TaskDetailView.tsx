@@ -1,7 +1,7 @@
 // TASK-1748 — the route `/tasks/:id`, so a task is a place you can link to.
 //
 // Deliberately a route rather than more drawer: "click a task" needs somewhere
-// to land from Cockpit, Search and Graph alike, and going via the graph screen
+// to land from a workspace, Search and Graph alike, and going via the graph screen
 // to hunt for a node does not match how the question actually comes up. The
 // graph's own drawer keeps rendering TaskDetailPanel exactly as before — this
 // view reuses the same component rather than forking it.
@@ -26,9 +26,9 @@ export function TaskDetailView(): React.JSX.Element {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
       <div className="flex items-center gap-1.5 text-xs text-zinc-400">
-        <Link to="/cockpit" className="flex items-center gap-1.5">
+        <Link to="/projects" className="flex items-center gap-1.5">
           <i className="ti ti-chevron-left" aria-hidden="true" />
-          Cockpit
+          Projects
         </Link>
         <span>/</span>
         <span className="text-zinc-500">Task</span>

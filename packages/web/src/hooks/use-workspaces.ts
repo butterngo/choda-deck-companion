@@ -1,4 +1,4 @@
-// TASK-1465 — polls GET /workspaces for the Cockpit's real dropdown. Same
+// TASK-1465 — polls GET /workspaces for the workspace dropdown. Same
 // cadence as the other pillar screens.
 
 import { useQuery } from "@tanstack/react-query";
