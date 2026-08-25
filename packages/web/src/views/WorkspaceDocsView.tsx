@@ -143,7 +143,7 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
               </header>
               {/* Bounded to a reading measure, left-aligned — TASK-1608. */}
               <div className="max-w-[72ch]">
-                <CaptureMarkdown>{detail.markdown}</CaptureMarkdown>
+                <CaptureMarkdown diagrams>{detail.markdown}</CaptureMarkdown>
               </div>
             </article>
           )}
