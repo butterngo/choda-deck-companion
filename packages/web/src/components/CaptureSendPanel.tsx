@@ -74,7 +74,7 @@ export function CaptureSendPanel({ dataUrl, projectId, connected }: CaptureSendP
         </p>
       )}
       {withinCap && projectId === null && (
-        <p className="text-xs text-zinc-500">Pick a workspace (in the Cockpit or Graph tab) to choose where this lands.</p>
+        <p className="text-xs text-zinc-500">Pick a workspace (in the Graph tab) to choose where this lands.</p>
       )}
       {withinCap && projectId !== null && !connected && (
         <p className="text-xs text-zinc-500">Adapter unreachable — reconnect to send.</p>

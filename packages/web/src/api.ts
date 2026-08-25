@@ -119,73 +119,10 @@ export function pushSync(): Promise<SyncActionResult> {
   return postJson<SyncActionResult>("/sync/push");
 }
 
-// TASK-1173 — Workflow Cockpit. Mirrors of the adapter's task/session shapes
-// (src/adapters/companion/workflow.ts, src/core/domain/task-types.ts). Only the
-// fields the Cockpit renders are declared here.
+// Task status as the adapter reports it (src/core/domain/task-types.ts).
+// Declared here rather than beside TaskDetail because more than one
+// response shape carries it.
 export type TaskStatus = "TODO" | "READY" | "IN-PROGRESS" | "IMPLEMENTED" | "DONE" | "CANCELLED";
-
-export interface FocusTask {
-  id: string;
-  title: string;
-  status: TaskStatus;
-  priority: string | null;
-}
-
-export interface FocusSession {
-  id: string;
-  taskId: string | null;
-  status: "active" | "completed";
-  handoff?: { resumePoint?: string };
-  checkpoint?: { resumePoint?: string };
-}
-
-// Mirror of GET /workflow/focus (src/adapters/companion/workflow.ts FocusFeed).
-export interface FocusFeed {
-  workspaceId: string;
-  projectId: string;
-  activeSession: FocusSession | null;
-  focusTask: FocusTask | null;
-  now: FocusTask[];
-  next: FocusTask[];
-  done: FocusTask[];
-}
-
-export interface InboxItem {
-  id: string;
-  projectId: string | null;
-  workspaceId: string | null;
-  content: string;
-  status: "raw" | "researching" | "ready" | "converted" | "archived";
-  linkedTaskId: string | null;
-}
-
-export function fetchFocus(workspaceId: string, signal?: AbortSignal): Promise<FocusFeed> {
-  return getJson<FocusFeed>(`/workflow/focus?workspaceId=${encodeURIComponent(workspaceId)}`, signal);
-}
-
-// GET /inbox has no workspaceId query param on the adapter today — it returns
-// every project's inbox. The Cockpit filters client-side by projectId (see
-// use-inbox.ts); a real workspaceId scope needs an adapter change (tracked as a
-// loose end, not silently worked around here).
-export function fetchInbox(signal?: AbortSignal): Promise<{ inbox: InboxItem[] }> {
-  return getJson<{ inbox: InboxItem[] }>("/inbox", signal);
-}
-
-export function markTaskReady(taskId: string): Promise<{ task: FocusTask }> {
-  return postJson<{ task: FocusTask }>(`/tasks/${encodeURIComponent(taskId)}/ready`);
-}
-
-export function startWorkflowSession(
-  projectId: string,
-  workspaceId: string,
-  taskId: string,
-): Promise<FocusSession> {
-  return postJson<FocusSession>("/sessions", { projectId, workspaceId, taskId });
-}
-
-export function endWorkflowSession(sessionId: string, resumePoint?: string): Promise<FocusSession> {
-  return postJson<FocusSession>(`/sessions/${encodeURIComponent(sessionId)}/end`, { resumePoint });
-}
 
 // TASK-1174 — Knowledgebase browser. Mirrors of the adapter's knowledge/graph
 // shapes (src/adapters/companion/knowledge.ts, src/adapters/companion/graph.ts,
@@ -308,8 +245,8 @@ export function fetchFullGraph(projectId: string, signal?: AbortSignal): Promise
 }
 
 // TASK-1465 — mirror of the adapter's GET /workspaces (src/adapters/companion,
-// fans out over listProjects()/findWorkspaces()). Lets the Cockpit offer a
-// real dropdown instead of a manual workspaceId text-entry box.
+// fans out over listProjects()/findWorkspaces()). Lets a workspace be picked
+// from a real dropdown instead of a manual workspaceId text-entry box.
 export interface Workspace {
   id: string;
   projectId: string;

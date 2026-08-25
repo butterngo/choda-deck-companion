@@ -6,7 +6,7 @@
 // test passed because every test rendered the component directly. Rendering a
 // view proves it renders; it says nothing about whether a user can arrive.
 // router.tsx even carried a comment claiming a task "is a place you can link to
-// from Cockpit, Search or Graph" — those links were never written, and nothing
+// from a workspace, Search or Graph" — those links were never written, and nothing
 // contradicted the comment for three weeks (INBOX-1875).
 //
 // Test-only. Nothing in the app imports this, so it never reaches the bundle.

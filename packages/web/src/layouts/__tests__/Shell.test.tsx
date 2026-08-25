@@ -24,13 +24,13 @@ function nav(path: string, counts?: Parameters<typeof SidebarNav>[0]["counts"]) 
 
 describe("SidebarNav", () => {
   it("renders the three groups from the design note", () => {
-    nav("/cockpit");
+    nav("/projects");
     expect(screen.getByText("Work")).toBeInTheDocument();
     expect(screen.getByText("System")).toBeInTheDocument();
     // Knowledge is a parent control, not a group label.
     expect(screen.getByRole("button", { name: /knowledge/i })).toBeInTheDocument();
 
-    for (const label of ["Cockpit", "Conversations", "Graph", "Sync"]) {
+    for (const label of ["Projects", "Conversations", "Graph", "Sync"]) {
       expect(screen.getByRole("link", { name: new RegExp(label, "i") })).toBeInTheDocument();
     }
   });
@@ -38,13 +38,13 @@ describe("SidebarNav", () => {
   it("rolls the parent count up from its children rather than hard-coding it", () => {
     // The discriminator: a hard-coded parent count passes any "shows a number"
     // check. 2 + 3 must read as 5.
-    nav("/cockpit", { knowledge: 2, vault: 3 });
+    nav("/projects", { knowledge: 2, vault: 3 });
     const parent = screen.getByRole("button", { name: /knowledge/i });
     expect(within(parent).getByText("5")).toBeInTheDocument();
   });
 
   it("removes the children from the accessibility tree when collapsed", () => {
-    nav("/cockpit");
+    nav("/projects");
     expect(screen.getByRole("link", { name: /choda knowledge/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /knowledge/i }));
@@ -76,7 +76,7 @@ describe("SidebarNav", () => {
   });
 
   it("omits counts entirely when none are supplied", () => {
-    const { container } = nav("/cockpit");
+    const { container } = nav("/projects");
     // A component that rendered `undefined` or `0` would show stray digits.
     expect(container.textContent).not.toMatch(/\d/);
   });
@@ -127,7 +127,7 @@ describe("Shell layout contract", () => {
 // enough to fail loudly if someone drops the responsive prefixes again.
 describe("Shell icon rail (AC-7)", () => {
   it("SidebarNav labels are sr-only until the rail breakpoint", () => {
-    const { container } = nav("/cockpit");
+    const { container } = nav("/projects");
     const labels = container.querySelectorAll("nav a span");
     expect(labels.length).toBeGreaterThan(0);
     for (const el of labels) {
@@ -140,7 +140,7 @@ describe("Shell icon rail (AC-7)", () => {
   });
 
   it("group labels and counts are display-hidden below the breakpoint", () => {
-    const { container } = nav("/cockpit", { knowledge: 2, vault: 3 });
+    const { container } = nav("/projects", { knowledge: 2, vault: 3 });
     expect(screen.getByText("Work").className).toMatch(/hidden rail:block/);
     const count = container.querySelector("span.tabular-nums");
     expect(count?.className).toMatch(/hidden rail:inline/);

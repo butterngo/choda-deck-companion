@@ -1,10 +1,12 @@
-// TASK-1173 — the Cockpit needs a workspaceId to call /workflow/focus, but the
+// TASK-1173 — Graph and the docs browser need a workspaceId to scope a call, but the
 // adapter has no endpoint to enumerate workspaces (GET /projects returns flat
 // projects only, no workspaces[]). Until that lands, the user types the id once
 // and it's remembered — an honest manual gap, not a guessed default.
 
 import { useState } from "react";
 
+// The key still says "cockpit" although that screen is gone: renaming it would
+// silently discard the workspace every existing install has already chosen.
 const STORAGE_KEY = "choda.cockpit.workspaceId";
 
 export interface WorkspaceSelection {

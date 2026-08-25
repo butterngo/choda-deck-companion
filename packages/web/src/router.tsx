@@ -4,7 +4,6 @@
 import { createHashRouter, Navigate } from "react-router-dom";
 import { Shell } from "./layouts/Shell";
 import { SyncView } from "./views/SyncView";
-import { CockpitView } from "./views/CockpitView";
 import { KnowledgeView } from "./views/KnowledgeView";
 import { GraphboardView } from "./views/GraphboardView";
 import { SearchView } from "./views/SearchView";
@@ -29,15 +28,14 @@ export const router = createHashRouter([
       // TASK-1766 — a workspace as a place: its docs and its tasks, and from a
       // task the ADR/files/commits behind it.
       { path: "workspaces/:id", element: <WorkspaceView /> },
-      { path: "cockpit", element: <CockpitView /> },
       { path: "knowledge", element: <KnowledgeView /> },
       { path: "graph", element: <GraphboardView /> },
       { path: "search", element: <SearchView /> },
       { path: "capture", element: <CaptureView /> },
       { path: "conversations", element: <ConversationsView /> },
       { path: "vault", element: <VaultView /> },
-      // TASK-1748 — a task is a place you can link to, from Cockpit, Search or
-      // Graph. The graph's own drawer is unchanged.
+      // TASK-1748 — a task is a place you can link to, from a workspace, Search
+      // or Graph. The graph's own drawer is unchanged.
       { path: "tasks/:id", element: <TaskDetailView /> },
       // TASK-1749 — a workspace's own .md docs.
       { path: "workspace-docs", element: <WorkspaceDocsView /> },
