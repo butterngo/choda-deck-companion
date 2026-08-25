@@ -5,8 +5,19 @@
 // Folders start open. A doc browser you have to unfold before you can see
 // anything is a worse first screen than a slightly long list, and the measured
 // sizes are small enough for it: 26 files in the companion, 199 in choda-deck.
+//
+// TASK-1780 — they can now be CLOSED. Starting open is still right, but on
+// choda-deck the tree buries the real docs under data/artifacts/captures/
+// (INBOX-1868), and the chevron this component already drew was decorative:
+// static, aria-hidden, wired to nothing. A control that looks like a control
+// and does nothing is worse than no control.
+//
+// Collapse state is held once, in DocTree, rather than per Row. Per-row state
+// happens to survive selecting another file today — React keeps the instance
+// because the key is stable — but that is a property of the reconciler, not a
+// decision, and AC-2 is about the guarantee rather than the accident.
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { WorkspaceDoc } from "../api";
 
 interface TreeNode {
@@ -51,31 +62,62 @@ function Row({
   depth,
   selected,
   onSelect,
+  collapsed,
+  onToggle,
 }: {
   node: TreeNode;
   depth: number;
   selected: string | null;
   onSelect: (path: string) => void;
+  collapsed: Set<string>;
+  onToggle: (path: string) => void;
 }): React.JSX.Element {
   const indent = { paddingLeft: `${depth * 16}px` };
 
   if (node.doc === null) {
+    const open = !collapsed.has(node.path);
     return (
       <div>
-        <div
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-zinc-600 dark:text-zinc-300"
+        <button
+          type="button"
+          aria-expanded={open}
+          data-testid={`doc-tree-folder-${node.path}`}
+          onClick={() => onToggle(node.path)}
+          className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
           style={indent}
         >
-          <i className="ti ti-chevron-down flex-none text-zinc-400" aria-hidden="true" />
-          <i className="ti ti-folder flex-none text-zinc-400" aria-hidden="true" />
+          <i
+            className={`ti ti-chevron-down flex-none text-zinc-400 transition-transform ${
+              open ? "" : "-rotate-90"
+            }`}
+            aria-hidden="true"
+          />
+          <i
+            className={`ti ${open ? "ti-folder-open" : "ti-folder"} flex-none text-zinc-400`}
+            aria-hidden="true"
+          />
           <span className="min-w-0 truncate text-xs">{node.name}</span>
+          {/* The count stays visible while closed — a folder you cannot see into
+              should still say how much it is hiding. */}
           <span className="ml-auto flex-none text-[11px] tabular-nums text-zinc-400">
             {countFiles(node)}
           </span>
-        </div>
-        {node.children.map((c) => (
-          <Row key={c.path} node={c} depth={depth + 1} selected={selected} onSelect={onSelect} />
-        ))}
+        </button>
+        {/* Collapsed children leave the DOM entirely, not merely the screen.
+            Hidden rows a screen reader can still reach are worse than no rows,
+            and the same rule already governs SidebarNav's Knowledge group. */}
+        {open &&
+          node.children.map((c) => (
+            <Row
+              key={c.path}
+              node={c}
+              depth={depth + 1}
+              selected={selected}
+              onSelect={onSelect}
+              collapsed={collapsed}
+              onToggle={onToggle}
+            />
+          ))}
       </div>
     );
   }
@@ -116,10 +158,31 @@ export function DocTree({
     return r;
   }, [docs]);
 
+  // A set of CLOSED paths, not open ones: empty means everything is expanded,
+  // which is the default the comment at the top of this file describes. Storing
+  // the open set instead would make "no state yet" mean "all folders shut".
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+
+  const onToggle = (path: string): void => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(path)) next.add(path);
+      return next;
+    });
+  };
+
   return (
     <div data-testid="doc-tree" className="flex flex-col">
       {root.children.map((c) => (
-        <Row key={c.path} node={c} depth={0} selected={selected} onSelect={onSelect} />
+        <Row
+          key={c.path}
+          node={c}
+          depth={0}
+          selected={selected}
+          onSelect={onSelect}
+          collapsed={collapsed}
+          onToggle={onToggle}
+        />
       ))}
     </div>
   );
