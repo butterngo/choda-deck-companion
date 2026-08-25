@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import type { HealthView } from "../../hooks/use-health";
-import type { TaskSummary, Workspace } from "../../api";
+import type { TaskSummary, Workspace, WorkspaceCommit } from "../../api";
 
 const health = (conn: HealthView["conn"]): HealthView => ({
   health: { loopAlive: true, lastPullAgeSec: 5, jwtState: "refresh", reachable: conn !== "disconnected" },
@@ -28,7 +28,25 @@ const TASKS: TaskSummary[] = [
   { id: "TASK-1766", projectId: "choda-deck", parentTaskId: null, title: "Workspace detail", status: "IN-PROGRESS", priority: "high", labels: [] },
 ];
 
+// TASK-1782 — one tagged, one not. The untagged row is the whole point: about
+// 45% of real history carries no TASK-id and must still appear.
+const COMMITS: WorkspaceCommit[] = [
+  { sha: "9dfe9c4aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", shortSha: "9dfe9c4", authorDate: "2026-08-24T15:29:42+07:00", subject: "test(web): a route with no inbound link now fails the build (TASK-1767)", taskIds: ["TASK-1767"] },
+  { sha: "ad39672bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", shortSha: "ad39672", authorDate: "2026-08-24T18:02:10+07:00", subject: "chore(release): 0.8.0 — a workspace is somewhere you can go", taskIds: [] },
+];
+
 const wsState = { workspaces: WORKSPACES, isLoading: false, isError: false };
+// Data only, never a rule. INBOX-1878: a mock that reimplements a production
+// filter or conditional covers up the very logic it stands in for, and the suite
+// reports full green. Nothing here branches.
+const commitState = {
+  commits: COMMITS as WorkspaceCommit[],
+  hasMore: false,
+  cwd: "C:\\dev\\choda-deck-companion",
+  isLoading: false,
+  isError: false,
+  gitUnavailable: null as { label: string; cwd: string } | null,
+};
 const taskState = { tasks: TASKS, scope: "project" as const, isLoading: false, isError: false };
 
 vi.mock("react-router-dom", async (orig) => ({
@@ -37,6 +55,10 @@ vi.mock("react-router-dom", async (orig) => ({
 }));
 vi.mock("../../hooks/use-workspaces", () => ({ useWorkspaces: () => wsState }));
 vi.mock("../../hooks/use-workspace-tasks", () => ({ useWorkspaceTasks: () => taskState }));
+vi.mock("../../hooks/use-workspace-commits", () => ({
+  useWorkspaceCommits: () => commitState,
+  COMMIT_PAGE_SIZE: 100,
+}));
 // The docs surface has its own file. Here it only has to be PRESENT — this test
 // is about the page assembling, not about re-proving the doc tree.
 vi.mock("../WorkspaceDocsView", () => ({
@@ -66,6 +88,11 @@ describe("WorkspaceView (TASK-1766)", () => {
     taskState.tasks = TASKS;
     taskState.isLoading = false;
     taskState.isError = false;
+    commitState.commits = COMMITS;
+    commitState.hasMore = false;
+    commitState.isLoading = false;
+    commitState.isError = false;
+    commitState.gitUnavailable = null;
   });
 
   it("reuses WorkspaceDocsView with a fixed workspaceId — not a second doc tree", () => {
@@ -122,5 +149,72 @@ describe("WorkspaceView (TASK-1766)", () => {
   it("offers a way back to Projects, so the hierarchy is walkable in both directions", () => {
     mount();
     expect(screen.getByText("Projects").getAttribute("href")).toBe("/projects");
+  });
+
+  // ---- TASK-1782 — History ----------------------------------------------
+
+  it("lists every commit the adapter returned, tagged or not (AC-1, AC-2)", () => {
+    mount();
+    fireEvent.click(screen.getByTestId("workspace-tab-history"));
+    expect(screen.getByTestId("commit-row-9dfe9c4")).toBeTruthy();
+    // The untagged one is PRESENT — not filtered out.
+    expect(screen.getByTestId("commit-row-ad39672")).toBeTruthy();
+    expect(screen.getByTestId("commit-list").querySelectorAll("li")).toHaveLength(COMMITS.length);
+  });
+
+  it("marks the untagged commit rather than letting it pass as tagged (AC-2)", () => {
+    mount();
+    fireEvent.click(screen.getByTestId("workspace-tab-history"));
+    expect(screen.getByTestId("commit-task-unknown")).toBeTruthy();
+    // Control: the tagged one carries a real task link instead of the marker.
+    expect(screen.getByTestId("commit-task-TASK-1767").getAttribute("href")).toBe("/tasks/TASK-1767");
+  });
+
+  it("a git failure is an ERROR naming the cwd, never an empty history (AC-3)", () => {
+    commitState.gitUnavailable = { label: "Companion", cwd: "C:\\dev\\not-a-repo" };
+    commitState.commits = [];
+    mount();
+    fireEvent.click(screen.getByTestId("workspace-tab-history"));
+    const err = screen.getByTestId("error-state");
+    expect(err.getAttribute("data-variant")).toBe("failed");
+    expect(err.textContent).toContain("C:\\dev\\not-a-repo");
+    // The distinction that matters: NOT an empty state, and no list.
+    expect(screen.queryByTestId("empty-state")).toBeNull();
+    expect(screen.queryByTestId("commit-list")).toBeNull();
+  });
+
+  it("a repo that genuinely has no commits is an EmptyState — the control for AC-3", () => {
+    // Without this the 409 assertion above proves nothing: an implementation
+    // that rendered an error for every empty array would pass it.
+    commitState.commits = [];
+    commitState.gitUnavailable = null;
+    mount();
+    fireEvent.click(screen.getByTestId("workspace-tab-history"));
+    expect(screen.getByTestId("empty-state")).toBeTruthy();
+    expect(screen.queryByTestId("error-state")).toBeNull();
+  });
+
+  it("an unreachable adapter is a DIFFERENT state from a git failure (AC-4)", () => {
+    outletValue = health("disconnected");
+    commitState.gitUnavailable = { label: "Companion", cwd: "C:\\dev\\not-a-repo" };
+    mount();
+    // The outer branch wins and says the laptop is unreachable — the variant is
+    // what separates it from the 409 case, which is `failed`.
+    expect(screen.getByTestId("error-state").getAttribute("data-variant")).toBe("unreachable");
+  });
+
+  it("says so when the log is longer than the page", () => {
+    commitState.hasMore = true;
+    mount();
+    fireEvent.click(screen.getByTestId("workspace-tab-history"));
+    expect(screen.getByTestId("commit-has-more")).toBeTruthy();
+  });
+
+  it("keeps History off the screen until its tab is chosen", () => {
+    mount();
+    expect(screen.queryByTestId("workspace-history-pane")).toBeNull();
+    fireEvent.click(screen.getByTestId("workspace-tab-history"));
+    expect(screen.getByTestId("workspace-history-pane")).toBeTruthy();
+    expect(screen.queryByTestId("workspace-docs-pane")).toBeNull();
   });
 });

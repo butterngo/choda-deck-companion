@@ -9,18 +9,24 @@
 // Docs are rendered by WorkspaceDocsView with a fixed workspaceId, not by a
 // second doc tree. Two implementations of the same surface would drift, and the
 // one nobody is looking at drifts first.
+//
+// TASK-1782 adds History — the workspace's git log, and the entry point to the
+// audit chain (commit → task → ADR). Its failure branch is deliberately checked
+// before its empty branch; see historyPane.
 
 import { useState } from "react";
 import { Link, useOutletContext, useParams } from "react-router-dom";
 import type { HealthView } from "../hooks/use-health";
 import { useWorkspaces } from "../hooks/use-workspaces";
 import { useWorkspaceTasks } from "../hooks/use-workspace-tasks";
+import { useWorkspaceCommits } from "../hooks/use-workspace-commits";
+import { CommitList } from "../components/CommitList";
 import { WorkspaceDocsView } from "./WorkspaceDocsView";
 import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { Skeleton } from "../components/state/Skeleton";
 
-type Tab = "docs" | "tasks";
+type Tab = "docs" | "tasks" | "history";
 
 export function WorkspaceView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
@@ -30,6 +36,44 @@ export function WorkspaceView(): React.JSX.Element {
   const ws = useWorkspaces();
   const workspace = ws.workspaces.find((w) => w.id === id) ?? null;
   const tasks = useWorkspaceTasks(workspace?.projectId ?? null);
+  const commits = useWorkspaceCommits(workspace?.id ?? null);
+
+  function historyPane(): React.JSX.Element {
+    // Order matters. The git failure is checked BEFORE the empty branch,
+    // because the two are indistinguishable from the commit array alone and
+    // only one of them is a fact about the repository (TASK-1779 answers 409
+    // rather than 200 + [] for exactly this reason).
+    if (commits.gitUnavailable !== null) {
+      return (
+        <ErrorState
+          variant="failed"
+          subject="the git history"
+          description={`Couldn’t read git in ${commits.gitUnavailable.cwd} — this is not a repository with no commits.`}
+        />
+      );
+    }
+    if (commits.isError) return <ErrorState variant="failed" subject="the git history" />;
+    if (commits.isLoading) return <Skeleton shape="list" label="Loading history…" />;
+    if (commits.commits.length === 0) {
+      return (
+        <EmptyState
+          icon="ti-git-commit"
+          title="No commits yet"
+          description="git answered, and this repository has no history to show."
+        />
+      );
+    }
+    return (
+      <>
+        <CommitList commits={commits.commits} />
+        {commits.hasMore && (
+          <p data-testid="commit-has-more" className="mt-2.5 text-[11.5px] text-zinc-500">
+            Showing the most recent {commits.commits.length} commits — the log is longer.
+          </p>
+        )}
+      </>
+    );
+  }
 
   function tasksPane(): React.JSX.Element {
     if (tasks.isError) return <ErrorState variant="failed" subject="tasks" />;
@@ -105,7 +149,7 @@ export function WorkspaceView(): React.JSX.Element {
           aria-label="workspace sections"
           className="mb-4 flex gap-1 border-b border-zinc-200 dark:border-zinc-800"
         >
-          {(["docs", "tasks"] as Tab[]).map((t) => (
+          {(["docs", "tasks", "history"] as Tab[]).map((t) => (
             <button
               key={t}
               type="button"
@@ -120,18 +164,24 @@ export function WorkspaceView(): React.JSX.Element {
                   : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200",
               ].join(" ")}
             >
-              {t === "docs" ? "Docs" : "Tasks"}
+              {t === "docs" ? "Docs" : t === "tasks" ? "Tasks" : "History"}
             </button>
           ))}
         </div>
 
-        {tab === "docs" ? (
+        {tab === "docs" && (
           <div data-testid="workspace-docs-pane" className="flex min-h-0 flex-1 flex-col">
             <WorkspaceDocsView workspaceId={workspace.id} />
           </div>
-        ) : (
+        )}
+        {tab === "tasks" && (
           <div data-testid="workspace-tasks-pane" className="min-h-0 flex-1 overflow-y-auto">
             {tasksPane()}
+          </div>
+        )}
+        {tab === "history" && (
+          <div data-testid="workspace-history-pane" className="min-h-0 flex-1 overflow-y-auto">
+            {historyPane()}
           </div>
         )}
       </>
