@@ -21,6 +21,8 @@ import { useWorkspaces } from "../hooks/use-workspaces";
 import { useWorkspaceTasks } from "../hooks/use-workspace-tasks";
 import { useWorkspaceCommits } from "../hooks/use-workspace-commits";
 import { CommitList } from "../components/CommitList";
+import { CommitDetailPanel } from "../components/CommitDetailPanel";
+import { useWorkspaceCommit } from "../hooks/use-workspace-commit";
 import { WorkspaceDocsView } from "./WorkspaceDocsView";
 import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
@@ -37,6 +39,8 @@ export function WorkspaceView(): React.JSX.Element {
   const workspace = ws.workspaces.find((w) => w.id === id) ?? null;
   const tasks = useWorkspaceTasks(workspace?.projectId ?? null);
   const commits = useWorkspaceCommits(workspace?.id ?? null);
+  const [openSha, setOpenSha] = useState<string | null>(null);
+  const openCommit = useWorkspaceCommit(workspace?.id ?? null, openSha);
 
   function historyPane(): React.JSX.Element {
     // Order matters. The git failure is checked BEFORE the empty branch,
@@ -65,7 +69,25 @@ export function WorkspaceView(): React.JSX.Element {
     }
     return (
       <>
-        <CommitList commits={commits.commits} />
+        <CommitList
+          commits={commits.commits}
+          selected={openSha}
+          onSelect={(sha) => setOpenSha((prev) => (prev === sha ? null : sha))}
+        />
+        {openSha !== null && (
+          <div
+            data-testid="commit-detail-pane"
+            className="mt-3 rounded-md border border-zinc-200 dark:border-zinc-800 p-3"
+          >
+            {openCommit.isError ? (
+              <ErrorState variant="failed" subject="this commit" />
+            ) : openCommit.commit === null ? (
+              <Skeleton shape="list" label="Loading commit…" />
+            ) : (
+              <CommitDetailPanel commit={openCommit.commit} />
+            )}
+          </div>
+        )}
         {commits.hasMore && (
           <p data-testid="commit-has-more" className="mt-2.5 text-[11.5px] text-zinc-500">
             Showing the most recent {commits.commits.length} commits — the log is longer.
