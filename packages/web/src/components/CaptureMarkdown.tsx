@@ -6,8 +6,23 @@
 // component rewrites those refs to `/api/artifacts/...` and picks the right
 // element: images inline, everything else (.har, .json, .jsonl, .md) a download
 // link, because a HAR file in an <img> is just a broken icon.
+//
+// TASK-1781 adds two things, and only one of them is unconditional.
+//
+//   remark-gfm is ALWAYS on. Without it a pipe table renders as a paragraph of
+//   pipes, and ADR-031 and ADR-032 carry their actual decisions in tables — the
+//   tier table, the pillar map, the §6 verdicts. That is not cosmetic for a
+//   reader trying to audit a decision.
+//
+//   `diagrams` is OPT-IN and defaults off. mermaid unpacks to 84 MB against a
+//   196 MB installer, so only the docs pane asks for it; task bodies, knowledge
+//   detail and conversation threads keep rendering a mermaid fence as a code
+//   block. Even when enabled the module is only imported once a fence actually
+//   appears — see MermaidBlock.
 
 import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { MermaidBlock } from "./MermaidBlock";
 import {
   isImageRef,
   normalizeCaptureBody,
@@ -20,11 +35,30 @@ function fileNameOf(ref: string): string {
   return rel.split("/").pop() || rel;
 }
 
-export function CaptureMarkdown({ children }: { children: string }): React.JSX.Element {
+export function CaptureMarkdown({
+  children,
+  diagrams = false,
+}: {
+  children: string;
+  /** Render ```mermaid fences as diagrams. Off everywhere but the docs pane. */
+  diagrams?: boolean;
+}): React.JSX.Element {
   return (
     <div className="prose prose-sm dark:prose-invert max-w-none">
       <Markdown
+        remarkPlugins={[remarkGfm]}
         components={{
+          code: ({ className, children: codeChildren, ...rest }) => {
+            const isMermaid = (className ?? "").split(" ").includes("language-mermaid");
+            if (diagrams && isMermaid) {
+              return <MermaidBlock code={String(codeChildren).trimEnd()} />;
+            }
+            return (
+              <code className={className} {...rest}>
+                {codeChildren}
+              </code>
+            );
+          },
           img: ({ src, alt }) => {
             const ref = typeof src === "string" ? src : "";
             const resolved = resolveCaptureRef(ref);
