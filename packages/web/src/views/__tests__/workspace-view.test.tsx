@@ -35,6 +35,8 @@ const COMMITS: WorkspaceCommit[] = [
   { sha: "ad39672bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", shortSha: "ad39672", authorDate: "2026-08-24T18:02:10+07:00", subject: "chore(release): 0.8.0 — a workspace is somewhere you can go", taskIds: [] },
 ];
 
+const detailState = { commit: null, isLoading: false, isError: false };
+
 const wsState = { workspaces: WORKSPACES, isLoading: false, isError: false };
 // Data only, never a rule. INBOX-1878: a mock that reimplements a production
 // filter or conditional covers up the very logic it stands in for, and the suite
@@ -58,6 +60,13 @@ vi.mock("../../hooks/use-workspace-tasks", () => ({ useWorkspaceTasks: () => tas
 vi.mock("../../hooks/use-workspace-commits", () => ({
   useWorkspaceCommits: () => commitState,
   COMMIT_PAGE_SIZE: 100,
+}));
+// TASK-1783 — the detail panel's hook. Data only; the panel has its own file.
+// Unmocked, the real hook runs without a QueryClientProvider and takes the
+// whole view down — which is how adding a dependency to a component silently
+// breaks a fake that never mentioned it.
+vi.mock("../../hooks/use-workspace-commit", () => ({
+  useWorkspaceCommit: () => detailState,
 }));
 // The docs surface has its own file. Here it only has to be PRESENT — this test
 // is about the page assembling, not about re-proving the doc tree.

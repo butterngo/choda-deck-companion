@@ -48,26 +48,54 @@ function TaskBadges({ taskIds }: { taskIds: string[] }): React.JSX.Element {
   );
 }
 
-export function CommitList({ commits }: { commits: WorkspaceCommit[] }): React.JSX.Element {
+export function CommitList({
+  commits,
+  selected,
+  onSelect,
+}: {
+  commits: WorkspaceCommit[];
+  /** sha of the open panel, or null. */
+  selected?: string | null;
+  onSelect?: (sha: string) => void;
+}): React.JSX.Element {
   return (
     <ul
       data-testid="commit-list"
       className="rounded-md border border-zinc-200 dark:border-zinc-800 divide-y divide-zinc-200 dark:divide-zinc-800 overflow-hidden"
     >
       {commits.map((c) => (
-        <li
-          key={c.sha}
-          data-testid={`commit-row-${c.shortSha}`}
-          className="flex items-baseline gap-2.5 px-2.5 py-2"
-        >
-          <span className="w-16 flex-none font-mono text-xs text-zinc-500">{c.shortSha}</span>
-          <span className="min-w-0 flex-1 truncate text-xs" title={c.subject}>
-            {c.subject}
-          </span>
-          <TaskBadges taskIds={c.taskIds} />
-          <span className="w-24 flex-none text-right text-[11px] tabular-nums text-zinc-400">
-            {commitDate(c.authorDate)}
-          </span>
+        <li key={c.sha} data-testid={`commit-row-${c.shortSha}`}>
+          <div
+            className={[
+              "flex items-baseline gap-2.5 px-2.5 py-2",
+              selected === c.sha ? "bg-zinc-100 dark:bg-zinc-800" : "",
+            ].join(" ")}
+          >
+            {/* The sha opens the panel; the task badges stay their own links, so
+                clicking "TASK-1767" still goes to the task rather than being
+                swallowed by a row-level handler. Nesting them inside one button
+                would make the badge unreachable. */}
+            {onSelect ? (
+              <button
+                type="button"
+                onClick={() => onSelect(c.sha)}
+                data-testid={`commit-open-${c.shortSha}`}
+                aria-expanded={selected === c.sha}
+                className="w-16 flex-none text-left font-mono text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+              >
+                {c.shortSha}
+              </button>
+            ) : (
+              <span className="w-16 flex-none font-mono text-xs text-zinc-500">{c.shortSha}</span>
+            )}
+            <span className="min-w-0 flex-1 truncate text-xs" title={c.subject}>
+              {c.subject}
+            </span>
+            <TaskBadges taskIds={c.taskIds} />
+            <span className="w-24 flex-none text-right text-[11px] tabular-nums text-zinc-400">
+              {commitDate(c.authorDate)}
+            </span>
+          </div>
         </li>
       ))}
     </ul>

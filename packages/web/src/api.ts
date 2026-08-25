@@ -456,6 +456,34 @@ export interface WorkspaceCommitsResult {
  * request failed", and an audit view has to say which. It must never surface as
  * an empty commit list, which would read as "this repo has no history".
  */
+/** TASK-1784 — how attached a commit is to this repo's refs. */
+export type CommitReachability = "default-branch" | "branch-only" | "unreachable";
+
+export interface CommitFileStat {
+  path: string;
+  /** null for a binary file — git reports `-`, and 0 would say it did not change. */
+  insertions: number | null;
+  deletions: number | null;
+  binary: boolean;
+}
+
+export interface WorkspaceCommitDetail extends WorkspaceCommit {
+  body: string;
+  files: CommitFileStat[];
+  reachability: CommitReachability;
+}
+
+export function fetchWorkspaceCommit(
+  workspaceId: string,
+  sha: string,
+  signal?: AbortSignal
+): Promise<WorkspaceCommitDetail> {
+  return getJson<WorkspaceCommitDetail>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/commits/${encodeURIComponent(sha)}`,
+    signal
+  );
+}
+
 export class GitUnavailableError extends Error {
   constructor(
     readonly label: string,
