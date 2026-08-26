@@ -15,7 +15,7 @@
 // before its empty branch; see historyPane.
 
 import { useState } from "react";
-import { Link, useOutletContext, useParams } from "react-router-dom";
+import { Link, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import type { HealthView } from "../hooks/use-health";
 import { useWorkspaces } from "../hooks/use-workspaces";
 import { useWorkspaceTasks } from "../hooks/use-workspace-tasks";
@@ -33,7 +33,18 @@ type Tab = "files" | "tasks" | "history";
 export function WorkspaceView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
   const { id } = useParams<{ id: string }>();
-  const [tab, setTab] = useState<Tab>("files");
+  // TASK-1788 follow-up — `?tab=` as INITIAL state only, matching how
+  // WorkspaceDocsView reads ?workspaceId= and ?path= (TASK-1766). Read on every
+  // render instead, switching tabs by hand would be fought by the URL.
+  //
+  // This exists because returning from a task landed the reader on Files when
+  // they had left from Tasks. The breadcrumb got them back to the right
+  // workspace and the wrong pane, which is most of the way to nowhere.
+  const [tabParams] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => {
+    const asked = tabParams.get("tab");
+    return asked === "tasks" || asked === "history" || asked === "files" ? asked : "files";
+  });
 
   const ws = useWorkspaces();
   const workspace = ws.workspaces.find((w) => w.id === id) ?? null;
@@ -143,7 +154,7 @@ export function WorkspaceView(): React.JSX.Element {
                 // two levels up to Projects.
                 state={{
                   from: {
-                    to: `/workspaces/${encodeURIComponent(workspace?.id ?? "")}`,
+                    to: `/workspaces/${encodeURIComponent(workspace?.id ?? "")}?tab=tasks`,
                     label: workspace?.label ?? "workspace",
                   },
                 }}
