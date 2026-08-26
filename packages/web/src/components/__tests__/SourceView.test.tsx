@@ -12,6 +12,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { SourceView } from "../SourceView";
 import { languageFor, resetHighlightCacheForTests } from "../../lib/highlight";
+import { lineFromHash } from "../SourceView";
 
 const CSHARP = `public class Order {
     // a comment
@@ -20,13 +21,18 @@ const CSHARP = `public class Order {
 
 const PLAIN = "just some words\nand a second line";
 
-function mount(path: string, code = CSHARP): void {
-  render(<SourceView path={path} code={code} />);
+function mount(path: string, code = CSHARP, line: number | null = null): void {
+  render(<SourceView path={path} code={code} highlightLine={line} />);
 }
 
 const pre = (): HTMLElement => screen.getByTestId("doc-source");
+// TASK-1792 made highlighting PER LINE, so the marker moved from one element
+// for the file to one per line. Measured before committing to it: on a real
+// 2,048-line C# file the per-line pass costs 16.1 ms against 11.8 ms for the
+// whole file — 1.4x, and both imperceptible. The trade buys markup that cannot
+// be torn by a span crossing a line boundary.
 const highlighted = (): Promise<HTMLElement> =>
-  waitFor(() => screen.getByTestId("doc-source-highlighted"));
+  waitFor(() => screen.getByTestId("source-line-html-1"));
 
 beforeEach(() => {
   resetHighlightCacheForTests();
@@ -81,11 +87,12 @@ describe("languageFor", () => {
 describe("rendering", () => {
   it("colours a C# file (AC-1)", async () => {
     mount("src/Order.cs");
-    const code = await highlighted();
-    expect(code.innerHTML).toContain("hljs-keyword");
-    expect(code.innerHTML).toContain("hljs-comment");
+    await highlighted();
+    const all = screen.getByTestId("doc-source").innerHTML;
+    expect(all).toContain("hljs-keyword");
+    expect(all).toContain("hljs-comment");
     // The text itself must survive intact — highlighting is decoration.
-    expect(code.textContent).toContain("public class Order");
+    expect(screen.getByTestId("doc-source").textContent).toContain("public class Order");
   });
 
   it("CONTROL — a .txt renders with no highlight markup at all (AC-1)", async () => {
@@ -93,7 +100,7 @@ describe("rendering", () => {
     await waitFor(() => expect(pre().textContent).toContain("just some words"));
     // A build that wrapped everything in <span class="hljs-…"> would pass the
     // test above and be wrong about every plain file.
-    expect(screen.queryByTestId("doc-source-highlighted")).toBeNull();
+    expect(screen.queryByTestId("source-line-html-1")).toBeNull();
     expect(pre().innerHTML).not.toContain("hljs-");
   });
 
@@ -116,14 +123,14 @@ describe("rendering", () => {
     vi.spyOn(lib, "highlight").mockRejectedValue(new Error("grammar exploded"));
     mount("src/Order.cs");
     await waitFor(() => expect(pre().textContent).toContain("public class Order"));
-    expect(screen.queryByTestId("doc-source-highlighted")).toBeNull();
+    expect(screen.queryByTestId("source-line-html-1")).toBeNull();
   });
 
   it("escapes markup that came from the FILE (AC-6 safety)", async () => {
     // highlight.js escapes its input, so a file containing a script tag must
     // arrive as text. Asserting it here means a future swap of highlighter
     // cannot quietly lose that property.
-    mount("page.html", '<script>alert(1)</script>');
+    mount("page.html", "<script>alert(1)</script>");
     await highlighted();
     expect(pre().querySelector("script")).toBeNull();
     expect(pre().textContent).toContain("<script>alert(1)</script>");
@@ -139,13 +146,69 @@ describe("what gets loaded (AC-2, AC-3)", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("CONTROL — a .cs DOES reach it exactly once", async () => {
+  it("CONTROL — a .cs DOES reach it, once per line", async () => {
     // Without this, the assertion above passes on a build where highlighting
     // was never wired at all.
+    //
+    // This asserted "exactly once" before TASK-1792, when the whole file went
+    // through in one call. It is now once per line, and saying so is more
+    // honest than loosening it to "at least once": if the count ever stops
+    // tracking the line count, something changed that this test should notice.
     const lib = await import("../../lib/highlight");
     const spy = vi.spyOn(lib, "highlight");
     mount("src/Order.cs");
-    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    const lineCount = CSHARP.split(String.fromCharCode(10)).length;
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(lineCount));
     expect(spy.mock.calls[0]?.[1]).toBe("csharp");
+  });
+});
+
+// TASK-1792 — line numbers and the anchor that lets a commit point at one.
+describe("line numbers (AC-4)", () => {
+  it("numbers every line, starting at 1", () => {
+    mount("src/Order.cs");
+    expect(screen.getByTestId("source-line-1")).toBeTruthy();
+    // CSHARP is 4 lines; a trailing newline must not invent a fifth.
+    expect(screen.getByTestId("source-line-4")).toBeTruthy();
+    expect(screen.queryByTestId("source-line-5")).toBeNull();
+  });
+
+  it("gives each line an id an anchor can address", () => {
+    mount("src/Order.cs");
+    expect(screen.getByTestId("source-line-3").getAttribute("id")).toBe("L3");
+  });
+
+  it("marks the line it was asked to mark", () => {
+    mount("src/Order.cs", CSHARP, 3);
+    expect(screen.getByTestId("source-line-3").getAttribute("data-marked")).toBe("true");
+  });
+
+  it("CONTROL — with no line asked for, nothing is marked", () => {
+    // A viewer that highlighted something always would pass the test above and
+    // point every reader at the same wrong line.
+    mount("src/Order.cs");
+    expect(screen.getByTestId("source-line-3").getAttribute("data-marked")).toBeNull();
+    expect(screen.getByTestId("source-line-1").getAttribute("data-marked")).toBeNull();
+  });
+
+  it("marks only the one line, not a range around it", () => {
+    mount("src/Order.cs", CSHARP, 2);
+    expect(screen.getByTestId("source-line-2").getAttribute("data-marked")).toBe("true");
+    expect(screen.getByTestId("source-line-1").getAttribute("data-marked")).toBeNull();
+    expect(screen.getByTestId("source-line-3").getAttribute("data-marked")).toBeNull();
+  });
+});
+
+describe("lineFromHash", () => {
+  it("reads #L42", () => {
+    expect(lineFromHash("#L42")).toBe(42);
+  });
+
+  it("refuses anything that is not a line reference", () => {
+    // Returning 0 or NaN here would mark a line that does not exist, or throw
+    // inside a render.
+    for (const bad of ["", "#", "#L", "#L0", "#Lx", "#section", "#L-3"]) {
+      expect(lineFromHash(bad), bad).toBeNull();
+    }
   });
 });

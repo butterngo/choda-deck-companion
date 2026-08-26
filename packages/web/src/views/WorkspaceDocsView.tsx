@@ -53,6 +53,15 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
   const [selectedPath, setSelectedPath] = useState<string | null>(
     () => params.get("path") || null,
   );
+  // TASK-1792 — the line a commit's changed-file link points at. Initial state
+  // only, like path: once here, picking another file must not keep dragging the
+  // reader back to a line in a file they have left.
+  const [initialLine] = useState<number | null>(() => {
+    const raw = params.get("line");
+    if (raw === null) return null;
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  });
   const list = useWorkspaceDocs(workspaceId);
   const detail = useWorkspaceDoc(workspaceId, selectedPath);
 
@@ -173,7 +182,14 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
                    TASK-1789 added highlighting on top; SourceView renders the
                    plain text first and colours it once the grammar arrives, so
                    a slow language chunk never blanks the pane. */
-                <SourceView path={selectedPath} code={detail.markdown} />
+                <SourceView
+                  path={selectedPath}
+                  code={detail.markdown}
+                  // Only marks a line while the file the link named is the one
+                  // being read. Selecting a different file drops the mark
+                  // rather than pointing at line N of something unrelated.
+                  highlightLine={selectedPath === params.get("path") ? initialLine : null}
+                />
               )}
             </article>
           )}

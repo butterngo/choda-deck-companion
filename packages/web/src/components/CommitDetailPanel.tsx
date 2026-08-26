@@ -14,32 +14,11 @@
 //   exist at all (TASK-1784).
 
 import { Link } from "react-router-dom";
-import type { CommitFileStat, WorkspaceCommitDetail } from "../api";
+import type { WorkspaceCommitDetail } from "../api";
 import { useTask } from "../hooks/use-task";
+import { FileDiff } from "./FileDiff";
 import { Skeleton } from "./state/Skeleton";
 import { CapabilityNote } from "./state/CapabilityNote";
-
-function StatRow({ file }: { file: CommitFileStat }): React.JSX.Element {
-  return (
-    <div
-      data-testid={`commit-file-${file.path}`}
-      className="flex items-baseline gap-2.5 px-2.5 py-1.5"
-    >
-      <span className="min-w-0 flex-1 truncate font-mono text-xs" title={file.path}>
-        {file.path}
-      </span>
-      {file.binary ? (
-        // Not `+0/−0`: the file did change, and 0/0 would assert it did not.
-        <span className="flex-none text-[11px] text-zinc-400">binary</span>
-      ) : (
-        <span className="flex-none font-mono text-[11px] tabular-nums">
-          <span className="text-emerald-600 dark:text-emerald-400">+{file.insertions}</span>{" "}
-          <span className="text-rose-600 dark:text-rose-400">−{file.deletions}</span>
-        </span>
-      )}
-    </div>
-  );
-}
 
 function SectionLabel({
   children,
@@ -146,8 +125,11 @@ function TaskChain({ taskId }: { taskId: string }): React.JSX.Element {
 
 export function CommitDetailPanel({
   commit,
+  workspaceId,
 }: {
   commit: WorkspaceCommitDetail;
+  /** TASK-1792 — needed so a changed file can link back into the tree. */
+  workspaceId: string;
 }): React.JSX.Element {
   return (
     <div data-testid="commit-detail" className="flex flex-col gap-4">
@@ -186,15 +168,17 @@ export function CommitDetailPanel({
 
       <section>
         <SectionLabel count={commit.files.length}>Files changed</SectionLabel>
-        <div className="rounded-md border border-zinc-200 dark:border-zinc-800 divide-y divide-zinc-200 dark:divide-zinc-800 overflow-hidden">
-          {commit.files.length === 0 ? (
-            <div className="px-2.5 py-4 text-center text-xs text-zinc-600 dark:text-zinc-300">
-              Changed no files
-            </div>
-          ) : (
-            commit.files.map((f) => <StatRow key={f.path} file={f} />)
-          )}
-        </div>
+        {commit.files.length === 0 ? (
+          <div className="rounded-md border border-zinc-200 dark:border-zinc-800 px-2.5 py-4 text-center text-xs text-zinc-600 dark:text-zinc-300">
+            Changed no files
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2.5">
+            {commit.files.map((f) => (
+              <FileDiff key={f.path} file={f} workspaceId={workspaceId} />
+            ))}
+          </div>
+        )}
       </section>
 
       {commit.taskIds.length === 0 ? (

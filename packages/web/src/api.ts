@@ -484,8 +484,40 @@ export interface WorkspaceCommitsResult {
 /** TASK-1784 — how attached a commit is to this repo's refs. */
 export type CommitReachability = "default-branch" | "branch-only" | "unreachable";
 
+/** TASK-1791 — one line of a unified diff, carrying its real file line numbers. */
+export interface DiffLine {
+  kind: "add" | "del" | "ctx";
+  text: string;
+  /** Line number in the OLD file. Null on an added line. */
+  oldNo: number | null;
+  /** Line number in the NEW file. Null on a removed line. */
+  newNo: number | null;
+}
+
+export interface DiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  /** Text after the second `@@` — git fills it with the enclosing symbol. */
+  header: string;
+  lines: DiffLine[];
+}
+
 export interface CommitFileStat {
   path: string;
+  /**
+   * Present only when the adapter was asked for a patch AND is new enough to
+   * serve one. Three distinct states, and collapsing any two of them tells the
+   * reader something untrue:
+   *   undefined — this adapter does not serve diffs (vendored bundle lags)
+   *   null      — the patch was not produced; `omitted` says why
+   *   Hunk[]    — the actual changed lines
+   */
+  hunks?: DiffHunk[] | null;
+  omitted?: "binary" | "too-large";
+  /** Set only on a rename. */
+  oldPath?: string;
   /** null for a binary file — git reports `-`, and 0 would say it did not change. */
   insertions: number | null;
   deletions: number | null;
@@ -498,13 +530,21 @@ export interface WorkspaceCommitDetail extends WorkspaceCommit {
   reachability: CommitReachability;
 }
 
+/**
+ * TASK-1792 — always asks for the patch.
+ *
+ * `patch=1` is sent unconditionally. An adapter predating TASK-1791 ignores it
+ * and answers without `hunks`, which the panel reports as "this adapter does
+ * not serve diffs" rather than as an empty diff. That degradation is why the
+ * adapter took a param instead of a new route (INBOX-1888).
+ */
 export function fetchWorkspaceCommit(
   workspaceId: string,
   sha: string,
   signal?: AbortSignal
 ): Promise<WorkspaceCommitDetail> {
   return getJson<WorkspaceCommitDetail>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/commits/${encodeURIComponent(sha)}`,
+    `/workspaces/${encodeURIComponent(workspaceId)}/commits/${encodeURIComponent(sha)}?patch=1`,
     signal
   );
 }
