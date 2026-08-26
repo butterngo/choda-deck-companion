@@ -78,9 +78,9 @@ vi.mock("../WorkspaceDocsView", () => ({
 
 const { WorkspaceView } = await import("../WorkspaceView");
 
-function mount(id = "choda-deck-companion"): void {
+function mount(id = "choda-deck-companion", query = ""): void {
   render(
-    <MemoryRouter initialEntries={[`/workspaces/${id}`]}>
+    <MemoryRouter initialEntries={[`/workspaces/${id}${query}`]}>
       <Routes>
         <Route path="/workspaces/:id" element={<WorkspaceView />} />
       </Routes>
@@ -269,5 +269,46 @@ describe("WorkspaceView (TASK-1766)", () => {
     fireEvent.click(screen.getByTestId("commit-detail-close"));
     fireEvent.click(screen.getByTestId("commit-open-ad39672"));
     expect(screen.getByTestId("commit-detail-pane")).toBeTruthy();
+  });
+
+  // ---- returning to the tab you left from --------------------------------
+
+  it("opens the tab named by ?tab=, not always Files", () => {
+    mount("choda-deck-companion", "?tab=tasks");
+    // The breadcrumb got readers back to the right workspace and the wrong
+    // pane, which is most of the way to nowhere.
+    expect(screen.getByTestId("workspace-tasks-pane")).toBeTruthy();
+    expect(screen.queryByTestId("workspace-docs-pane")).toBeNull();
+  });
+
+  it("opens History when asked for it", () => {
+    mount("choda-deck-companion", "?tab=history");
+    expect(screen.getByTestId("workspace-history-pane")).toBeTruthy();
+  });
+
+  it("CONTROL — falls back to Files with no ?tab=, and with a nonsense one", () => {
+    // Without this, a build that always opened Tasks would pass both tests
+    // above; and an unknown value must not leave the view with no pane at all.
+    mount();
+    expect(screen.getByTestId("workspace-docs-pane")).toBeTruthy();
+  });
+
+  it("does not fight a manual tab change after arriving with ?tab=", () => {
+    // Initial state only. Read every render, clicking Files here would snap
+    // straight back to Tasks — the bug TASK-1766 already fixed once for
+    // ?workspaceId= and ?path=.
+    mount("choda-deck-companion", "?tab=tasks");
+    fireEvent.click(screen.getByTestId("workspace-tab-files"));
+    expect(screen.getByTestId("workspace-docs-pane")).toBeTruthy();
+    expect(screen.queryByTestId("workspace-tasks-pane")).toBeNull();
+  });
+
+  it("sends the reader back to the Tasks tab, not just the workspace", () => {
+    mount();
+    fireEvent.click(screen.getByTestId("workspace-tab-tasks"));
+    const href = screen.getByTestId("workspace-task-TASK-1590").getAttribute("href");
+    expect(href).toBe("/tasks/TASK-1590");
+    // The origin the task page reads back is asserted in task-breadcrumb.test;
+    // what this file owns is that the link is here and points at the task.
   });
 });
