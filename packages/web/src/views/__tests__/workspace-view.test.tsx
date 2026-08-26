@@ -253,12 +253,15 @@ describe("WorkspaceView (TASK-1766)", () => {
     mount();
     fireEvent.click(screen.getByTestId("workspace-tab-history"));
     fireEvent.click(screen.getByTestId("commit-open-9dfe9c4"));
-    expect(screen.getByTestId("commit-detail-pane")).toBeTruthy();
+    expect(screen.getByTestId("commit-detail-close")).toBeTruthy();
 
     fireEvent.click(screen.getByTestId("commit-detail-close"));
-    // Closing used to mean clicking the same sha again, ~90 rows above the fold
-    // once the list is full (TASK-1786).
-    expect(screen.queryByTestId("commit-detail-pane")).toBeNull();
+    // TASK-1786 made the pane a permanent right-hand column, so "closed" is now
+    // the idle prompt rather than the pane vanishing. The property is unchanged
+    // — closing must not require finding the row you came from, which was ~90
+    // rows above the fold when the panel sat below the list.
+    expect(screen.getByTestId("commit-detail-idle")).toBeTruthy();
+    expect(screen.queryByTestId("commit-detail-close")).toBeNull();
   });
 
   it("still opens a panel after one was closed", () => {
@@ -310,5 +313,35 @@ describe("WorkspaceView (TASK-1766)", () => {
     expect(href).toBe("/tasks/TASK-1590");
     // The origin the task page reads back is asserted in task-breadcrumb.test;
     // what this file owns is that the link is here and points at the task.
+  });
+
+  // ---- TASK-1786 — the panel is beside the list, not below it -------------
+
+  it("puts the list and the panel in separate scrollable panes", () => {
+    commitState.commits = COMMITS;
+    mount();
+    fireEvent.click(screen.getByTestId("workspace-tab-history"));
+    // Below the list, a panel opened by a row near the top sat ~90 rows past
+    // the fold and appeared to do nothing. Two panes is what makes the click
+    // and its result visible at once.
+    expect(screen.getByTestId("commit-list-pane")).toBeTruthy();
+    expect(screen.getByTestId("commit-detail-pane")).toBeTruthy();
+  });
+
+  it("invites a choice before one is made, rather than showing an empty box", () => {
+    commitState.commits = COMMITS;
+    mount();
+    fireEvent.click(screen.getByTestId("workspace-tab-history"));
+    expect(screen.getByTestId("commit-detail-idle")).toBeTruthy();
+  });
+
+  it("CONTROL — opening a commit replaces the invitation with the detail", () => {
+    // Without this, a pane that only ever showed the prompt would pass the two
+    // tests above.
+    commitState.commits = COMMITS;
+    mount();
+    fireEvent.click(screen.getByTestId("workspace-tab-history"));
+    fireEvent.click(screen.getByTestId("commit-open-9dfe9c4"));
+    expect(screen.queryByTestId("commit-detail-idle")).toBeNull();
   });
 });

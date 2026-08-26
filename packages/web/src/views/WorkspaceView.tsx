@@ -78,46 +78,71 @@ export function WorkspaceView(): React.JSX.Element {
         />
       );
     }
+    // TASK-1786 — list LEFT, panel RIGHT, matching WorkspaceDocsView's two-pane
+    // grid rather than inventing a second layout for the same shape.
+    //
+    // The panel used to render BELOW the list. With up to 100 rows that put it
+    // roughly 90 rows past the fold, so clicking a commit near the top selected
+    // the row and appeared to do nothing at all. Every test passed the whole
+    // time, because they asserted the panel was in the DOM — which it was. Same
+    // "renders but cannot be reached" defect as INBOX-1875 and TASK-1767, at
+    // viewport scale instead of route scale, and found the same way: by opening
+    // the thing and clicking it.
+    //
+    // TASK-1792 made it worse by giving the panel a full diff to render, so the
+    // one thing nobody could see also became the tallest thing on the page.
+    //
+    // Each pane scrolls on its own: a long diff must not drag the commit list
+    // out of view, and a long list must not bury the diff.
     return (
-      <>
-        <CommitList
-          commits={commits.commits}
-          selected={openSha}
-          onSelect={(sha) => setOpenSha((prev) => (prev === sha ? null : sha))}
-        />
-        {openSha !== null && (
-          <div
-            data-testid="commit-detail-pane"
-            className="relative mt-3 rounded-md border border-zinc-200 dark:border-zinc-800 p-3"
-          >
-            {/* TASK-1788 — closing used to mean clicking the same sha again,
-                which after TASK-1786 is roughly 90 rows above the fold. A
-                control that requires finding the thing you came from is not a
-                control. */}
-            <button
-              type="button"
-              onClick={() => setOpenSha(null)}
-              data-testid="commit-detail-close"
-              aria-label="Close commit detail"
-              className="absolute right-2 top-2 rounded-md px-1.5 py-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-            >
-              <i className="ti ti-x" aria-hidden="true" />
-            </button>
-            {openCommit.isError ? (
-              <ErrorState variant="failed" subject="this commit" />
-            ) : openCommit.commit === null ? (
-              <Skeleton shape="list" label="Loading commit…" />
-            ) : (
-              <CommitDetailPanel commit={openCommit.commit} workspaceId={workspace?.id ?? ""} />
-            )}
-          </div>
-        )}
-        {commits.hasMore && (
-          <p data-testid="commit-has-more" className="mt-2.5 text-[11.5px] text-zinc-500">
-            Showing the most recent {commits.commits.length} commits — the log is longer.
-          </p>
-        )}
-      </>
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(320px,440px)_1fr] lg:grid-rows-[minmax(0,1fr)]">
+        <div data-testid="commit-list-pane" className="min-h-0 overflow-y-auto">
+          <CommitList
+            commits={commits.commits}
+            selected={openSha}
+            onSelect={(sha) => setOpenSha((prev) => (prev === sha ? null : sha))}
+          />
+          {commits.hasMore && (
+            <p data-testid="commit-has-more" className="mt-2.5 text-[11.5px] text-zinc-500">
+              Showing the most recent {commits.commits.length} commits — the log is longer.
+            </p>
+          )}
+        </div>
+
+        <div
+          data-testid="commit-detail-pane"
+          className="relative min-h-0 overflow-y-auto rounded-md border border-zinc-200 dark:border-zinc-800 p-3"
+        >
+          {openSha === null ? (
+            <p data-testid="commit-detail-idle" className="px-1 py-6 text-center text-xs text-zinc-500">
+              Pick a commit on the left to see what it changed.
+            </p>
+          ) : (
+            <>
+              {/* Closing used to mean clicking the same sha again, which was
+                  itself unreachable while the panel sat below the list. A
+                  control that requires finding the thing you came from is not a
+                  control. */}
+              <button
+                type="button"
+                onClick={() => setOpenSha(null)}
+                data-testid="commit-detail-close"
+                aria-label="Close commit detail"
+                className="absolute right-2 top-2 rounded-md px-1.5 py-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+              >
+                <i className="ti ti-x" aria-hidden="true" />
+              </button>
+              {openCommit.isError ? (
+                <ErrorState variant="failed" subject="this commit" />
+              ) : openCommit.commit === null ? (
+                <Skeleton shape="list" label="Loading commit…" />
+              ) : (
+                <CommitDetailPanel commit={openCommit.commit} workspaceId={workspace?.id ?? ""} />
+              )}
+            </>
+          )}
+        </div>
+      </div>
     );
   }
 
