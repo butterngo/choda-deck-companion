@@ -8,6 +8,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { historyOrigin } from "../../lib/origin";
 import type { WorkspaceCommitDetail, TaskDetail } from "../../api";
 
 const taskState = {
@@ -62,7 +63,11 @@ function commit(over: Partial<WorkspaceCommitDetail> = {}): WorkspaceCommitDetai
 function mount(over: Partial<WorkspaceCommitDetail> = {}): void {
   render(
     <MemoryRouter>
-      <CommitDetailPanel commit={commit(over)} workspaceId="main" />
+      <CommitDetailPanel
+        commit={commit(over)}
+        workspaceId="main"
+        origin={historyOrigin("main", "Main")}
+      />
     </MemoryRouter>,
   );
 }

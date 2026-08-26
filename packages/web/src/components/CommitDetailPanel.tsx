@@ -15,6 +15,7 @@
 
 import { Link } from "react-router-dom";
 import type { WorkspaceCommitDetail } from "../api";
+import type { Origin } from "../lib/origin";
 import { useTask } from "../hooks/use-task";
 import { FileDiff } from "./FileDiff";
 import { Skeleton } from "./state/Skeleton";
@@ -44,7 +45,7 @@ function SectionLabel({
  * page uses. That call used to take ~15 seconds and is now ~19 ms (TASK-1785),
  * which is what makes a per-panel fetch the right shape here.
  */
-function TaskChain({ taskId }: { taskId: string }): React.JSX.Element {
+function TaskChain({ taskId, origin }: { taskId: string; origin: Origin }): React.JSX.Element {
   const task = useTask(taskId);
 
   if (task.isLoading) return <Skeleton shape="list" label="Loading task…" />;
@@ -67,6 +68,10 @@ function TaskChain({ taskId }: { taskId: string }): React.JSX.Element {
         <div className="rounded-md border border-zinc-200 dark:border-zinc-800 px-2.5 py-2">
           <Link
             to={`/tasks/${encodeURIComponent(taskId)}`}
+            // TASK-1793 — carry the way back. A reader who followed
+            // commit -> task and then found only "Projects" has lost the
+            // commit list they were auditing.
+            state={{ from: origin }}
             data-testid={`commit-task-link-${taskId}`}
             className="font-mono text-[11.5px]"
           >
@@ -126,10 +131,17 @@ function TaskChain({ taskId }: { taskId: string }): React.JSX.Element {
 export function CommitDetailPanel({
   commit,
   workspaceId,
+  origin,
 }: {
   commit: WorkspaceCommitDetail;
   /** TASK-1792 — needed so a changed file can link back into the tree. */
   workspaceId: string;
+  /**
+   * TASK-1793 — where the task link should send the reader BACK to. Required,
+   * not optional: the optional version of this prop is why the History tab
+   * shipped with no way back at all.
+   */
+  origin: Origin;
 }): React.JSX.Element {
   return (
     <div data-testid="commit-detail" className="flex flex-col gap-4">
@@ -192,7 +204,7 @@ export function CommitDetailPanel({
           </span>
         </CapabilityNote>
       ) : (
-        commit.taskIds.map((id) => <TaskChain key={id} taskId={id} />)
+        commit.taskIds.map((id) => <TaskChain key={id} taskId={id} origin={origin} />)
       )}
     </div>
   );

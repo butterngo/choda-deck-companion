@@ -23,6 +23,7 @@ import { useWorkspaceCommits } from "../hooks/use-workspace-commits";
 import { CommitList } from "../components/CommitList";
 import { CommitDetailPanel } from "../components/CommitDetailPanel";
 import { useWorkspaceCommit } from "../hooks/use-workspace-commit";
+import { historyOrigin, tasksOrigin } from "../lib/origin";
 import { WorkspaceDocsView } from "./WorkspaceDocsView";
 import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
@@ -52,6 +53,13 @@ export function WorkspaceView(): React.JSX.Element {
   const commits = useWorkspaceCommits(workspace?.id ?? null);
   const [openSha, setOpenSha] = useState<string | null>(null);
   const openCommit = useWorkspaceCommit(workspace?.id ?? null, openSha);
+
+  // TASK-1793 — the way BACK, handed to every link that leaves this screen.
+  // Built here rather than at each link because only this component knows both
+  // which workspace it is and which tab the reader is currently on.
+  const backLabel = workspace?.label ?? "workspace";
+  const backToHistory = historyOrigin(workspace?.id ?? "", backLabel);
+  const backToTasks = tasksOrigin(workspace?.id ?? "", backLabel);
 
   function historyPane(): React.JSX.Element {
     // Order matters. The git failure is checked BEFORE the empty branch,
@@ -99,6 +107,7 @@ export function WorkspaceView(): React.JSX.Element {
         <div data-testid="commit-list-pane" className="min-h-0 overflow-y-auto">
           <CommitList
             commits={commits.commits}
+            origin={backToHistory}
             selected={openSha}
             onSelect={(sha) => setOpenSha((prev) => (prev === sha ? null : sha))}
           />
@@ -137,7 +146,11 @@ export function WorkspaceView(): React.JSX.Element {
               ) : openCommit.commit === null ? (
                 <Skeleton shape="list" label="Loading commit…" />
               ) : (
-                <CommitDetailPanel commit={openCommit.commit} workspaceId={workspace?.id ?? ""} />
+                <CommitDetailPanel
+                  commit={openCommit.commit}
+                  workspaceId={workspace?.id ?? ""}
+                  origin={backToHistory}
+                />
               )}
             </>
           )}
@@ -177,12 +190,7 @@ export function WorkspaceView(): React.JSX.Element {
                 // back HERE. Without it the breadcrumb can only name a static
                 // destination, which is how /tasks/:id ended up sending readers
                 // two levels up to Projects.
-                state={{
-                  from: {
-                    to: `/workspaces/${encodeURIComponent(workspace?.id ?? "")}?tab=tasks`,
-                    label: workspace?.label ?? "workspace",
-                  },
-                }}
+                state={{ from: backToTasks }}
                 data-testid={`workspace-task-${t.id}`}
                 className="block rounded-md border border-zinc-200 dark:border-zinc-800 px-3 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
               >

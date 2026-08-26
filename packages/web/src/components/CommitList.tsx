@@ -14,13 +14,20 @@
 
 import { Link } from "react-router-dom";
 import type { WorkspaceCommit } from "../api";
+import type { Origin } from "../lib/origin";
 
 /** `2026-08-25T17:04:11+07:00` → `2026-08-25`. Locale-independent by design. */
 export function commitDate(authorDate: string): string {
   return authorDate.slice(0, 10);
 }
 
-function TaskBadges({ taskIds }: { taskIds: string[] }): React.JSX.Element {
+function TaskBadges({
+  taskIds,
+  origin,
+}: {
+  taskIds: string[];
+  origin: Origin;
+}): React.JSX.Element {
   if (taskIds.length === 0) {
     return (
       <span
@@ -38,6 +45,10 @@ function TaskBadges({ taskIds }: { taskIds: string[] }): React.JSX.Element {
         <Link
           key={id}
           to={`/tasks/${encodeURIComponent(id)}`}
+          // TASK-1793 — without this the task page falls back to "Projects",
+          // which is two levels above the workspace whose history this row
+          // belongs to. The badge worked; the way back did not.
+          state={{ from: origin }}
           data-testid={`commit-task-${id}`}
           className="flex-none rounded border border-zinc-200 dark:border-zinc-800 px-1.5 py-px font-mono text-[11px] hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
         >
@@ -50,10 +61,17 @@ function TaskBadges({ taskIds }: { taskIds: string[] }): React.JSX.Element {
 
 export function CommitList({
   commits,
+  origin,
   selected,
   onSelect,
 }: {
   commits: WorkspaceCommit[];
+  /**
+   * TASK-1793 — where a task badge should send the reader BACK to. Required,
+   * deliberately: an optional origin is exactly how this component shipped
+   * without one in the first place.
+   */
+  origin: Origin;
   /** sha of the open panel, or null. */
   selected?: string | null;
   onSelect?: (sha: string) => void;
@@ -91,7 +109,7 @@ export function CommitList({
             <span className="min-w-0 flex-1 truncate text-xs" title={c.subject}>
               {c.subject}
             </span>
-            <TaskBadges taskIds={c.taskIds} />
+            <TaskBadges taskIds={c.taskIds} origin={origin} />
             <span className="w-24 flex-none text-right text-[11px] tabular-nums text-zinc-400">
               {commitDate(c.authorDate)}
             </span>

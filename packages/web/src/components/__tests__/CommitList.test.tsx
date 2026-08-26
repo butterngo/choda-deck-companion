@@ -8,6 +8,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { historyOrigin } from "../../lib/origin";
 import { CommitList, commitDate } from "../CommitList";
 import type { WorkspaceCommit } from "../../api";
 
@@ -29,7 +30,7 @@ function commit(over: Partial<WorkspaceCommit>): WorkspaceCommit {
 function mount(commits: WorkspaceCommit[]): void {
   render(
     <MemoryRouter>
-      <CommitList commits={commits} />
+      <CommitList commits={commits} origin={historyOrigin("main", "Main")} />
     </MemoryRouter>,
   );
 }
