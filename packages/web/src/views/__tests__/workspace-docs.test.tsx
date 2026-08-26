@@ -29,7 +29,13 @@ const listState = {
   isError: false,
   missingFolder: null as { label: string; cwd: string } | null,
 };
-const docState = { markdown: null as string | null, isLoading: false, isError: false };
+const docState = {
+  markdown: null as string | null,
+  isLoading: false,
+  isError: false,
+  // TASK-1788 — a binary file is listed but not served as text.
+  isBinary: false,
+};
 
 vi.mock("react-router-dom", async (orig) => ({
   ...(await orig<typeof import("react-router-dom")>()),
@@ -145,7 +151,14 @@ describe("WorkspaceDocsView — the panes", () => {
     expect(screen.getByTestId("doc-tree")).toBeInTheDocument();
     expect(screen.getByTestId("workspace-doc-list-pane")).toBeInTheDocument();
     expect(screen.getByTestId("workspace-doc-detail-pane")).toBeInTheDocument();
-    expect(screen.getByTestId("empty-state")).toHaveTextContent("No document selected");
+    // TASK-1788 — asserts the STATE, not its wording. This line previously read
+    // toHaveTextContent("No document selected") and broke when the copy changed
+    // to "No file selected", which was a rename and not a regression. The repo's
+    // own gotcha says to assert these branches by their primitive's testid
+    // precisely so a copy edit cannot masquerade as a failure — and so a
+    // regression to a bare <p> with the same words cannot masquerade as a pass.
+    expect(screen.getByTestId("empty-state")).toBeInTheDocument();
+    expect(screen.queryByTestId("error-state")).not.toBeInTheDocument();
   });
 
   it("groups paths into folders rather than listing them flat", () => {
@@ -200,7 +213,9 @@ describe("WorkspaceDocsView — arriving with a workspace already chosen (TASK-1
         <WorkspaceDocsView />
       </MemoryRouter>,
     );
-    expect(screen.queryByText("No document selected")).not.toBeInTheDocument();
+    // Same reasoning: the point is that the empty branch is NOT taken once a
+    // path arrives from the query string.
+    expect(screen.queryByTestId("empty-state")).not.toBeInTheDocument();
   });
 
   it("a fixed workspaceId prop wins and hides the picker — the embedded case", () => {
@@ -212,5 +227,69 @@ describe("WorkspaceDocsView — arriving with a workspace already chosen (TASK-1
     );
     expect(screen.queryByTestId("workspace-select")).not.toBeInTheDocument();
     expect(screen.getByTestId("workspace-doc-list-pane")).toBeInTheDocument();
+  });
+});
+
+// TASK-1788 — the tree now carries source as well as markdown, so the reader
+// pane has to decide which of three things it is looking at.
+//
+// This block exists because an INJECTION found the gap: replacing the
+// markdown/source branch with `true ?` — i.e. running every file through the
+// markdown renderer — left all 11 tests in this file green. Nothing was
+// asserting that a .ts renders verbatim.
+describe("reading a file that is not markdown (TASK-1788)", () => {
+  // Deliberately markdown-hostile: a leading `#` and a `*…*` pair. If the
+  // source ever goes through react-markdown these become a heading and an
+  // <em>, i.e. the viewer corrupts the code it claims to show.
+  const SOURCE = ["# not a heading", "const x = 1;", "*not italics*"].join("\n");
+
+  function open(path: string, over: Partial<typeof docState> = {}): void {
+    listState.docs = [
+      { path: "docs/a.md", size: 1, modifiedAt: "2026-08-26T00:00:00.000Z" },
+      { path: "src/app.ts", size: 1, modifiedAt: "2026-08-26T00:00:00.000Z" },
+      { path: "src/logo.png", size: 1, modifiedAt: "2026-08-26T00:00:00.000Z", binary: true },
+    ];
+    docState.markdown = SOURCE;
+    docState.isBinary = false;
+    docState.isError = false;
+    Object.assign(docState, over);
+    render(
+      <MemoryRouter initialEntries={[`/workspace-docs?workspaceId=main&path=${path}`]}>
+        <WorkspaceDocsView />
+      </MemoryRouter>,
+    );
+  }
+
+  it("shows a source file VERBATIM, not through the markdown renderer", () => {
+    open("src/app.ts");
+    const pre = screen.getByTestId("doc-source");
+    // The leading `#` and the `*not italics*` must survive as characters. Run
+    // through react-markdown they become a heading and an <em>, i.e. the viewer
+    // quietly corrupts the code it claims to be showing.
+    expect(pre.textContent).toContain("# not a heading");
+    expect(pre.textContent).toContain("*not italics*");
+    expect(screen.queryByRole("heading", { name: "not a heading" })).toBeNull();
+  });
+
+  it("CONTROL — a .md file DOES go through the markdown renderer", () => {
+    // Without this, a build that rendered everything as <pre> would pass the
+    // assertion above and silently kill mermaid, tables and links.
+    open("docs/a.md");
+    expect(screen.queryByTestId("doc-source")).toBeNull();
+    expect(screen.getByRole("heading", { name: "not a heading" })).toBeTruthy();
+  });
+
+  it("a binary file is a capability note, never an error", () => {
+    open("src/logo.png", { isBinary: true, markdown: null });
+    expect(screen.getByTestId("doc-binary")).toBeTruthy();
+    // Nothing failed — the file is there and is simply not text.
+    expect(screen.queryByTestId("error-state")).toBeNull();
+    expect(screen.queryByTestId("doc-source")).toBeNull();
+  });
+
+  it("CONTROL — a real load failure is still an error", () => {
+    open("src/app.ts", { isBinary: false, isError: true, markdown: null });
+    expect(screen.getByTestId("error-state")).toBeTruthy();
+    expect(screen.queryByTestId("doc-binary")).toBeNull();
   });
 });

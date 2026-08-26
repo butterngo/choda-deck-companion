@@ -15,9 +15,19 @@ const taskState = {
   isError: false,
 };
 
+// Routing is INCIDENTAL to this file — its subject is how provenance renders.
+// The breadcrumb's own behaviour is tested for real, against a MemoryRouter, in
+// task-breadcrumb.test.tsx; stubbing it here and asserting it there is the split
+// that keeps each file about one thing.
+//
+// `useLocation` was added to this stub by TASK-1788, which made TaskDetailView
+// read the origin the reader arrived from. Its absence broke all eight tests in
+// this file at once — the third time in this run that giving a component a new
+// dependency broke a fake that never mentioned it (INBOX-1892).
 vi.mock("react-router-dom", async (orig) => ({
   ...(await orig<typeof import("react-router-dom")>()),
   useParams: () => ({ id: "TASK-1597" }),
+  useLocation: () => ({ state: null, pathname: "/tasks/TASK-1597", search: "", hash: "", key: "t" }),
   Link: ({ children }: { children: React.ReactNode }) => <a href="#">{children}</a>,
 }));
 vi.mock("../../hooks/use-task", () => ({ useTask: () => taskState }));
