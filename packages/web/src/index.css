@@ -283,3 +283,134 @@
 .dark .prose .ac-checkbox.checked {
   color: rgb(52 211 153);
 }
+
+/* TASK-1789 — syntax highlighting for the file viewer.
+ *
+ * Written by hand rather than importing one of highlight.js's own stylesheets.
+ * Those ship a single theme and hard-code a background, so pairing a light and
+ * a dark one means loading both and fighting specificity to switch them. The
+ * palette below reuses the zinc/emerald/rose family already in this app, and
+ * dark mode goes through the `.dark` class the shell already sets — not
+ * prefers-color-scheme, which would ignore an explicit choice.
+ *
+ * Every colour is defined for BOTH themes. A token coloured in one and left to
+ * inherit in the other is how highlighted code becomes unreadable on exactly
+ * one of them, which nobody notices until they switch. */
+.hljs {
+  background: rgb(250 250 250);
+  color: rgb(39 39 42);
+}
+.dark .hljs {
+  background: rgb(24 24 27);
+  color: rgb(228 228 231);
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: rgb(113 113 122);
+  font-style: italic;
+}
+.dark .hljs-comment,
+.dark .hljs-quote {
+  color: rgb(161 161 170);
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-doctag,
+.hljs-name {
+  color: rgb(147 51 234);
+}
+.dark .hljs-keyword,
+.dark .hljs-selector-tag,
+.dark .hljs-literal,
+.dark .hljs-doctag,
+.dark .hljs-name {
+  color: rgb(216 180 254);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-attribute,
+.hljs-meta .hljs-string {
+  color: rgb(5 150 105);
+}
+.dark .hljs-string,
+.dark .hljs-regexp,
+.dark .hljs-addition,
+.dark .hljs-attribute,
+.dark .hljs-meta .hljs-string {
+  color: rgb(52 211 153);
+}
+
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-variable,
+.hljs-template-variable {
+  color: rgb(217 119 6);
+}
+.dark .hljs-number,
+.dark .hljs-symbol,
+.dark .hljs-bullet,
+.dark .hljs-variable,
+.dark .hljs-template-variable {
+  color: rgb(251 191 36);
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-title.class_,
+.hljs-title.function_ {
+  color: rgb(37 99 235);
+}
+.dark .hljs-title,
+.dark .hljs-section,
+.dark .hljs-title.class_,
+.dark .hljs-title.function_ {
+  color: rgb(96 165 250);
+}
+
+.hljs-type,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-class .hljs-title {
+  color: rgb(13 148 136);
+}
+.dark .hljs-type,
+.dark .hljs-built_in,
+.dark .hljs-builtin-name,
+.dark .hljs-class .hljs-title {
+  color: rgb(45 212 191);
+}
+
+.hljs-tag,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: rgb(219 39 119);
+}
+.dark .hljs-tag,
+.dark .hljs-selector-id,
+.dark .hljs-selector-class,
+.dark .hljs-selector-attr,
+.dark .hljs-selector-pseudo {
+  color: rgb(244 114 182);
+}
+
+.hljs-deletion {
+  color: rgb(190 18 60);
+}
+.dark .hljs-deletion {
+  color: rgb(251 113 133);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 600;
+}
