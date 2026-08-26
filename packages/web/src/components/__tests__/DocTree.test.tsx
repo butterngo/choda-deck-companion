@@ -1,12 +1,16 @@
-// TASK-1780 — folders that open and close.
+// TASK-1780 / TASK-1790 — folders that open and close, starting closed.
 //
-// Nothing is mocked: DocTree takes a flat path list as a prop and owns its own
-// collapse state, so the rule under test is the production rule (INBOX-1878 —
-// a mock holding a conditional covers up the logic it stands in for).
+// TASK-1780 wrote this file with folders open by default and asserted that.
+// TASK-1790 inverted the default, because TASK-1787 widened the listing from
+// .md to the whole tree and the sizes that justified opening moved from 26 to
+// 4,176. The assertions here were rewritten rather than deleted: every property
+// TASK-1780 protected — toggling, isolation, persistence, aria — is still a
+// property, and inverting the state model is exactly where one would be lost.
 //
-// Assertions go through role and data-testid rather than copy. A regression to
-// a plain <div> would render the same folder names and sail past a text
-// assertion, which was never the property worth protecting.
+// Nothing is mocked: DocTree takes a flat path list and owns its own state, so
+// the rule under test is the production rule (INBOX-1878). Assertions go through
+// role and data-testid, never copy — a regression to a plain <div> renders the
+// same folder names.
 
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
@@ -14,11 +18,11 @@ import { DocTree } from "../DocTree";
 import type { WorkspaceDoc } from "../../api";
 
 function doc(path: string): WorkspaceDoc {
-  return { path, size: 10, modifiedAt: "2026-08-25T00:00:00.000Z" };
+  return { path, size: 10, modifiedAt: "2026-08-26T00:00:00.000Z" };
 }
 
-// Shaped like the real tree that motivated this: two sibling folders, one of
-// them the noisy one (INBOX-1868's data/artifacts/captures).
+// Shaped like the real tree that motivated both tasks: a docs branch worth
+// reading and a noisy one (INBOX-1868's data/artifacts/captures).
 const DOCS: WorkspaceDoc[] = [
   doc("README.md"),
   doc("docs/guide.md"),
@@ -34,79 +38,103 @@ function mount(selected: string | null = null): { picked: string[] } {
 }
 
 const folder = (path: string): HTMLElement => screen.getByTestId(`doc-tree-folder-${path}`);
+const isOpen = (path: string): boolean => folder(path).getAttribute("aria-expanded") === "true";
 
-describe("DocTree collapse (TASK-1780)", () => {
-  it("starts with every folder expanded", () => {
+describe("the first screen (TASK-1790)", () => {
+  it("shows no folder's children", () => {
     mount();
-    for (const p of ["docs", "docs/knowledge", "data", "data/artifacts"]) {
-      expect(folder(p).getAttribute("aria-expanded")).toBe("true");
-    }
+    expect(screen.queryByText("guide.md")).toBeNull();
+    expect(screen.queryByText("adr-001.md")).toBeNull();
+    expect(screen.queryByText("draft.md")).toBeNull();
+  });
+
+  it("CONTROL — the top-level rows themselves ARE there", () => {
+    // Without this, a component that rendered nothing at all would pass the
+    // assertion above. "Collapsed" must not mean "empty tree".
+    mount();
+    expect(folder("docs")).toBeTruthy();
+    expect(folder("data")).toBeTruthy();
+    // A top-level FILE has no folder to hide it.
+    expect(screen.getByText("README.md")).toBeTruthy();
+  });
+
+  it("reports aria-expanded=false on every folder, and flips it", () => {
+    mount();
+    expect(isOpen("docs")).toBe(false);
+    fireEvent.click(folder("docs"));
+    // A static attribute would pass the first assertion alone.
+    expect(isOpen("docs")).toBe(true);
+  });
+
+  it("still shows how many files a closed folder is hiding", () => {
+    mount();
+    // With everything shut, the count is the only signal of what is inside —
+    // more load-bearing now than when TASK-1780 first asserted it.
+    expect(folder("docs").textContent).toContain("3");
+  });
+});
+
+describe("a deep-linked file is visible, not merely present (TASK-1790)", () => {
+  it("opens the ancestors of the selection", () => {
+    mount("docs/knowledge/adr-001.md");
+    expect(isOpen("docs")).toBe(true);
+    expect(isOpen("docs/knowledge")).toBe(true);
     expect(screen.getByText("adr-001.md")).toBeTruthy();
   });
 
-  it("removes the children from the DOM when a folder is closed", () => {
+  it("CONTROL — an unrelated branch stays shut", () => {
+    // An implementation that opened the ancestors by opening EVERYTHING would
+    // pass the test above. This is the half that makes it mean something.
+    mount("docs/knowledge/adr-001.md");
+    expect(isOpen("data")).toBe(false);
+    expect(screen.queryByText("draft.md")).toBeNull();
+  });
+});
+
+describe("toggling (TASK-1780, still true inverted)", () => {
+  it("adds and removes children from the DOM", () => {
     mount();
-    expect(screen.getByText("adr-001.md")).toBeTruthy();
-    fireEvent.click(folder("docs/knowledge"));
+    fireEvent.click(folder("docs"));
+    expect(screen.getByText("guide.md")).toBeTruthy();
+    fireEvent.click(folder("docs"));
     // Absent, not merely hidden — a row a screen reader can still reach is
     // worse than no row.
-    expect(screen.queryByText("adr-001.md")).toBeNull();
-    expect(screen.queryByText("adr-002.md")).toBeNull();
+    expect(screen.queryByText("guide.md")).toBeNull();
   });
 
-  it("closes only the folder that was clicked", () => {
+  it("opens only the folder that was clicked", () => {
     mount();
-    fireEvent.click(folder("docs/knowledge"));
-    // The sibling and the parent are untouched — a toggle that collapsed
-    // everything would pass the test above.
+    fireEvent.click(folder("docs"));
+    // A toggle that opened everything would pass the test above.
+    expect(isOpen("data")).toBe(false);
+    expect(screen.queryByText("draft.md")).toBeNull();
+  });
+
+  it("nests — opening a parent does not open its children", () => {
+    mount();
+    fireEvent.click(folder("docs"));
     expect(screen.getByText("guide.md")).toBeTruthy();
-    expect(screen.getByText("draft.md")).toBeTruthy();
-    expect(folder("docs").getAttribute("aria-expanded")).toBe("true");
-  });
-
-  it("reopens on a second click", () => {
-    mount();
-    fireEvent.click(folder("docs/knowledge"));
+    expect(isOpen("docs/knowledge")).toBe(false);
     expect(screen.queryByText("adr-001.md")).toBeNull();
-    fireEvent.click(folder("docs/knowledge"));
-    expect(screen.getByText("adr-001.md")).toBeTruthy();
   });
 
-  it("keeps a folder closed while a file in a DIFFERENT folder is selected", () => {
+  it("keeps a folder's state when a file in a DIFFERENT folder is selected", () => {
     const { picked } = mount();
-    fireEvent.click(folder("data"));
-    expect(folder("data").getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(folder("docs"));
+    expect(isOpen("docs")).toBe(true);
 
     fireEvent.click(screen.getByText("guide.md"));
     expect(picked).toEqual(["docs/guide.md"]);
 
-    // The selection must not reset the tree. This is the guarantee, not the
-    // accident: per-row state happens to survive because React keeps the
-    // instance, which is a property of the reconciler rather than a decision.
-    expect(folder("data").getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText("draft.md")).toBeNull();
+    // The guarantee, not the accident: state lives in DocTree precisely so this
+    // does not depend on React happening to keep a Row instance alive. This is
+    // also where inverting the model would most plausibly have broken it.
+    expect(isOpen("docs")).toBe(true);
   });
 
-  it("gives the toggle a real aria-expanded that flips", () => {
-    mount();
-    const f = folder("docs");
-    expect(f.tagName).toBe("BUTTON");
-    expect(f.getAttribute("aria-expanded")).toBe("true");
-    fireEvent.click(f);
-    // A static attribute would pass the first assertion alone.
-    expect(folder("docs").getAttribute("aria-expanded")).toBe("false");
-  });
-
-  it("still says how many files a closed folder is hiding", () => {
-    mount();
-    fireEvent.click(folder("docs"));
-    // 3 = guide.md + the two ADRs. A closed folder that dropped its count
-    // would hide both the files and the fact that there are any.
-    expect(folder("docs").textContent).toContain("3");
-  });
-
-  it("leaves file rows selectable as before", () => {
+  it("leaves file rows selectable", () => {
     const { picked } = mount("README.md");
+    fireEvent.click(folder("docs"));
     fireEvent.click(screen.getByText("guide.md"));
     expect(picked).toEqual(["docs/guide.md"]);
   });

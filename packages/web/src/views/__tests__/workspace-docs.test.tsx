@@ -167,10 +167,20 @@ describe("WorkspaceDocsView — the panes", () => {
 
     // The adapter returns flat paths; the tree is this view's own doing, so the
     // folder names exist only if the grouping actually ran.
+    //
+    // TASK-1790 made folders start CLOSED, so the nested names have to be
+    // unfolded to be asserted. The property under test is unchanged — that
+    // `docs/knowledge/INDEX.md` became three nodes rather than one row — but
+    // reading it now takes two clicks. A top-level FILE needs no unfolding,
+    // which is what separates "grouped" from "hidden".
     expect(screen.getByText("docs")).toBeInTheDocument();
-    expect(screen.getByText("knowledge")).toBeInTheDocument();
-    expect(screen.getByText("INDEX.md")).toBeInTheDocument();
     expect(screen.getByText("README.md")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("doc-tree-folder-docs"));
+    expect(screen.getByText("knowledge")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("doc-tree-folder-docs/knowledge"));
+    expect(screen.getByText("INDEX.md")).toBeInTheDocument();
   });
 });
 
