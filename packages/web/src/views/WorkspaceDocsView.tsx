@@ -21,6 +21,7 @@ import { WorkspaceSelect } from "../components/WorkspaceSelect";
 import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { CapabilityNote } from "../components/state/CapabilityNote";
+import { SourceView } from "../components/SourceView";
 import { Skeleton } from "../components/state/Skeleton";
 
 // `workspaceId` prop: when the parent already knows which workspace (the
@@ -168,15 +169,11 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
               ) : (
                 /* Source is shown verbatim. Running it through the markdown
                    renderer would eat leading hashes, asterisks and underscores
-                   — i.e. quietly corrupt the code it claims to show. Syntax
-                   highlighting is deliberately out of scope: it is another
-                   dependency argument, the way mermaid was. */
-                <pre
-                  data-testid="doc-source"
-                  className="overflow-x-auto rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-3 text-xs leading-relaxed"
-                >
-                  <code>{detail.markdown}</code>
-                </pre>
+                   — i.e. quietly corrupt the code it claims to show.
+                   TASK-1789 added highlighting on top; SourceView renders the
+                   plain text first and colours it once the grammar arrives, so
+                   a slow language chunk never blanks the pane. */
+                <SourceView path={selectedPath} code={detail.markdown} />
               )}
             </article>
           )}
