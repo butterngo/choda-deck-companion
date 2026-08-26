@@ -28,12 +28,12 @@ import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { Skeleton } from "../components/state/Skeleton";
 
-type Tab = "docs" | "tasks" | "history";
+type Tab = "files" | "tasks" | "history";
 
 export function WorkspaceView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
   const { id } = useParams<{ id: string }>();
-  const [tab, setTab] = useState<Tab>("docs");
+  const [tab, setTab] = useState<Tab>("files");
 
   const ws = useWorkspaces();
   const workspace = ws.workspaces.find((w) => w.id === id) ?? null;
@@ -77,8 +77,21 @@ export function WorkspaceView(): React.JSX.Element {
         {openSha !== null && (
           <div
             data-testid="commit-detail-pane"
-            className="mt-3 rounded-md border border-zinc-200 dark:border-zinc-800 p-3"
+            className="relative mt-3 rounded-md border border-zinc-200 dark:border-zinc-800 p-3"
           >
+            {/* TASK-1788 — closing used to mean clicking the same sha again,
+                which after TASK-1786 is roughly 90 rows above the fold. A
+                control that requires finding the thing you came from is not a
+                control. */}
+            <button
+              type="button"
+              onClick={() => setOpenSha(null)}
+              data-testid="commit-detail-close"
+              aria-label="Close commit detail"
+              className="absolute right-2 top-2 rounded-md px-1.5 py-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            >
+              <i className="ti ti-x" aria-hidden="true" />
+            </button>
             {openCommit.isError ? (
               <ErrorState variant="failed" subject="this commit" />
             ) : openCommit.commit === null ? (
@@ -124,6 +137,16 @@ export function WorkspaceView(): React.JSX.Element {
             <li key={t.id}>
               <Link
                 to={`/tasks/${encodeURIComponent(t.id)}`}
+                // TASK-1788 — carry the origin so the task page can offer a way
+                // back HERE. Without it the breadcrumb can only name a static
+                // destination, which is how /tasks/:id ended up sending readers
+                // two levels up to Projects.
+                state={{
+                  from: {
+                    to: `/workspaces/${encodeURIComponent(workspace?.id ?? "")}`,
+                    label: workspace?.label ?? "workspace",
+                  },
+                }}
                 data-testid={`workspace-task-${t.id}`}
                 className="block rounded-md border border-zinc-200 dark:border-zinc-800 px-3 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
               >
@@ -171,7 +194,7 @@ export function WorkspaceView(): React.JSX.Element {
           aria-label="workspace sections"
           className="mb-4 flex gap-1 border-b border-zinc-200 dark:border-zinc-800"
         >
-          {(["docs", "tasks", "history"] as Tab[]).map((t) => (
+          {(["files", "tasks", "history"] as Tab[]).map((t) => (
             <button
               key={t}
               type="button"
@@ -186,12 +209,12 @@ export function WorkspaceView(): React.JSX.Element {
                   : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200",
               ].join(" ")}
             >
-              {t === "docs" ? "Docs" : t === "tasks" ? "Tasks" : "History"}
+              {t === "files" ? "Files" : t === "tasks" ? "Tasks" : "History"}
             </button>
           ))}
         </div>
 
-        {tab === "docs" && (
+        {tab === "files" && (
           <div data-testid="workspace-docs-pane" className="flex min-h-0 flex-1 flex-col">
             <WorkspaceDocsView workspaceId={workspace.id} />
           </div>

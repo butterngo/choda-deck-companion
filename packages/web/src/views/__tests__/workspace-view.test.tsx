@@ -226,4 +226,48 @@ describe("WorkspaceView (TASK-1766)", () => {
     expect(screen.getByTestId("workspace-history-pane")).toBeTruthy();
     expect(screen.queryByTestId("workspace-docs-pane")).toBeNull();
   });
+
+  // ---- TASK-1788 ---------------------------------------------------------
+
+  it("names the first tab Files, not Docs", () => {
+    mount();
+    // The tree now carries source as well as markdown, so "Docs" would
+    // under-describe what is in it.
+    expect(screen.getByTestId("workspace-tab-files").textContent).toBe("Files");
+    expect(screen.queryByTestId("workspace-tab-docs")).toBeNull();
+  });
+
+  it("tells the task page where the reader came from", () => {
+    mount();
+    fireEvent.click(screen.getByTestId("workspace-tab-tasks"));
+    // react-router serialises Link state onto the anchor's href only for the
+    // path; the state itself is asserted by the breadcrumb test. What is
+    // checkable here is that the link exists and points at the task.
+    expect(screen.getByTestId("workspace-task-TASK-1590").getAttribute("href")).toBe(
+      "/tasks/TASK-1590",
+    );
+  });
+
+  it("closes the commit panel without needing the row it came from", () => {
+    commitState.commits = COMMITS;
+    mount();
+    fireEvent.click(screen.getByTestId("workspace-tab-history"));
+    fireEvent.click(screen.getByTestId("commit-open-9dfe9c4"));
+    expect(screen.getByTestId("commit-detail-pane")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("commit-detail-close"));
+    // Closing used to mean clicking the same sha again, ~90 rows above the fold
+    // once the list is full (TASK-1786).
+    expect(screen.queryByTestId("commit-detail-pane")).toBeNull();
+  });
+
+  it("still opens a panel after one was closed", () => {
+    commitState.commits = COMMITS;
+    mount();
+    fireEvent.click(screen.getByTestId("workspace-tab-history"));
+    fireEvent.click(screen.getByTestId("commit-open-9dfe9c4"));
+    fireEvent.click(screen.getByTestId("commit-detail-close"));
+    fireEvent.click(screen.getByTestId("commit-open-ad39672"));
+    expect(screen.getByTestId("commit-detail-pane")).toBeTruthy();
+  });
 });

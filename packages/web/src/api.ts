@@ -375,6 +375,8 @@ export type FilesConfidence = "known" | "undeterminable";
 export interface WorkspaceDoc {
   path: string;
   size: number;
+  /** TASK-1787 — listed, never served as text. Absent means false. */
+  binary?: boolean;
   modifiedAt: string;
 }
 
@@ -399,12 +401,21 @@ export class WorkspaceFolderMissingError extends Error {
   }
 }
 
+/**
+ * TASK-1788 — asks for the whole tree, code and docs together.
+ *
+ * `include=all` is sent unconditionally. An adapter that predates TASK-1787
+ * ignores the param and answers with markdown only, which is exactly the
+ * degradation the adapter's default was chosen to give: the companion consumes
+ * a VENDORED bundle that lags a release behind (INBOX-1888), so a new client
+ * meeting an old adapter must show fewer files rather than an error.
+ */
 export async function fetchWorkspaceDocs(
   workspaceId: string,
   signal?: AbortSignal
 ): Promise<WorkspaceDocsResult> {
   const res = await fetch(
-    `${API_BASE}/workspace-docs?workspaceId=${encodeURIComponent(workspaceId)}`,
+    `${API_BASE}/workspace-docs?workspaceId=${encodeURIComponent(workspaceId)}&include=all`,
     { signal }
   );
   if (res.status === 409) {
@@ -413,6 +424,19 @@ export async function fetchWorkspaceDocs(
   }
   if (!res.ok) throw new Error(`GET /workspace-docs failed: ${res.status}`);
   return (await res.json()) as WorkspaceDocsResult;
+}
+
+/**
+ * The adapter answers 415 for a binary file (TASK-1787). Carried as its own
+ * error type for the same reason as WorkspaceFolderMissingError: "this file
+ * cannot be shown as text" and "this request failed" are different facts, and
+ * only one of them means something is broken.
+ */
+export class BinaryFileError extends Error {
+  constructor(readonly path: string) {
+    super(`binary file is not served as text: ${path}`);
+    this.name = "BinaryFileError";
+  }
 }
 
 export async function fetchWorkspaceDoc(
@@ -425,6 +449,7 @@ export async function fetchWorkspaceDoc(
     `${API_BASE}/workspace-docs/${encodeURIComponent(workspaceId)}/${encoded}`,
     { signal }
   );
+  if (res.status === 415) throw new BinaryFileError(path);
   if (!res.ok) throw new Error(`GET /workspace-docs/:id/:path failed: ${res.status}`);
   return await res.text();
 }

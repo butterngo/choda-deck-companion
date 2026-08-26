@@ -7,6 +7,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
+  BinaryFileError,
   fetchWorkspaceDoc,
   fetchWorkspaceDocs,
   WorkspaceFolderMissingError,
@@ -57,6 +58,8 @@ export interface WorkspaceDocView {
   markdown: string | null;
   isLoading: boolean;
   isError: boolean;
+  /** TASK-1788 — set only when the file is binary. Not a failure. */
+  isBinary: boolean;
 }
 
 export function useWorkspaceDoc(
@@ -69,9 +72,14 @@ export function useWorkspaceDoc(
     enabled: workspaceId !== null && path !== null,
     staleTime: 0,
   });
+  const binary = q.error instanceof BinaryFileError;
   return {
     markdown: q.data ?? null,
     isLoading: q.isLoading,
-    isError: q.isError,
+    // Reported through its own field so a caller branching on isError cannot
+    // render "couldn't load this" for a file that loaded fine and simply is
+    // not text.
+    isError: q.isError && !binary,
+    isBinary: binary,
   };
 }

@@ -20,11 +20,17 @@ import { DocTree } from "../components/DocTree";
 import { WorkspaceSelect } from "../components/WorkspaceSelect";
 import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
+import { CapabilityNote } from "../components/state/CapabilityNote";
 import { Skeleton } from "../components/state/Skeleton";
 
 // `workspaceId` prop: when the parent already knows which workspace (the
 // WorkspaceView tabs), the picker is noise — you cannot be "on" a workspace and
 // still be asked which one. Absent, the view keeps its standalone behaviour.
+/** Only a .md file goes through the markdown renderer. */
+function isMarkdown(path: string): boolean {
+  return path.toLowerCase().endsWith(".md");
+}
+
 export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: string } = {}): React.JSX.Element {
   const health = useOutletContext<HealthView>();
   // TASK-1766 — honour ?workspaceId= and ?path=.
@@ -129,22 +135,49 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
           {selectedPath === null ? (
             <EmptyState
               icon="ti-file-text"
-              title="No document selected"
+              title="No file selected"
               description="Pick a file on the left to read it."
             />
+          ) : detail.isBinary ? (
+            /* TASK-1788 — not an error. The file is there and readable by
+               something; it is simply not text, and decoding it would show
+               replacement characters that read as a rendering bug. */
+            <CapabilityNote icon="ti-file-off">
+              <span data-testid="doc-binary">
+                <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                  This file is not text.
+                </span>{" "}
+                <span className="font-mono">{selectedPath}</span> is listed so you can see it
+                exists, but showing it here would only produce noise.
+              </span>
+            </CapabilityNote>
           ) : detail.isError ? (
             <ErrorState variant="failed" subject={selectedPath} />
           ) : detail.isLoading || detail.markdown === null ? (
-            <Skeleton shape="text" label="Loading document…" />
+            <Skeleton shape="text" label="Loading file…" />
           ) : (
             <article>
               <header className="mb-4 border-b border-zinc-100 dark:border-zinc-800 pb-3.5">
                 <h2 className="font-mono text-xs text-zinc-500">{selectedPath}</h2>
               </header>
-              {/* Bounded to a reading measure, left-aligned — TASK-1608. */}
-              <div className="max-w-[72ch]">
-                <CaptureMarkdown diagrams>{detail.markdown}</CaptureMarkdown>
-              </div>
+              {isMarkdown(selectedPath) ? (
+                /* Bounded to a reading measure, left-aligned — TASK-1608. */
+                <div className="max-w-[72ch]">
+                  <CaptureMarkdown diagrams>{detail.markdown}</CaptureMarkdown>
+                </div>
+              ) : (
+                /* Source is shown verbatim. Running it through the markdown
+                   renderer would eat leading hashes, asterisks and underscores
+                   — i.e. quietly corrupt the code it claims to show. Syntax
+                   highlighting is deliberately out of scope: it is another
+                   dependency argument, the way mermaid was. */
+                <pre
+                  data-testid="doc-source"
+                  className="overflow-x-auto rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-3 text-xs leading-relaxed"
+                >
+                  <code>{detail.markdown}</code>
+                </pre>
+              )}
             </article>
           )}
         </div>
