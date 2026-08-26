@@ -62,7 +62,7 @@ function commit(over: Partial<WorkspaceCommitDetail> = {}): WorkspaceCommitDetai
 function mount(over: Partial<WorkspaceCommitDetail> = {}): void {
   render(
     <MemoryRouter>
-      <CommitDetailPanel commit={commit(over)} />
+      <CommitDetailPanel commit={commit(over)} workspaceId="main" />
     </MemoryRouter>,
   );
 }
@@ -76,10 +76,13 @@ beforeEach(() => {
 
 describe("the change itself (AC-1)", () => {
   it("shows the subject, the body and a row per changed file with its counts", () => {
+    // TASK-1792 replaced StatRow with FileDiff, which owns the counts as well
+    // as the lines. The property is unchanged — a row per changed file, with
+    // its numbers — so the testid moved rather than the assertion.
     mount();
     expect(screen.getByText(/a route with no inbound link/)).toBeTruthy();
     expect(screen.getByTestId("commit-body").textContent).toBe("A body line explaining why.");
-    const row = screen.getByTestId("commit-file-src/a.ts");
+    const row = screen.getByTestId("file-diff-src/a.ts");
     expect(row.textContent).toContain("+25");
     expect(row.textContent).toContain("1");
   });
@@ -87,7 +90,7 @@ describe("the change itself (AC-1)", () => {
   it("says binary rather than +0/−0 for a binary file", () => {
     mount();
     // 0/0 would assert the file did not change, which is a different claim.
-    const row = screen.getByTestId("commit-file-assets/logo.png");
+    const row = screen.getByTestId("file-diff-assets/logo.png");
     expect(row.textContent).toContain("binary");
     expect(row.textContent).not.toContain("+0");
   });
@@ -138,7 +141,7 @@ describe("a commit nobody tagged (AC-5)", () => {
   it("says no task is recorded, and still shows the stat", () => {
     mount({ taskIds: [] });
     expect(screen.getByTestId("commit-no-task")).toBeTruthy();
-    expect(screen.getByTestId("commit-file-src/a.ts")).toBeTruthy();
+    expect(screen.getByTestId("file-diff-src/a.ts")).toBeTruthy();
     // Not an error: an untagged commit is ordinary, not broken.
     expect(screen.queryByTestId("error-state")).toBeNull();
     // And no task lookup should have been attempted for a commit with no id.

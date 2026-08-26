@@ -108,7 +108,7 @@ export function WorkspaceView(): React.JSX.Element {
             ) : openCommit.commit === null ? (
               <Skeleton shape="list" label="Loading commit…" />
             ) : (
-              <CommitDetailPanel commit={openCommit.commit} />
+              <CommitDetailPanel commit={openCommit.commit} workspaceId={workspace?.id ?? ""} />
             )}
           </div>
         )}
