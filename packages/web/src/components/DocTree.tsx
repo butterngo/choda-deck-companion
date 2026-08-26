@@ -2,20 +2,29 @@
 // returns paths, not a tree, because a tree is a rendering concern and the wire
 // shape should not have to agree with how this view happens to group things.
 //
-// Folders start open. A doc browser you have to unfold before you can see
-// anything is a worse first screen than a slightly long list, and the measured
-// sizes are small enough for it: 26 files in the companion, 199 in choda-deck.
+// Folders start CLOSED. That reverses TASK-1780, and the reason is worth
+// keeping rather than quietly editing away.
 //
-// TASK-1780 — they can now be CLOSED. Starting open is still right, but on
-// choda-deck the tree buries the real docs under data/artifacts/captures/
-// (INBOX-1868), and the chevron this component already drew was decorative:
-// static, aria-hidden, wired to nothing. A control that looks like a control
-// and does nothing is worse than no control.
+// TASK-1780 opened them, and justified it by measurement: "a doc browser you
+// have to unfold before you can see anything is a worse first screen than a
+// slightly long list, and the measured sizes are small enough for it: 26 files
+// in the companion, 199 in choda-deck". That was true of a .md-only listing.
 //
-// Collapse state is held once, in DocTree, rather than per Row. Per-row state
-// happens to survive selecting another file today — React keeps the instance
-// because the key is stable — but that is a property of the reconciler, not a
-// decision, and AC-2 is about the guarantee rather than the accident.
+// TASK-1787 widened the listing to the whole tree and the numbers moved by one
+// to two orders of magnitude: companion 26 -> 425, choda-deck 199 -> 986,
+// remote-workflow 61 -> 1,784, ABC 4,176. "A slightly long list" was true at 26;
+// at 4,176 it is a wall, and the first screen became worse than the unfolding it
+// was meant to avoid. The decision did not change its mind — the fact under it
+// changed (TASK-1790).
+//
+// The state model inverts with it. TASK-1780 stored CLOSED paths because "an
+// empty set then means everything is expanded, which is the documented default".
+// The documented default is now the other one, so the same reasoning gives the
+// opposite answer: store OPEN paths, and empty means shut.
+//
+// State is held once, in DocTree, rather than per Row. Per-row state happens to
+// survive selecting another file today — React keeps the instance because the
+// key is stable — but that is a property of the reconciler, not a decision.
 
 import { useMemo, useState } from "react";
 import type { WorkspaceDoc } from "../api";
@@ -62,20 +71,20 @@ function Row({
   depth,
   selected,
   onSelect,
-  collapsed,
+  expanded,
   onToggle,
 }: {
   node: TreeNode;
   depth: number;
   selected: string | null;
   onSelect: (path: string) => void;
-  collapsed: Set<string>;
+  expanded: Set<string>;
   onToggle: (path: string) => void;
 }): React.JSX.Element {
   const indent = { paddingLeft: `${depth * 16}px` };
 
   if (node.doc === null) {
-    const open = !collapsed.has(node.path);
+    const open = expanded.has(node.path);
     return (
       <div>
         <button
@@ -114,7 +123,7 @@ function Row({
               depth={depth + 1}
               selected={selected}
               onSelect={onSelect}
-              collapsed={collapsed}
+              expanded={expanded}
               onToggle={onToggle}
             />
           ))}
@@ -142,6 +151,21 @@ function Row({
   );
 }
 
+/**
+ * Every folder on the way down to `path`, so a deep-linked file is visible
+ * rather than merely present. `docs/knowledge/a.md` yields `docs` and
+ * `docs/knowledge` — the file itself is not a folder and is not included.
+ */
+function ancestorsOf(path: string | null): Set<string> {
+  const out = new Set<string>();
+  if (path === null) return out;
+  const segments = path.split("/");
+  for (let i = 1; i < segments.length; i += 1) {
+    out.add(segments.slice(0, i).join("/"));
+  }
+  return out;
+}
+
 export function DocTree({
   docs,
   selected,
@@ -158,13 +182,24 @@ export function DocTree({
     return r;
   }, [docs]);
 
-  // A set of CLOSED paths, not open ones: empty means everything is expanded,
-  // which is the default the comment at the top of this file describes. Storing
-  // the open set instead would make "no state yet" mean "all folders shut".
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  // A set of OPEN paths — empty means everything is shut, which is now the
+  // documented default. See the note at the top for why this inverted.
+  //
+  // Seeded with the ancestors of whatever is already selected. Without that, a
+  // file reached by ?path= — how TaskProvenance deep-links to a changed file,
+  // and how ProjectsView links — sits inside a closed folder and is therefore
+  // not in the DOM at all: the reader pane shows the file while the tree looks
+  // like nothing was selected. Same "renders but cannot be reached" family as
+  // INBOX-1875 and TASK-1786, reached from a third direction.
+  //
+  // Initial state only, deliberately. A later selection can only come from
+  // clicking a row that is already visible, so its ancestors are already open;
+  // re-seeding on every change would instead fight a reader who closed a folder
+  // on purpose — the bug TASK-1766 already fixed once for ?workspaceId=.
+  const [expanded, setExpanded] = useState<Set<string>>(() => ancestorsOf(selected));
 
   const onToggle = (path: string): void => {
-    setCollapsed((prev) => {
+    setExpanded((prev) => {
       const next = new Set(prev);
       if (!next.delete(path)) next.add(path);
       return next;
@@ -180,7 +215,7 @@ export function DocTree({
           depth={0}
           selected={selected}
           onSelect={onSelect}
-          collapsed={collapsed}
+          expanded={expanded}
           onToggle={onToggle}
         />
       ))}
