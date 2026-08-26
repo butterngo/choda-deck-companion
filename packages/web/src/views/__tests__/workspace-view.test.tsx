@@ -7,7 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import type { HealthView } from "../../hooks/use-health";
 import type { TaskSummary, Workspace, WorkspaceCommit } from "../../api";
 
@@ -83,8 +83,22 @@ function mount(id = "choda-deck-companion", query = ""): void {
     <MemoryRouter initialEntries={[`/workspaces/${id}${query}`]}>
       <Routes>
         <Route path="/workspaces/:id" element={<WorkspaceView />} />
+        <Route path="/tasks/:taskId" element={<OriginProbe />} />
       </Routes>
     </MemoryRouter>,
+  );
+}
+
+// TASK-1793 AC-1 — renders whatever router state the link that got us here
+// carried. This reads the ACTUAL value WorkspaceView attached, which is the one
+// thing neither typecheck nor a directly-mounted CommitList can check: a
+// required prop proves an origin was passed, never that it was the RIGHT one.
+// Handing the History tab `?tab=tasks` would satisfy every other test in this
+// change and still return the reader to the wrong pane.
+function OriginProbe(): React.JSX.Element {
+  const state = useLocation().state as { from?: { to?: string; label?: string } } | null;
+  return (
+    <div data-testid="origin-probe" data-to={state?.from?.to} data-label={state?.from?.label} />
   );
 }
 
@@ -343,5 +357,29 @@ describe("WorkspaceView (TASK-1766)", () => {
     fireEvent.click(screen.getByTestId("workspace-tab-history"));
     fireEvent.click(screen.getByTestId("commit-open-9dfe9c4"));
     expect(screen.queryByTestId("commit-detail-idle")).toBeNull();
+  });
+});
+
+describe("TASK-1793 — the History tab hands out a way BACK", () => {
+  const probe = (): HTMLElement => screen.getByTestId("origin-probe");
+
+  it("a task badge on a commit row carries the HISTORY tab as its origin (AC-1)", () => {
+    mount("choda-deck-companion", "?tab=history");
+    fireEvent.click(screen.getByTestId("commit-task-TASK-1767"));
+    expect(probe().getAttribute("data-to")).toBe(
+      "/workspaces/choda-deck-companion?tab=history",
+    );
+    // The label is what the breadcrumb renders. An id here would read
+    // "< choda-deck-companion" where the header says "Companion".
+    expect(probe().getAttribute("data-label")).toBe("Companion");
+  });
+
+  it("CONTROL — the TASKS tab still carries the tasks tab, not history (AC-1)", () => {
+    // The two origins are built side by side from the same workspace, so a
+    // copy-paste that pointed both at one tab is the likely mistake and this is
+    // the only test that would see it.
+    mount("choda-deck-companion", "?tab=tasks");
+    fireEvent.click(screen.getByTestId("workspace-task-TASK-1766"));
+    expect(probe().getAttribute("data-to")).toBe("/workspaces/choda-deck-companion?tab=tasks");
   });
 });
