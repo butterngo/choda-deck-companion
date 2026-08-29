@@ -35,7 +35,59 @@ const COMMITS: WorkspaceCommit[] = [
   { sha: "ad39672bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", shortSha: "ad39672", authorDate: "2026-08-24T18:02:10+07:00", subject: "chore(release): 0.8.0 — a workspace is somewhere you can go", taskIds: [] },
 ];
 
-const detailState = { commit: null, isLoading: false, isError: false };
+// TASK-1794 — a real commit detail, so the right pane actually renders. It was
+// null here, which is why the panel's own wiring was never exercised from the
+// view and a changed prop went unnoticed by all 29 tests.
+const DETAIL_FILE = {
+  path: "src/task-provenance.ts",
+  insertions: 1,
+  deletions: 0,
+  binary: false,
+  hunks: [
+    {
+      oldStart: 1, oldLines: 1, newStart: 1, newLines: 2, header: "",
+      lines: [
+        { kind: "ctx" as const, text: "const adrs = []", oldNo: 1, newNo: 1 },
+        { kind: "add" as const, text: "const src = read()", oldNo: null, newNo: 2 },
+      ],
+    },
+  ],
+};
+const detailState = {
+  commit: {
+    sha: "9dfe9c4aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    shortSha: "9dfe9c4",
+    authorDate: "2026-08-24T15:29:42+07:00",
+    subject: "test(web): a route with no inbound link now fails the build (TASK-1767)",
+    taskIds: ["TASK-1767"],
+    body: "",
+    reachability: "default-branch" as const,
+    files: [DETAIL_FILE],
+  } as never,
+  isLoading: false,
+  isError: false,
+};
+// CommitDetailPanel's TaskChain reads this. Unmocked it runs the real query and
+// takes the pane down with "No QueryClient set" — the same class as INBOX-1892:
+// giving detailState a real commit made the panel render for the first time, and
+// a fake that never mentioned use-task could not have known.
+vi.mock("../../hooks/use-task", () => ({
+  useTask: () => ({
+    task: { task: { id: "TASK-1767", title: "A route with no inbound link", adrs: [] } },
+    isLoading: false,
+    isError: false,
+  }),
+}));
+// CommitFileView reads the file's current text through this hook.
+vi.mock("../../hooks/use-workspace-docs", () => ({
+  useWorkspaceDoc: () => ({
+    markdown: ["const adrs = []", "const src = read()"].join(String.fromCharCode(10)),
+    isLoading: false,
+    isError: false,
+    isBinary: false,
+  }),
+  useWorkspaceDocs: () => ({ docs: [], isLoading: false, isError: false, missing: null }),
+}));
 
 const wsState = { workspaces: WORKSPACES, isLoading: false, isError: false };
 // Data only, never a rule. INBOX-1878: a mock that reimplements a production
@@ -381,5 +433,46 @@ describe("TASK-1793 — the History tab hands out a way BACK", () => {
     mount("choda-deck-companion", "?tab=tasks");
     fireEvent.click(screen.getByTestId("workspace-task-TASK-1766"));
     expect(probe().getAttribute("data-to")).toBe("/workspaces/choda-deck-companion?tab=tasks");
+  });
+});
+
+describe("TASK-1794 — a changed file opens HERE, not on another route", () => {
+  function openCommitAndFile(): void {
+    mount("choda-deck-companion", "?tab=history");
+    fireEvent.click(screen.getByTestId("commit-open-9dfe9c4"));
+    fireEvent.click(screen.getByTestId("file-open-src/task-provenance.ts"));
+  }
+
+  it("keeps the reader on /workspaces/:id (AC-5)", () => {
+    openCommitAndFile();
+    expect(screen.getByTestId("commit-file-view")).toBeTruthy();
+    // The assertion the old build fails: it navigated to /workspace-docs, so
+    // the workspace header would be gone entirely.
+    expect(screen.getByTestId("workspace-history-pane")).toBeTruthy();
+    expect(screen.queryByTestId("commit-detail")).toBeNull();
+  });
+
+  it("marks the changed line in the opened file (AC-2 end to end)", () => {
+    openCommitAndFile();
+    expect(screen.getByTestId("source-line-2").getAttribute("data-marked")).toBe("true");
+    expect(screen.getByTestId("source-line-1").getAttribute("data-marked")).toBeNull();
+  });
+
+  it("closing returns to the diff with the commit still selected (AC-8)", () => {
+    openCommitAndFile();
+    fireEvent.click(screen.getByTestId("commit-file-close"));
+    expect(screen.getByTestId("commit-detail")).toBeTruthy();
+    expect(screen.queryByTestId("commit-file-view")).toBeNull();
+    // Still the same commit — a close that also dropped the selection would
+    // send the reader back to "pick a commit" and lose their place.
+    expect(screen.getByTestId("commit-open-9dfe9c4").getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("picking a DIFFERENT commit drops the open file", () => {
+    // A path from one commit means nothing in another; keeping it would open a
+    // file the new commit never touched.
+    openCommitAndFile();
+    fireEvent.click(screen.getByTestId("commit-open-ad39672"));
+    expect(screen.queryByTestId("commit-file-view")).toBeNull();
   });
 });

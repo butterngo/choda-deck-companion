@@ -130,12 +130,12 @@ function TaskChain({ taskId, origin }: { taskId: string; origin: Origin }): Reac
 
 export function CommitDetailPanel({
   commit,
-  workspaceId,
+  onOpenFile,
   origin,
 }: {
   commit: WorkspaceCommitDetail;
-  /** TASK-1792 — needed so a changed file can link back into the tree. */
-  workspaceId: string;
+  /** TASK-1794 — a changed file opens in the pane, so the view decides, not us. */
+  onOpenFile: (path: string) => void;
   /**
    * TASK-1793 — where the task link should send the reader BACK to. Required,
    * not optional: the optional version of this prop is why the History tab
@@ -187,7 +187,7 @@ export function CommitDetailPanel({
         ) : (
           <div className="flex flex-col gap-2.5">
             {commit.files.map((f) => (
-              <FileDiff key={f.path} file={f} workspaceId={workspaceId} />
+              <FileDiff key={f.path} file={f} onOpen={onOpenFile} />
             ))}
           </div>
         )}

@@ -17,7 +17,6 @@
 // than none here: it sends a reader to the wrong line of a real file, and
 // nothing about the result announces the mistake.
 
-import { Link } from "react-router-dom";
 import type { CommitFileStat, DiffLine } from "../api";
 
 const MARK: Record<DiffLine["kind"], string> = { add: "+", del: "-", ctx: " " };
@@ -53,45 +52,36 @@ function Line({ line }: { line: DiffLine }): React.JSX.Element {
   );
 }
 
-/** The first line a reader should be taken to, or null when there is nowhere. */
-export function firstChangedLine(file: CommitFileStat): number | null {
-  if (!file.hunks) return null;
-  for (const h of file.hunks) {
-    for (const l of h.lines) {
-      if (l.kind === "add" && l.newNo !== null) return l.newNo;
-    }
-  }
-  // A pure deletion has no line in the new file to land on. The hunk start is
-  // where the removal happened; returning nothing would leave the reader with
-  // no destination at all.
-  for (const h of file.hunks) {
-    if (h.lines.some((l) => l.kind === "del")) return h.newStart;
-  }
-  return null;
-}
-
 export function FileDiff({
   file,
-  workspaceId,
+  onOpen,
 }: {
   file: CommitFileStat;
-  workspaceId: string;
+  /**
+   * TASK-1794 — opening a file is now a message to the pane, not a navigation.
+   *
+   * This used to be a <Link> to /workspace-docs, which is a top-level route
+   * OUTSIDE the workspace with no back control at all. The file now opens where
+   * the reader already is, so the component reports the intent and the view
+   * decides — which also lets it keep the commit around.
+   */
+  onOpen: (path: string) => void;
 }): React.JSX.Element {
-  const line = firstChangedLine(file);
   const openable = file.hunks !== undefined && file.hunks !== null && !file.binary;
 
   return (
     <div data-testid={`file-diff-${file.path}`} className="rounded-md border border-zinc-200 dark:border-zinc-800 overflow-hidden">
       <div className="flex items-baseline gap-2.5 bg-zinc-50 dark:bg-zinc-900 px-2.5 py-1.5">
         {openable ? (
-          <Link
+          <button
+            type="button"
             data-testid={`file-open-${file.path}`}
-            to={`/workspace-docs?workspaceId=${encodeURIComponent(workspaceId)}&path=${encodeURIComponent(file.path)}${line === null ? "" : `&line=${line}`}`}
-            className="min-w-0 flex-1 truncate font-mono text-xs"
-            title={line === null ? file.path : `${file.path} — opens at line ${line}`}
+            onClick={() => onOpen(file.path)}
+            className="min-w-0 flex-1 truncate text-left font-mono text-xs hover:underline"
+            title={`${file.path} — open with its changed lines marked`}
           >
             {file.path}
-          </Link>
+          </button>
         ) : (
           <span className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-500">
             {file.path}
