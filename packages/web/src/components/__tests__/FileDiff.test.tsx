@@ -7,10 +7,10 @@
 // Each has its own test AND its own control, because a component that rendered
 // one message always would pass whichever half was written first.
 
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { FileDiff, firstChangedLine } from "../FileDiff";
+import { FileDiff } from "../FileDiff";
 import type { CommitFileStat, DiffHunk } from "../../api";
 
 const HUNK: DiffHunk = {
@@ -41,10 +41,10 @@ function file(over: Partial<CommitFileStat> = {}): CommitFileStat {
   };
 }
 
-function mount(f: CommitFileStat): void {
+function mount(f: CommitFileStat, onOpen: (p: string) => void = () => {}): void {
   render(
     <MemoryRouter>
-      <FileDiff file={f} workspaceId="main" />
+      <FileDiff file={f} onOpen={onOpen} />
     </MemoryRouter>,
   );
 }
@@ -83,27 +83,24 @@ describe("rendering the lines (AC-1)", () => {
   });
 });
 
-describe("opening the file at the line (AC-3)", () => {
-  it("links to the first ADDED line", () => {
+describe("opening the file (TASK-1794 AC-5)", () => {
+  it("reports the path instead of navigating away", () => {
+    // This used to be a <Link> to /workspace-docs — a top-level route outside
+    // the workspace with no back control at all. The file now opens where the
+    // reader already is, so the component reports and the view decides.
+    const onOpen = vi.fn();
+    mount(file(), onOpen);
+    fireEvent.click(screen.getByTestId("file-open-src/adapters/companion/task-provenance.ts"));
+    expect(onOpen).toHaveBeenCalledWith("src/adapters/companion/task-provenance.ts");
+  });
+
+  it("is not a link — nothing here changes the route", () => {
+    // The control for the above: a build that kept the <Link> would still call
+    // nothing and still look clickable.
     mount(file());
-    const link = screen.getByTestId("file-open-src/adapters/companion/task-provenance.ts");
-    expect(link.getAttribute("href")).toContain("line=160");
-    expect(link.getAttribute("href")).toContain("path=src%2Fadapters%2Fcompanion%2Ftask-provenance.ts");
-  });
-
-  it("falls back to the hunk start when nothing was added", () => {
-    // A pure deletion has no line in the new file to land on. The hunk start
-    // is where the removal happened; no destination at all would be worse.
-    const delOnly: DiffHunk = {
-      ...HUNK,
-      lines: [{ kind: "del", text: "gone", oldNo: 157, newNo: null }],
-    };
-    expect(firstChangedLine(file({ hunks: [delOnly] }))).toBe(157);
-  });
-
-  it("is null when there is no patch to point into", () => {
-    expect(firstChangedLine(file({ hunks: null }))).toBeNull();
-    expect(firstChangedLine(file({ hunks: undefined }))).toBeNull();
+    const el = screen.getByTestId("file-open-src/adapters/companion/task-provenance.ts");
+    expect(el.getAttribute("href")).toBeNull();
+    expect(el.tagName).toBe("BUTTON");
   });
 });
 

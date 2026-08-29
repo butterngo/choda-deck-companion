@@ -32,15 +32,29 @@ export function lineFromHash(hash: string): number | null {
 export function SourceView({
   path,
   code,
-  /** 1-based line to mark and scroll to. Null marks nothing. */
-  highlightLine = null,
+  /**
+   * TASK-1794 — the 1-based lines to mark. Empty marks nothing.
+   *
+   * A SET, not a number. The single-line version was not a smaller version of
+   * this: a commit that changed 13 lines lit up 1, and the other 12 looked
+   * untouched. Keeping both props would have left two ways to say the same
+   * thing, and the one nobody passes drifts first.
+   */
+  highlightLines,
 }: {
   path: string;
   code: string;
-  highlightLine?: number | null;
+  highlightLines?: ReadonlySet<number>;
 }): React.JSX.Element {
   const language = languageFor(path);
   const lines = code.replace(/\n$/, "").split("\n");
+  // The line to scroll to: the lowest marked one, or null when nothing is
+  // marked. Computed rather than taken as a second prop, so it cannot disagree
+  // with the set it is supposed to describe.
+  const firstMarked =
+    highlightLines === undefined || highlightLines.size === 0
+      ? null
+      : Math.min(...highlightLines);
   const [html, setHtml] = useState<string[] | null>(null);
   const markedRef = useRef<HTMLElement | null>(null);
 
@@ -75,7 +89,7 @@ export function SourceView({
     // The mark still renders; only the convenience of being scrolled to is lost.
     const el = markedRef.current;
     if (typeof el?.scrollIntoView === "function") el.scrollIntoView({ block: "center" });
-  }, [highlightLine, html]);
+  }, [firstMarked, html]);
 
   return (
     <pre
@@ -86,12 +100,16 @@ export function SourceView({
       <code>
         {lines.map((line, i) => {
           const no = i + 1;
-          const marked = highlightLine === no;
+          const marked = highlightLines?.has(no) ?? false;
+          // Only the FIRST marked line gets the ref. Scrolling to the last one
+          // would land the reader at the bottom of the change with its opening
+          // above the fold.
+          const isFirstMarked = marked && no === firstMarked;
           return (
             <span
               key={no}
               id={`L${no}`}
-              ref={marked ? markedRef : undefined}
+              ref={isFirstMarked ? markedRef : undefined}
               data-testid={`source-line-${no}`}
               data-marked={marked ? "true" : undefined}
               className={[

@@ -65,7 +65,7 @@ function mount(over: Partial<WorkspaceCommitDetail> = {}): void {
     <MemoryRouter>
       <CommitDetailPanel
         commit={commit(over)}
-        workspaceId="main"
+        onOpenFile={() => {}}
         origin={historyOrigin("main", "Main")}
       />
     </MemoryRouter>,

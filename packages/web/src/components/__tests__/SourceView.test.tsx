@@ -21,8 +21,8 @@ const CSHARP = `public class Order {
 
 const PLAIN = "just some words\nand a second line";
 
-function mount(path: string, code = CSHARP, line: number | null = null): void {
-  render(<SourceView path={path} code={code} highlightLine={line} />);
+function mount(path: string, code = CSHARP, lines: number[] = []): void {
+  render(<SourceView path={path} code={code} highlightLines={new Set(lines)} />);
 }
 
 const pre = (): HTMLElement => screen.getByTestId("doc-source");
@@ -179,8 +179,17 @@ describe("line numbers (AC-4)", () => {
   });
 
   it("marks the line it was asked to mark", () => {
-    mount("src/Order.cs", CSHARP, 3);
+    mount("src/Order.cs", CSHARP, [3]);
     expect(screen.getByTestId("source-line-3").getAttribute("data-marked")).toBe("true");
+  });
+
+  // TASK-1794 — the set-valued API. The old prop took ONE number, so a commit
+  // that changed 13 lines marked 1 and the rest looked untouched.
+  it("marks EVERY line in the set, not just the lowest", () => {
+    mount("src/Order.cs", CSHARP, [2, 4]);
+    expect(screen.getByTestId("source-line-2").getAttribute("data-marked")).toBe("true");
+    expect(screen.getByTestId("source-line-4").getAttribute("data-marked")).toBe("true");
+    expect(screen.getByTestId("source-line-3").getAttribute("data-marked")).toBeNull();
   });
 
   it("CONTROL — with no line asked for, nothing is marked", () => {
@@ -191,8 +200,8 @@ describe("line numbers (AC-4)", () => {
     expect(screen.getByTestId("source-line-1").getAttribute("data-marked")).toBeNull();
   });
 
-  it("marks only the one line, not a range around it", () => {
-    mount("src/Order.cs", CSHARP, 2);
+  it("marks only the lines asked for, not a range around them", () => {
+    mount("src/Order.cs", CSHARP, [2]);
     expect(screen.getByTestId("source-line-2").getAttribute("data-marked")).toBe("true");
     expect(screen.getByTestId("source-line-1").getAttribute("data-marked")).toBeNull();
     expect(screen.getByTestId("source-line-3").getAttribute("data-marked")).toBeNull();

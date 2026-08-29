@@ -188,7 +188,15 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
                   // Only marks a line while the file the link named is the one
                   // being read. Selecting a different file drops the mark
                   // rather than pointing at line N of something unrelated.
-                  highlightLine={selectedPath === params.get("path") ? initialLine : null}
+                  //
+                  // TASK-1794 — a set of one here. This route still receives a
+                  // single ?line=, from TaskProvenance; the commit diff now opens
+                  // files inside History instead of sending them here.
+                  highlightLines={
+                    selectedPath === params.get("path") && initialLine !== null
+                      ? new Set([initialLine])
+                      : undefined
+                  }
                 />
               )}
             </article>

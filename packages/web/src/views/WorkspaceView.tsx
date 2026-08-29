@@ -22,6 +22,7 @@ import { useWorkspaceTasks } from "../hooks/use-workspace-tasks";
 import { useWorkspaceCommits } from "../hooks/use-workspace-commits";
 import { CommitList } from "../components/CommitList";
 import { CommitDetailPanel } from "../components/CommitDetailPanel";
+import { CommitFileView } from "../components/CommitFileView";
 import { useWorkspaceCommit } from "../hooks/use-workspace-commit";
 import { historyOrigin, tasksOrigin } from "../lib/origin";
 import { WorkspaceDocsView } from "./WorkspaceDocsView";
@@ -52,6 +53,10 @@ export function WorkspaceView(): React.JSX.Element {
   const tasks = useWorkspaceTasks(workspace?.projectId ?? null);
   const commits = useWorkspaceCommits(workspace?.id ?? null);
   const [openSha, setOpenSha] = useState<string | null>(null);
+  // TASK-1794 — the changed file being read, within the open commit. Cleared
+  // whenever the commit changes: a path from one commit means nothing in
+  // another, and keeping it would open a file the new commit never touched.
+  const [openFile, setOpenFile] = useState<string | null>(null);
   const openCommit = useWorkspaceCommit(workspace?.id ?? null, openSha);
 
   // TASK-1793 — the way BACK, handed to every link that leaves this screen.
@@ -109,7 +114,10 @@ export function WorkspaceView(): React.JSX.Element {
             commits={commits.commits}
             origin={backToHistory}
             selected={openSha}
-            onSelect={(sha) => setOpenSha((prev) => (prev === sha ? null : sha))}
+            onSelect={(sha) => {
+              setOpenFile(null);
+              setOpenSha((prev) => (prev === sha ? null : sha));
+            }}
           />
           {commits.hasMore && (
             <p data-testid="commit-has-more" className="mt-2.5 text-[11.5px] text-zinc-500">
@@ -134,7 +142,10 @@ export function WorkspaceView(): React.JSX.Element {
                   control. */}
               <button
                 type="button"
-                onClick={() => setOpenSha(null)}
+                onClick={() => {
+                  setOpenSha(null);
+                  setOpenFile(null);
+                }}
                 data-testid="commit-detail-close"
                 aria-label="Close commit detail"
                 className="absolute right-2 top-2 rounded-md px-1.5 py-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
@@ -145,10 +156,19 @@ export function WorkspaceView(): React.JSX.Element {
                 <ErrorState variant="failed" subject="this commit" />
               ) : openCommit.commit === null ? (
                 <Skeleton shape="list" label="Loading commit…" />
+              ) : openFile !== null ? (
+                <CommitFileView
+                  files={openCommit.commit.files}
+                  path={openFile}
+                  workspaceId={workspace?.id ?? ""}
+                  shortSha={openCommit.commit.shortSha}
+                  onSelect={setOpenFile}
+                  onClose={() => setOpenFile(null)}
+                />
               ) : (
                 <CommitDetailPanel
                   commit={openCommit.commit}
-                  workspaceId={workspace?.id ?? ""}
+                  onOpenFile={setOpenFile}
                   origin={backToHistory}
                 />
               )}
