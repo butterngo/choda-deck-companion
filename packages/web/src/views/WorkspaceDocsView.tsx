@@ -23,6 +23,7 @@ import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { CapabilityNote } from "../components/state/CapabilityNote";
 import { SourceView } from "../components/SourceView";
+import { SymbolLookupPanel } from "../components/SymbolLookupPanel";
 import { Skeleton } from "../components/state/Skeleton";
 
 // `workspaceId` prop: when the parent already knows which workspace (the
@@ -77,16 +78,27 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
   const lookup = useWorkspaceSymbols(workspaceId, pendingSymbol);
 
   useEffect(() => {
-    // Exactly one match navigates. Zero, several, or an adapter too old to
-    // answer are the sibling task's states — deliberately inert here rather
-    // than guessed at, because a wrong jump is indistinguishable from a right
-    // one once the reader is looking at the wrong file.
+    // Exactly one match navigates, and ONLY one. Zero and several are answers
+    // in their own right, rendered by SymbolLookupPanel (TASK-1799) — a wrong
+    // jump is indistinguishable from a right one once the reader is looking at
+    // the wrong file, so several matches wait for a choice.
+    //
+    // pendingSymbol is deliberately NOT cleared here any more: the panel needs
+    // the name to render every other outcome, and clearing it on success is
+    // what stops a stale picker hanging over the file just opened.
     if (!lookup.isResolved || lookup.matches.length !== 1) return;
     const hit = lookup.matches[0]!;
     setSelectedPath(hit.path);
     setJump({ path: hit.path, line: hit.line });
     setPendingSymbol(null);
   }, [lookup.isResolved, lookup.matches]);
+
+  /** Chosen from the picker — the same landing as a single match. */
+  function openMatch(match: { path: string; line: number }): void {
+    setSelectedPath(match.path);
+    setJump({ path: match.path, line: match.line });
+    setPendingSymbol(null);
+  }
 
   function pickWorkspace(id: string): void {
     setWorkspaceId(id);
@@ -193,6 +205,22 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
               <header className="mb-4 border-b border-zinc-100 dark:border-zinc-800 pb-3.5">
                 <h2 className="font-mono text-xs text-zinc-500">{selectedPath}</h2>
               </header>
+              {/* TASK-1799 — above the file, not instead of it. Every outcome
+                  that is not a jump still leaves the reader on the code they
+                  were reading. */}
+              <div className="mb-3">
+                <SymbolLookupPanel
+                  name={lookup.name}
+                  matches={lookup.matches}
+                  isResolved={lookup.isResolved}
+                  isError={lookup.isError}
+                  routeMissing={lookup.routeMissing}
+                  unknownWorkspace={lookup.unknownWorkspace}
+                  workspaceLabel={list.label}
+                  onPick={openMatch}
+                  onDismiss={() => setPendingSymbol(null)}
+                />
+              </div>
               {isMarkdown(selectedPath) ? (
                 /* Bounded to a reading measure, left-aligned — TASK-1608. */
                 <div className="max-w-[72ch]">
