@@ -212,6 +212,7 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
                 <SymbolLookupPanel
                   name={lookup.name}
                   matches={lookup.matches}
+                  isLoading={lookup.isLoading}
                   isResolved={lookup.isResolved}
                   isError={lookup.isError}
                   routeMissing={lookup.routeMissing}

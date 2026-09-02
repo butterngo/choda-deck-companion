@@ -24,6 +24,7 @@ function mount(over: Partial<React.ComponentProps<typeof SymbolLookupPanel>> = {
   const props = {
     name: "Duplicated",
     matches: [] as SymbolMatch[],
+    isLoading: false,
     isResolved: true,
     isError: false,
     routeMissing: false,
@@ -42,6 +43,7 @@ const STATES = [
   "symbol-picker",
   "symbol-not-found",
   "symbol-adapter-outdated",
+  "symbol-looking",
   "error-state",
 ] as const;
 
@@ -59,6 +61,7 @@ describe("SymbolLookupPanel", () => {
       <SymbolLookupPanel
         name={null}
         matches={[]}
+        isLoading={false}
         isResolved={false}
         isError={false}
         routeMissing={false}
@@ -78,6 +81,7 @@ describe("SymbolLookupPanel", () => {
       <SymbolLookupPanel
         name="Duplicated"
         matches={[]}
+        isLoading={false}
         isResolved={false}
         isError={false}
         routeMissing={false}
@@ -162,6 +166,61 @@ describe("SymbolLookupPanel", () => {
     const { onDismiss } = mount({ matches: TWO });
     fireEvent.click(screen.getByTestId("symbol-picker-dismiss"));
     expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  // TASK-1806 AC-1
+  it("says it is looking while the scan is in flight", () => {
+    mount({ isLoading: true, isResolved: false });
+    only("symbol-looking");
+    const note = screen.getByTestId("symbol-looking");
+    expect(note).toHaveTextContent("Duplicated");
+    expect(note).toHaveTextContent("Companion");
+  });
+
+  // TASK-1806 AC-2
+  it("stops saying it once the answer arrives", () => {
+    // The control is the pair: the note must be present in the first render and
+    // absent in the second, so a panel that never renders it fails the first
+    // half and one that never clears it fails the second.
+    const { unmount } = render(
+      <SymbolLookupPanel
+        name="Duplicated"
+        matches={[]}
+        isLoading
+        isResolved={false}
+        isError={false}
+        routeMissing={false}
+        unknownWorkspace={false}
+        workspaceLabel="Companion"
+        onPick={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("symbol-looking")).toBeInTheDocument();
+    unmount();
+
+    mount({ matches: TWO, isLoading: false });
+    expect(screen.queryByTestId("symbol-looking")).not.toBeInTheDocument();
+    expect(screen.getByTestId("symbol-picker")).toBeInTheDocument();
+  });
+
+  // TASK-1806 AC-3
+  it("says nothing when no symbol was ever clicked, even if a query is idle-loading", () => {
+    const { container } = render(
+      <SymbolLookupPanel
+        name={null}
+        matches={[]}
+        isLoading
+        isResolved={false}
+        isError={false}
+        routeMissing={false}
+        unknownWorkspace={false}
+        workspaceLabel="Companion"
+        onPick={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("gives every row a keyboard-reachable control", () => {

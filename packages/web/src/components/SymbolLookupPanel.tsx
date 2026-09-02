@@ -21,6 +21,7 @@ import type { SymbolMatch } from "../api";
 export function SymbolLookupPanel({
   name,
   matches,
+  isLoading,
   isResolved,
   isError,
   routeMissing,
@@ -31,6 +32,8 @@ export function SymbolLookupPanel({
 }: {
   name: string | null;
   matches: SymbolMatch[];
+  /** TASK-1806 — a cold scan takes ~6s, and silence reads as a dead click. */
+  isLoading: boolean;
   isResolved: boolean;
   isError: boolean;
   routeMissing: boolean;
@@ -41,6 +44,25 @@ export function SymbolLookupPanel({
   onDismiss: () => void;
 }): React.JSX.Element | null {
   if (name === null) return null;
+
+  // TASK-1806 — the fifth state, and the first one a real user meets. The first
+  // lookup in a workspace is a COLD filesystem scan: measured 6,296 ms against
+  // ~60 ms warm. Rendering nothing for six seconds is indistinguishable from a
+  // click that did nothing, which is the exact failure the other four states
+  // exist to prevent — this file simply had a blind spot for its own latency.
+  //
+  // Checked before the error branches because none of them can be true yet: a
+  // request in flight has neither resolved nor failed.
+  if (isLoading) {
+    return (
+      <CapabilityNote icon="ti-search">
+        <span data-testid="symbol-looking">
+          Looking for <span className="font-mono">{name}</span> in{" "}
+          {workspaceLabel ?? "this workspace"}…
+        </span>
+      </CapabilityNote>
+    );
+  }
 
   // Order matters: the diagnosed 404s are checked BEFORE the empty-match case,
   // because both arrive with an empty `matches` array and the reader must not

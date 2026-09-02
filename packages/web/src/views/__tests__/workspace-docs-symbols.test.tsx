@@ -35,6 +35,8 @@ const DOCS: WorkspaceDoc[] = [
 ];
 
 let matches: SymbolMatch[] = [];
+/** TASK-1806 — hold the lookup in flight so the waiting state can be asserted. */
+let loadingForever = false;
 const asked: { workspaceId: string | null; name: string | null }[] = [];
 
 vi.mock("react-router-dom", async (orig) => ({
@@ -75,13 +77,14 @@ vi.mock("../../hooks/use-workspace-symbols", () => ({
     return {
       name,
       matches: name === null ? [] : matches,
-      isLoading: false,
       isError: false,
-      isResolved: name !== null,
+      isResolved: name !== null && !loadingForever,
       // TASK-1799 — the view now branches on these too. Left false here so the
       // happy-path journeys below still describe the happy path.
       routeMissing: false,
       unknownWorkspace: false,
+      // TASK-1806 — a name is pending but nothing has answered yet.
+      isLoading: name !== null && loadingForever,
     };
   },
 }));
@@ -105,6 +108,7 @@ async function clickSymbol(name: string): Promise<void> {
 
 beforeEach(() => {
   matches = [];
+  loadingForever = false;
   asked.length = 0;
 });
 
@@ -185,6 +189,20 @@ describe("WorkspaceDocsView — symbol navigation", () => {
     // And the picker is gone — a stale list hanging over the file just opened
     // would leave the reader unsure which of the two they are looking at.
     expect(screen.queryByTestId("symbol-picker")).not.toBeInTheDocument();
+  });
+
+  // TASK-1806 AC-4 — waiting must not disturb what the reader is looking at.
+  it("keeps the current file and its tab order while the scan runs", async () => {
+    loadingForever = true;
+    mount();
+    const focusable = "a[href], button, input, select, textarea, [tabindex]";
+    const before = pre().querySelectorAll(focusable).length;
+
+    await clickSymbol("ServiceTokenWorkspaceFilter");
+    await waitFor(() => expect(screen.getByTestId("symbol-looking")).toBeInTheDocument());
+
+    expect(pre().textContent).toContain("MapPatch");
+    expect(pre().querySelectorAll(focusable).length).toBe(before);
   });
 
   it("renders no picker for a single match — the control", async () => {
