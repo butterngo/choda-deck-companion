@@ -78,6 +78,10 @@ vi.mock("../../hooks/use-workspace-symbols", () => ({
       isLoading: false,
       isError: false,
       isResolved: name !== null,
+      // TASK-1799 — the view now branches on these too. Left false here so the
+      // happy-path journeys below still describe the happy path.
+      routeMissing: false,
+      unknownWorkspace: false,
     };
   },
 }));
@@ -149,15 +153,45 @@ describe("WorkspaceDocsView — symbol navigation", () => {
     expect(pre().textContent).toContain("MapPatch");
   });
 
-  it("stays on the current file when the symbol resolves to several places", async () => {
+  // TASK-1799 AC-1 — several matches: the picker appears and the reader stays put.
+  it("offers a picker for several matches, without leaving the current file", async () => {
     matches = [
       { path: "src/Auth/ServiceTokenAuth.cs", line: 2, kind: "class", text: "" },
       { path: "src/Endpoints.cs", line: 1, kind: "class", text: "" },
     ];
     mount();
     await clickSymbol("ServiceTokenWorkspaceFilter");
+
+    await waitFor(() => expect(screen.getByTestId("symbol-picker")).toBeInTheDocument());
     // A guess would be indistinguishable from a correct jump once the reader is
-    // looking at the wrong file, so nothing moves until the picker exists.
+    // looking at the wrong file, so nothing moves until a row is chosen.
     expect(pre().textContent).toContain("MapPatch");
+  });
+
+  // TASK-1799 AC-2 — choosing a row lands exactly where a single match would.
+  it("opens the chosen match at its line", async () => {
+    matches = [
+      { path: "src/Auth/ServiceTokenAuth.cs", line: 2, kind: "class", text: "" },
+      { path: "src/Endpoints.cs", line: 1, kind: "class", text: "" },
+    ];
+    mount();
+    await clickSymbol("ServiceTokenWorkspaceFilter");
+    await waitFor(() => expect(screen.getByTestId("symbol-picker")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId("symbol-match-src/Auth/ServiceTokenAuth.cs:2"));
+
+    await waitFor(() => expect(pre().textContent).toContain("namespace Api.Auth"));
+    expect(screen.getByTestId("source-line-2").getAttribute("data-marked")).toBe("true");
+    // And the picker is gone — a stale list hanging over the file just opened
+    // would leave the reader unsure which of the two they are looking at.
+    expect(screen.queryByTestId("symbol-picker")).not.toBeInTheDocument();
+  });
+
+  it("renders no picker for a single match — the control", async () => {
+    matches = [{ path: "src/Auth/ServiceTokenAuth.cs", line: 2, kind: "class", text: "" }];
+    mount();
+    await clickSymbol("ServiceTokenWorkspaceFilter");
+    await waitFor(() => expect(pre().textContent).toContain("namespace Api.Auth"));
+    expect(screen.queryByTestId("symbol-picker")).not.toBeInTheDocument();
   });
 });

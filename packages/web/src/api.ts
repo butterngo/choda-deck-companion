@@ -475,10 +475,45 @@ export interface SymbolLookupResult {
 }
 
 /**
+ * TASK-1799 — the adapter is older than this route.
+ *
+ * The companion talks to a VENDORED adapter bundle that refreshes only at
+ * release (INBOX-1888), so a released app WILL meet an adapter that has never
+ * heard of /workspace-symbols. It answers with the router's own 404, and
+ * `/healthz` returns `{ ok: true }` with no capability list — so the BODY is
+ * the only signal there is.
+ *
+ * Carried as its own error type for the same reason as BinaryFileError:
+ * "your app is behind" and "that symbol has no declaration" are different
+ * facts, and telling the reader the second when the first is true blames the
+ * code for the client's age.
+ */
+export class AdapterRouteMissingError extends Error {
+  constructor(readonly route: string) {
+    super(`this adapter has no ${route} route`);
+    this.name = "AdapterRouteMissingError";
+  }
+}
+
+/** The other 404: the route exists, the workspace does not. */
+export class UnknownWorkspaceError extends Error {
+  constructor(readonly workspaceId: string) {
+    super(`unknown workspace: ${workspaceId}`);
+    this.name = "UnknownWorkspaceError";
+  }
+}
+
+/**
  * An empty `matches` is a normal 200 — a name may be a local, a keyword, or
- * declared in another workspace. The states that are NOT one jump (zero
- * matches, several, an adapter too old to have the route) are rendered by the
- * sibling task; this call only reports what came back.
+ * declared in another workspace. Only the failures throw.
+ *
+ * The two 404s are separated by reading the error body, and that string
+ * comparison is the fragile part of this whole feature: the adapter names the
+ * workspace it could not find (`unknown workspace: X`), while an adapter
+ * without the route falls through to its router's `not found`. If that router
+ * message is ever reworded, this degrades silently to "your app is behind" for
+ * a genuinely unknown workspace. INBOX-1897 proposes a capabilities field on
+ * /healthz, which would remove the guess entirely.
  */
 export async function fetchWorkspaceSymbols(
   workspaceId: string,
@@ -489,6 +524,19 @@ export async function fetchWorkspaceSymbols(
     `${API_BASE}/workspace-symbols?workspaceId=${encodeURIComponent(workspaceId)}&name=${encodeURIComponent(name)}`,
     { signal },
   );
+  if (res.status === 404) {
+    // Body read defensively: an adapter old enough to lack the route is also
+    // old enough to answer something this client has never seen, and a parse
+    // failure here must not become a crash on top of a 404.
+    let error = "";
+    try {
+      error = ((await res.json()) as { error?: string }).error ?? "";
+    } catch {
+      error = "";
+    }
+    if (error.startsWith("unknown workspace")) throw new UnknownWorkspaceError(workspaceId);
+    throw new AdapterRouteMissingError("/workspace-symbols");
+  }
   if (!res.ok) throw new Error(`GET /workspace-symbols failed: ${res.status}`);
   return (await res.json()) as SymbolLookupResult;
 }

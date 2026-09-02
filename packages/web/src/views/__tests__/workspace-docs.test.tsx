@@ -57,6 +57,8 @@ vi.mock("../../hooks/use-workspace-symbols", () => ({
     isLoading: false,
     isError: false,
     isResolved: false,
+    routeMissing: false,
+    unknownWorkspace: false,
   }),
 }));
 // The picker has its own coverage. Here it only has to be clickable, because
