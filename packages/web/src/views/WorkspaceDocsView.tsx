@@ -11,10 +11,11 @@
 // FAILED load, not an empty one. Rendering an empty list there would be a
 // statement about the repository that isn't true.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import type { HealthView } from "../hooks/use-health";
 import { useWorkspaceDoc, useWorkspaceDocs } from "../hooks/use-workspace-docs";
+import { useWorkspaceSymbols } from "../hooks/use-workspace-symbols";
 import { CaptureMarkdown } from "../components/CaptureMarkdown";
 import { DocTree } from "../components/DocTree";
 import { WorkspaceSelect } from "../components/WorkspaceSelect";
@@ -64,6 +65,28 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
   });
   const list = useWorkspaceDocs(workspaceId);
   const detail = useWorkspaceDoc(workspaceId, selectedPath);
+
+  // TASK-1798 — the symbol a reader clicked, and where it took them.
+  //
+  // `jump` is separate from the URL's ?line= on purpose: that param describes
+  // where the reader ARRIVED from another view, and a symbol jump is a move
+  // they made here. Overwriting the param would rewrite their history; reading
+  // it as the source of truth would mark the wrong line after the first jump.
+  const [pendingSymbol, setPendingSymbol] = useState<string | null>(null);
+  const [jump, setJump] = useState<{ path: string; line: number } | null>(null);
+  const lookup = useWorkspaceSymbols(workspaceId, pendingSymbol);
+
+  useEffect(() => {
+    // Exactly one match navigates. Zero, several, or an adapter too old to
+    // answer are the sibling task's states — deliberately inert here rather
+    // than guessed at, because a wrong jump is indistinguishable from a right
+    // one once the reader is looking at the wrong file.
+    if (!lookup.isResolved || lookup.matches.length !== 1) return;
+    const hit = lookup.matches[0]!;
+    setSelectedPath(hit.path);
+    setJump({ path: hit.path, line: hit.line });
+    setPendingSymbol(null);
+  }, [lookup.isResolved, lookup.matches]);
 
   function pickWorkspace(id: string): void {
     setWorkspaceId(id);
@@ -193,10 +216,15 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
                   // single ?line=, from TaskProvenance; the commit diff now opens
                   // files inside History instead of sending them here.
                   highlightLines={
-                    selectedPath === params.get("path") && initialLine !== null
-                      ? new Set([initialLine])
-                      : undefined
+                    jump !== null && jump.path === selectedPath
+                      ? new Set([jump.line])
+                      : selectedPath === params.get("path") && initialLine !== null
+                        ? new Set([initialLine])
+                        : undefined
                   }
+                  // TASK-1798 — this pane knows how to resolve a symbol, so it
+                  // offers them. CommitFileView does not and stays read-only.
+                  onSymbolClick={setPendingSymbol}
                 />
               )}
             </article>

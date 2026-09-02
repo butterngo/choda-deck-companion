@@ -45,6 +45,20 @@ vi.mock("../../hooks/use-workspace-docs", () => ({
   useWorkspaceDocs: () => listState,
   useWorkspaceDoc: () => docState,
 }));
+// TASK-1798 — the view gained a second hook, and an unmocked one would run for
+// real here without a QueryClientProvider and take all 15 tests down with an
+// error about a query client rather than about docs. That is INBOX-1892's
+// pattern exactly: a fake that never named a dependency does not fail when the
+// dependency appears, it fails at whatever the component does next.
+vi.mock("../../hooks/use-workspace-symbols", () => ({
+  useWorkspaceSymbols: (_ws: string | null, name: string | null) => ({
+    name,
+    matches: [],
+    isLoading: false,
+    isError: false,
+    isResolved: false,
+  }),
+}));
 // The picker has its own coverage. Here it only has to be clickable, because
 // the view gates every other state on a workspace actually having been chosen —
 // setting the hook's return value alone leaves the view on its first screen and
