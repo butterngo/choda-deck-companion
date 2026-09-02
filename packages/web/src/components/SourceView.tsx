@@ -20,6 +20,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { highlight, languageFor } from "../lib/highlight";
+import { escapeHtml, symbolFromEvent, wrapIdentifiers } from "../lib/symbols";
 
 /** `#L42` → 42. Anything else → null. */
 export function lineFromHash(hash: string): number | null {
@@ -41,10 +42,19 @@ export function SourceView({
    * thing, and the one nobody passes drifts first.
    */
   highlightLines,
+  /**
+   * TASK-1798 — called with the identifier a reader clicked.
+   *
+   * Its PRESENCE is what turns identifiers into click targets: a pane that does
+   * not know how to resolve a symbol has no business offering one. So the two
+   * call sites that only display code stay exactly as they were.
+   */
+  onSymbolClick,
 }: {
   path: string;
   code: string;
   highlightLines?: ReadonlySet<number>;
+  onSymbolClick?: (name: string) => void;
 }): React.JSX.Element {
   const language = languageFor(path);
   const lines = code.replace(/\n$/, "").split("\n");
@@ -91,11 +101,37 @@ export function SourceView({
     if (typeof el?.scrollIntoView === "function") el.scrollIntoView({ block: "center" });
   }, [firstMarked, html]);
 
+  // TASK-1798 — symbols are offered only when the language is recognised.
+  // Wrapping a file we cannot identify would hand the reader click targets for
+  // words in prose, and every one of them would resolve to nothing.
+  const symbolsEnabled = onSymbolClick !== undefined && language !== null;
+
   return (
-    <pre
+    <>
+      {onSymbolClick !== undefined && language === null && (
+        /* A rendered absence, not silence. "No language recognised" and "this
+           file has no symbols" look identical on screen, and only one of them
+           is a fact about the code — the same trap CommitDetailPanel names. */
+        <p data-testid="symbols-unavailable" className="mb-2 text-xs text-zinc-500">
+          Language not recognised for this file — symbols are not clickable here.
+        </p>
+      )}
+      <pre
       data-testid="doc-source"
       data-language={language ?? "none"}
+      data-symbols={symbolsEnabled ? "on" : "off"}
       className="hljs overflow-x-auto rounded-md border border-zinc-200 dark:border-zinc-800 py-2 text-xs leading-relaxed"
+      onClick={
+        symbolsEnabled
+          ? (e) => {
+              // One handler for the whole file rather than one per identifier:
+              // a 500-line file carries thousands of them, and the listeners
+              // would cost more than the feature.
+              const name = symbolFromEvent(e.target);
+              if (name !== null) onSymbolClick(name);
+            }
+          : undefined
+      }
     >
       <code>
         {lines.map((line, i) => {
@@ -123,21 +159,32 @@ export function SourceView({
               >
                 {no}
               </span>
-              {html === null ? (
+              {html === null && !symbolsEnabled ? (
                 <span>{line}</span>
               ) : (
                 /* highlight.js escapes its input, so the string here is markup
                    it built, not markup from the file: a `<script>` in the
-                   source arrives as &lt;script&gt;. */
+                   source arrives as &lt;script&gt;.
+
+                   TASK-1798 — the plain-text path is escaped here for the same
+                   reason, then goes through the identical wrapper. Without
+                   that, whether an identifier was clickable would depend on
+                   how fast a language chunk loaded. */
                 <span
                   data-testid={`source-line-html-${no}`}
-                  dangerouslySetInnerHTML={{ __html: html[i] ?? "" }}
+                  dangerouslySetInnerHTML={{
+                    __html: (() => {
+                      const markup = html === null ? escapeHtml(line) : (html[i] ?? "");
+                      return symbolsEnabled ? wrapIdentifiers(markup) : markup;
+                    })(),
+                  }}
                 />
               )}
             </span>
           );
         })}
       </code>
-    </pre>
+      </pre>
+    </>
   );
 }

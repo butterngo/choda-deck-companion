@@ -454,6 +454,45 @@ export async function fetchWorkspaceDoc(
   return await res.text();
 }
 
+// TASK-1797/1798 — where is a symbol declared? Mirror of the adapter's
+// GET /workspace-symbols (src/adapters/companion/workspace-symbols.ts).
+export interface SymbolMatch {
+  /** Workspace-relative, forward-slashed — openable by the same viewer. */
+  path: string;
+  /** 1-based, so it feeds the existing #L<n> anchor unchanged. */
+  line: number;
+  /** The keyword that anchored the match: class, interface, type, func... */
+  kind: string;
+  /** The matched source line, trimmed. */
+  text: string;
+}
+
+export interface SymbolLookupResult {
+  workspaceId: string;
+  cwd: string;
+  name: string;
+  matches: SymbolMatch[];
+}
+
+/**
+ * An empty `matches` is a normal 200 — a name may be a local, a keyword, or
+ * declared in another workspace. The states that are NOT one jump (zero
+ * matches, several, an adapter too old to have the route) are rendered by the
+ * sibling task; this call only reports what came back.
+ */
+export async function fetchWorkspaceSymbols(
+  workspaceId: string,
+  name: string,
+  signal?: AbortSignal,
+): Promise<SymbolLookupResult> {
+  const res = await fetch(
+    `${API_BASE}/workspace-symbols?workspaceId=${encodeURIComponent(workspaceId)}&name=${encodeURIComponent(name)}`,
+    { signal },
+  );
+  if (!res.ok) throw new Error(`GET /workspace-symbols failed: ${res.status}`);
+  return (await res.json()) as SymbolLookupResult;
+}
+
 // TASK-1779/1782 — a workspace's git history. Mirror of the adapter's
 // GET /workspaces/:id/commits (src/adapters/companion/workspace-commits.ts).
 export interface WorkspaceCommit {
