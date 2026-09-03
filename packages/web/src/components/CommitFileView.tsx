@@ -51,7 +51,7 @@ export function CommitFileView({
       : { marked: new Set<number>(), drifted: 0 };
 
   return (
-    <div data-testid="commit-file-view" className="flex min-h-0 flex-col gap-2.5">
+    <div data-testid="commit-file-view" className="flex min-h-0 flex-1 flex-col gap-2.5">
       <div className="flex items-baseline gap-2">
         <span className="font-mono text-[11px] text-zinc-400">{shortSha}</span>
         <span className="min-w-0 flex-1 truncate font-mono text-xs">{path}</span>
@@ -124,7 +124,7 @@ export function CommitFileView({
         </p>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div data-testid="commit-file-source-scroll" className="min-h-0 flex-1 overflow-y-auto">
         {doc.isError ? (
           <ErrorState variant="failed" subject="this file" />
         ) : doc.isBinary ? (

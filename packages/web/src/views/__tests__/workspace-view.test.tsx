@@ -476,3 +476,64 @@ describe("TASK-1794 — a changed file opens HERE, not on another route", () => 
     expect(screen.queryByTestId("commit-file-view")).toBeNull();
   });
 });
+
+describe("TASK-1786 — the way back does not scroll away with the code", () => {
+  /** Every ancestor between `el` and the detail pane, the pane included. */
+  function ancestorsUpToPane(el: HTMLElement): HTMLElement[] {
+    const pane = screen.getByTestId("commit-detail-pane");
+    const chain: HTMLElement[] = [];
+    let node: HTMLElement | null = el;
+    while (node !== null) {
+      chain.push(node);
+      if (node === pane) break;
+      node = node.parentElement;
+    }
+    return chain;
+  }
+
+  const scrolls = (el: HTMLElement): boolean => el.className.includes("overflow-y-auto");
+
+  function openCommitAndFile(): void {
+    mount("choda-deck-companion", "?tab=history");
+    fireEvent.click(screen.getByTestId("commit-open-9dfe9c4"));
+    fireEvent.click(screen.getByTestId("file-open-src/task-provenance.ts"));
+  }
+
+  // jsdom has no layout, so no test here can measure a scroll offset. What it
+  // CAN measure is the structure that causes one: on the old build the pane
+  // itself scrolled, which is exactly why the file header travelled upward with
+  // the code. This assertion is red against that build and green against this
+  // one — the defect, not a proxy for it.
+  it("no scrolling element sits between Back-to-diff and the pane", () => {
+    openCommitAndFile();
+    const chain = ancestorsUpToPane(screen.getByTestId("commit-file-close"));
+    expect(chain.filter(scrolls)).toHaveLength(0);
+  });
+
+  it("the file's own header travels with the control", () => {
+    // The chips are the sibling-file navigation. If they scroll away, moving
+    // between a commit's files costs the same trip the control did.
+    openCommitAndFile();
+    expect(ancestorsUpToPane(screen.getByTestId("commit-file-chips")).filter(scrolls)).toHaveLength(
+      0,
+    );
+  });
+
+  it("CONTROL — the code itself still scrolls", () => {
+    // Without this the fix could be "nothing scrolls", which loses a long file
+    // instead of losing the control.
+    openCommitAndFile();
+    expect(scrolls(screen.getByTestId("commit-file-source-scroll"))).toBe(true);
+  });
+
+  it("the diff scrolls in its own container, not the pane", () => {
+    // Same claim at the other end: a 20-file commit must not push the close
+    // button off the top either.
+    mount("choda-deck-companion", "?tab=history");
+    fireEvent.click(screen.getByTestId("commit-open-9dfe9c4"));
+    expect(scrolls(screen.getByTestId("commit-detail-scroll"))).toBe(true);
+    expect(ancestorsUpToPane(screen.getByTestId("commit-detail-close")).filter(scrolls)).toHaveLength(
+      0,
+    );
+  });
+});
