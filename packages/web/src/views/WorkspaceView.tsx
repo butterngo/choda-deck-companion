@@ -126,9 +126,17 @@ export function WorkspaceView(): React.JSX.Element {
           )}
         </div>
 
+        {/* The pane itself no longer scrolls — it is a column whose CHILD owns
+            the scroll. When the outer pane scrolled, an open file's header (its
+            path, the sibling-file chips, and "Back to diff") scrolled away with
+            the code, so getting back to the commit meant scrolling a few hundred
+            lines up to find the control. The way back must not be something you
+            have to travel to reach, which is the same argument CommitFileView
+            was written on. Same shape WorkspaceDocsView already uses: flex-none
+            header, min-h-0 flex-1 overflow-y-auto body. */}
         <div
           data-testid="commit-detail-pane"
-          className="relative min-h-0 overflow-y-auto rounded-md border border-zinc-200 dark:border-zinc-800 p-3"
+          className="relative flex min-h-0 flex-col overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800 p-3"
         >
           {openSha === null ? (
             <p data-testid="commit-detail-idle" className="px-1 py-6 text-center text-xs text-zinc-500">
@@ -166,11 +174,13 @@ export function WorkspaceView(): React.JSX.Element {
                   onClose={() => setOpenFile(null)}
                 />
               ) : (
-                <CommitDetailPanel
-                  commit={openCommit.commit}
-                  onOpenFile={setOpenFile}
-                  origin={backToHistory}
-                />
+                <div data-testid="commit-detail-scroll" className="min-h-0 flex-1 overflow-y-auto">
+                  <CommitDetailPanel
+                    commit={openCommit.commit}
+                    onOpenFile={setOpenFile}
+                    origin={backToHistory}
+                  />
+                </div>
               )}
             </>
           )}
