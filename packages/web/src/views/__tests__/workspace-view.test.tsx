@@ -519,6 +519,32 @@ describe("TASK-1786 — the way back does not scroll away with the code", () => 
     );
   });
 
+  it("a commit in the LAST rows of a long log opens a panel that is still there", () => {
+    // AC-3. The defect was positional — the panel rendered BELOW the list, so
+    // how far it sat past the fold was a function of the row you clicked. This
+    // fills the log to 100 rows and clicks the bottom one: the panel is a
+    // sibling COLUMN now, so neither the list's length nor the row's index can
+    // move it, and the list scrolls in a container of its own rather than
+    // pushing anything.
+    commitState.commits = [
+      ...Array.from({ length: 98 }, (_, i) => ({
+        sha: `${String(i).padStart(7, "0")}cccccccccccccccccccccccccccccccc`,
+        shortSha: String(i).padStart(7, "0"),
+        authorDate: "2026-08-24T15:29:42+07:00",
+        subject: `chore: filler ${i}`,
+        taskIds: [],
+      })),
+      ...COMMITS,
+    ];
+    mount("choda-deck-companion", "?tab=history");
+    fireEvent.click(screen.getByTestId("commit-open-9dfe9c4"));
+    expect(scrolls(screen.getByTestId("commit-list-pane"))).toBe(true);
+    expect(
+      ancestorsUpToPane(screen.getByTestId("commit-detail-close")).filter(scrolls),
+    ).toHaveLength(0);
+    commitState.commits = COMMITS;
+  });
+
   it("CONTROL — the code itself still scrolls", () => {
     // Without this the fix could be "nothing scrolls", which loses a long file
     // instead of losing the control.
