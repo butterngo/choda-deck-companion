@@ -122,6 +122,16 @@ vi.mock("../../hooks/use-workspace-commit", () => ({
 }));
 // The docs surface has its own file. Here it only has to be PRESENT — this test
 // is about the page assembling, not about re-proving the doc tree.
+// TASK-1830 — the Setup surface has its own file, and it owns a hook. Unmocked,
+// that hook runs without a QueryClientProvider and takes the whole view down.
+// This is the THIRD time in this repo a component gaining a dependency has
+// reddened a fake that never named it (INBOX-1892, INBOX-1899) — here it is
+// caught by the tab test rather than by a reader.
+vi.mock("../WorkspaceSetupView", () => ({
+  WorkspaceSetupView: ({ workspaceId }: { workspaceId?: string }) => (
+    <div data-testid="setup-view-stub">{workspaceId}</div>
+  ),
+}));
 vi.mock("../WorkspaceDocsView", () => ({
   WorkspaceDocsView: ({ workspaceId }: { workspaceId?: string }) => (
     <div data-testid="docs-view-stub">{workspaceId}</div>
@@ -561,5 +571,26 @@ describe("TASK-1786 — the way back does not scroll away with the code", () => 
     expect(ancestorsUpToPane(screen.getByTestId("commit-detail-close")).filter(scrolls)).toHaveLength(
       0,
     );
+  });
+});
+
+describe("TASK-1830 — the Setup tab joins the strip without joining the sidebar", () => {
+  it("the workspace tab strip has exactly four tabs", () => {
+    mount();
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs.map((t) => t.textContent)).toEqual(["Files", "Tasks", "History", "Setup"]);
+  });
+
+  it("?tab=setup selects it directly, so the tab is linkable", () => {
+    mount("choda-deck-companion", "?tab=setup");
+    expect(screen.getByTestId("workspace-tab-setup").getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByTestId("workspace-setup-pane")).toBeTruthy();
+  });
+
+  it("CONTROL — an unknown tab param still falls back to Files", () => {
+    // Without this, the parse could accept anything and the first test would
+    // still pass.
+    mount("choda-deck-companion", "?tab=nonsense");
+    expect(screen.getByTestId("workspace-tab-files").getAttribute("aria-selected")).toBe("true");
   });
 });

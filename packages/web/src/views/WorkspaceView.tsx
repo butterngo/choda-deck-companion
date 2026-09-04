@@ -25,12 +25,13 @@ import { CommitDetailPanel } from "../components/CommitDetailPanel";
 import { CommitFileView } from "../components/CommitFileView";
 import { useWorkspaceCommit } from "../hooks/use-workspace-commit";
 import { historyOrigin, tasksOrigin } from "../lib/origin";
+import { WorkspaceSetupView } from "./WorkspaceSetupView";
 import { WorkspaceDocsView } from "./WorkspaceDocsView";
 import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { Skeleton } from "../components/state/Skeleton";
 
-type Tab = "files" | "tasks" | "history";
+type Tab = "files" | "tasks" | "history" | "setup";
 
 export function WorkspaceView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
@@ -45,7 +46,9 @@ export function WorkspaceView(): React.JSX.Element {
   const [tabParams] = useSearchParams();
   const [tab, setTab] = useState<Tab>(() => {
     const asked = tabParams.get("tab");
-    return asked === "tasks" || asked === "history" || asked === "files" ? asked : "files";
+    return asked === "tasks" || asked === "history" || asked === "files" || asked === "setup"
+      ? asked
+      : "files";
   });
 
   const ws = useWorkspaces();
@@ -268,7 +271,7 @@ export function WorkspaceView(): React.JSX.Element {
           aria-label="workspace sections"
           className="mb-4 flex gap-1 border-b border-zinc-200 dark:border-zinc-800"
         >
-          {(["files", "tasks", "history"] as Tab[]).map((t) => (
+          {(["files", "tasks", "history", "setup"] as Tab[]).map((t) => (
             <button
               key={t}
               type="button"
@@ -283,7 +286,13 @@ export function WorkspaceView(): React.JSX.Element {
                   : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200",
               ].join(" ")}
             >
-              {t === "files" ? "Files" : t === "tasks" ? "Tasks" : "History"}
+              {t === "files"
+                ? "Files"
+                : t === "tasks"
+                  ? "Tasks"
+                  : t === "history"
+                    ? "History"
+                    : "Setup"}
             </button>
           ))}
         </div>
@@ -296,6 +305,15 @@ export function WorkspaceView(): React.JSX.Element {
         {tab === "tasks" && (
           <div data-testid="workspace-tasks-pane" className="min-h-0 flex-1 overflow-y-auto">
             {tasksPane()}
+          </div>
+        )}
+        {tab === "setup" && (
+          // TASK-1830 — a fourth tab rather than a ninth sidebar entry. The
+          // constraint was Butter's, and the tab satisfies it by construction:
+          // config shown inside a workspace is project-scoped without anything
+          // having to scope it.
+          <div data-testid="workspace-setup-pane" className="flex min-h-0 flex-1 flex-col">
+            <WorkspaceSetupView workspaceId={workspace.id} />
           </div>
         )}
         {tab === "history" && (

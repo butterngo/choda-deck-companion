@@ -146,3 +146,26 @@ describe("Shell icon rail (AC-7)", () => {
     expect(count?.className).toMatch(/hidden rail:inline/);
   });
 });
+
+describe("TASK-1830 — the sidebar does not grow", () => {
+  it("still carries exactly eight destinations", () => {
+    // Butter's constraint was "i don't want to introduce more menu". The Setup
+    // surface is a workspace TAB, so pinning the exact destination set is what
+    // proves the constraint was met rather than merely intended.
+    //
+    // Six here, not eight: Search and Capture are ACTIONS rather than places and
+    // live in the Shell foot (Shell.tsx), which SidebarNav does not render. The
+    // eight in TASK-1830 AC-1 counts both. Neither is touched by this feature,
+    // and a seventh entry here reddens this test.
+    nav("/projects");
+    const links = screen.getAllByRole("link");
+    expect(links.map((l) => l.getAttribute("href")).sort()).toEqual([
+      "/conversations",
+      "/graph",
+      "/knowledge",
+      "/projects",
+      "/sync",
+      "/vault",
+    ]);
+  });
+});
