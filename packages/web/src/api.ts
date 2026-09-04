@@ -758,6 +758,19 @@ export function rewriteVaultAssetPaths(markdown: string): string {
 // one installed plugin; a tree walk reports 42 skills against a real 15. The
 // adapter does that discrimination — this client just renders what it is told.
 
+/**
+ * How to ASK for a file, as opposed to where it happens to live.
+ *
+ * TASK-1831. The adapter's file route refuses absolute paths, so the `path`
+ * below is for display and copying and cannot be turned into a request. That
+ * gap is why the route shipped with no caller at all — see the task.
+ */
+export interface ClaudeRef {
+  rootId: string;
+  /** Forward-slashed, relative to the root. Empty for a file root. */
+  rel: string;
+}
+
 export interface ClaudeSkill {
   name: string;
   description: string;
@@ -766,16 +779,19 @@ export interface ClaudeSkill {
   pluginId: string | null;
   /** Absolute path, for display and copying. Never sent back as input. */
   path: string;
+  ref: ClaudeRef;
 }
 
 export interface ClaudeCommand {
   name: string;
   path: string;
+  ref: ClaudeRef;
 }
 
 export interface ClaudeRule {
   name: string;
   path: string;
+  ref: ClaudeRef;
 }
 
 /**
@@ -841,4 +857,25 @@ export async function fetchClaudeConfig(
   }
   if (!res.ok) throw new Error(`GET /claude-config failed: ${res.status}`);
   return (await res.json()) as ClaudeConfigResult;
+}
+
+/**
+ * One configured file, as text.
+ *
+ * Built from the row's own `ref` rather than from its display path: the route
+ * takes a root id plus a relative path and refuses absolutes, which is the
+ * whole reason a display path could not be turned into a request.
+ *
+ * A file root (`claude-md`) has an empty `rel`, so the URL is just the root.
+ */
+export async function fetchClaudeConfigFile(
+  ref: ClaudeRef,
+  signal?: AbortSignal,
+): Promise<string> {
+  const tail = ref.rel === "" ? "" : `/${ref.rel.split("/").map(encodeURIComponent).join("/")}`;
+  const res = await fetch(`${API_BASE}/claude-config/${encodeURIComponent(ref.rootId)}${tail}`, {
+    signal,
+  });
+  if (!res.ok) throw new Error(`GET /claude-config/${ref.rootId} failed: ${res.status}`);
+  return await res.text();
 }

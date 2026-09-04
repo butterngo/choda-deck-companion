@@ -31,7 +31,11 @@ import { CapabilityNote } from "../components/state/CapabilityNote";
 import { EmptyState } from "../components/state/EmptyState";
 import { ErrorState } from "../components/state/ErrorState";
 import { Skeleton } from "../components/state/Skeleton";
-import type { ClaudeConfigResult, McpServer } from "../api";
+import { CaptureMarkdown } from "../components/CaptureMarkdown";
+import { SourceView } from "../components/SourceView";
+import { useClaudeConfigFile } from "../hooks/use-claude-config-file";
+import { isMarkdown } from "./WorkspaceDocsView";
+import type { ClaudeConfigResult, ClaudeRef, McpServer } from "../api";
 
 type Origin = "Global" | "This project" | "Plugin";
 
@@ -43,6 +47,13 @@ interface Row {
   detail: string | null;
   /** Only MCP rows carry one. */
   server: McpServer | null;
+  /**
+   * How to fetch this row's file. Null for an MCP server: its `source` is
+   * .claude.json or a repo .mcp.json, and neither is served as a file — the
+   * first deliberately so, since MCP is a minority of a 123KB document that
+   * also holds userID and trust state.
+   */
+  ref: ClaudeRef | null;
 }
 
 interface Group {
@@ -66,6 +77,7 @@ function buildGroups(config: ClaudeConfigResult): Group[] {
     path: s.path,
     detail: s.description.length > 0 ? s.description : null,
     server: null,
+    ref: s.ref,
   }));
 
   const servers: Row[] = config.mcpServers.map((m) => ({
@@ -75,6 +87,7 @@ function buildGroups(config: ClaudeConfigResult): Group[] {
     path: m.source,
     detail: m.error !== null ? m.error : m.transport,
     server: m,
+    ref: null,
   }));
 
   const commands: Row[] = config.commands.map((c) => ({
@@ -84,6 +97,7 @@ function buildGroups(config: ClaudeConfigResult): Group[] {
     path: c.path,
     detail: null,
     server: null,
+    ref: c.ref,
   }));
 
   const rules: Row[] = config.rules.map((r) => ({
@@ -93,6 +107,7 @@ function buildGroups(config: ClaudeConfigResult): Group[] {
     path: r.path,
     detail: null,
     server: null,
+    ref: r.ref,
   }));
 
   return [
@@ -155,6 +170,9 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
     useClaudeConfig(workspaceId);
   const [selected, setSelected] = useState<Row | null>(null);
   const [copied, setCopied] = useState(false);
+  // Called unconditionally and before every early return below — a hook behind
+  // a branch is a hook that changes order between renders.
+  const file = useClaudeConfigFile(selected?.ref ?? null);
 
   if (outdatedAdapter) {
     return (
@@ -311,6 +329,33 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
               <p data-testid="setup-open-note" className="mt-2 text-[11px] text-zinc-500">
                 Open it in your own editor — the companion only reads.
               </p>
+
+              {/* TASK-1831 — the file itself, which this pane shipped without.
+                  Read-only was the right call; showing nothing to read was not.
+
+                  Rendered the same way WorkspaceDocsView renders a doc: prose
+                  through CaptureMarkdown, anything else through SourceView.
+                  Running source through the markdown renderer would eat leading
+                  hashes and underscores — quietly corrupting the file it claims
+                  to show. */}
+              {selected.ref !== null && (
+                <div className="mt-4 border-t border-zinc-100 dark:border-zinc-800 pt-3.5">
+                  {file.isError ? (
+                    <ErrorState variant="failed" subject={selected.name} />
+                  ) : file.isLoading || file.text === null ? (
+                    <Skeleton shape="text" label="Reading the file…" />
+                  ) : isMarkdown(selected.path) ? (
+                    /* Bounded to a reading measure, matching the docs pane. */
+                    <div data-testid="setup-file-markdown" className="max-w-[72ch]">
+                      <CaptureMarkdown diagrams>{file.text}</CaptureMarkdown>
+                    </div>
+                  ) : (
+                    <div data-testid="setup-file-source">
+                      <SourceView path={selected.path} code={file.text} />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </>
         )}
