@@ -35,7 +35,13 @@ import { CaptureMarkdown } from "../components/CaptureMarkdown";
 import { SourceView } from "../components/SourceView";
 import { useClaudeConfigFile } from "../hooks/use-claude-config-file";
 import { isMarkdown } from "./WorkspaceDocsView";
-import type { ClaudeConfigResult, ClaudeRef, McpServer } from "../api";
+import {
+  ConfigChangedOnDiskError,
+  ConfigSaveRefusedError,
+  saveClaudeConfigFile,
+  validateClaudeConfig,
+} from "../api";
+import type { ClaudeConfigResult, ClaudeRef, ConfigFinding, McpServer } from "../api";
 
 type Origin = "Global" | "This project" | "Plugin";
 
@@ -173,6 +179,13 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
   // Called unconditionally and before every early return below — a hook behind
   // a branch is a hook that changes order between renders.
   const file = useClaudeConfigFile(selected?.ref ?? null);
+  // TASK-1844 — the editor. `draft` is null when not editing, so "no unsaved
+  // changes" and "an empty file" stay distinguishable.
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<string | null>(null);
+  const [findings, setFindings] = useState<ConfigFinding[] | null>(null);
+  const [busy, setBusy] = useState(false);
 
   if (outdatedAdapter) {
     return (
@@ -204,6 +217,51 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
         description="No skills, servers, commands or rules were found for this workspace."
       />
     );
+  }
+
+  async function runValidate(ref: ClaudeRef, text?: string): Promise<void> {
+    try {
+      setFindings(await validateClaudeConfig(ref, text));
+    } catch {
+      // Validation is an aid, not a gate. A failed check must not make the file
+      // unreadable or the save unavailable.
+      setFindings(null);
+    }
+  }
+
+  async function save(row: Row, text: string): Promise<void> {
+    if (row.ref === null) return;
+    setBusy(true);
+    setSaveError(null);
+    setConflict(null);
+    try {
+      // if-match carries the hash the READ returned. Anything else turns the
+      // adapter's precondition into decoration.
+      await saveClaudeConfigFile(row.ref, text, file.sha256);
+      setDraft(null);
+      await runValidate(row.ref);
+    } catch (err) {
+      if (err instanceof ConfigChangedOnDiskError) {
+        // The draft is deliberately kept. Discarding it here would lose the
+        // reader's work to a race they did not cause, and re-sending would
+        // overwrite whoever got there first.
+        setConflict(
+          "This file changed on disk since you opened it. Your edit is still here — copy it out, reopen the file, and re-apply.",
+        );
+      } else if (err instanceof ConfigSaveRefusedError) {
+        setSaveError(
+          err.status === 413
+            ? "That file is too large to save through the companion."
+            : err.status === 403
+              ? "This path is outside what the companion is allowed to write."
+              : err.message,
+        );
+      } else {
+        setSaveError(err instanceof Error ? err.message : "the save failed");
+      }
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function copyPath(path: string): Promise<void> {
@@ -245,6 +303,13 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
                       onClick={() => {
                         setSelected(row);
                         setCopied(false);
+                        // Everything below belongs to the row that was open.
+                        // Carrying a draft across rows would offer to save one
+                        // file's text into another.
+                        setDraft(null);
+                        setSaveError(null);
+                        setConflict(null);
+                        setFindings(null);
                       }}
                       aria-current={selected?.key === row.key ? "true" : undefined}
                       data-testid={`setup-row-${row.key}`}
@@ -338,9 +403,115 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
                   Running source through the markdown renderer would eat leading
                   hashes and underscores — quietly corrupting the file it claims
                   to show. */}
+              {/* TASK-1844 — findings sit BESIDE the text, not in a modal: they
+                  are read while editing, and a dialog that must be dismissed to
+                  see the line it names is worse than no dialog. */}
+              {findings !== null && (
+                <div data-testid="setup-findings" className="mt-3">
+                  {findings.length === 0 ? (
+                    <p
+                      data-testid="setup-findings-clean"
+                      className="text-[11.5px] text-green-700 dark:text-green-400"
+                    >
+                      Checked — nothing to report.
+                    </p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {findings.map((f, i) => (
+                        <li
+                          key={`${f.checkId}-${i}`}
+                          data-testid={`setup-finding-${f.checkId}`}
+                          data-severity={f.severity}
+                          className="rounded border border-zinc-200 dark:border-zinc-800 px-2 py-1 text-[11.5px]"
+                        >
+                          <span className="font-medium">{f.severity}</span> · {f.message}
+                          {f.line !== null && <span className="text-zinc-400"> (line {f.line})</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
+              {conflict !== null && (
+                <p
+                  data-testid="setup-save-conflict"
+                  className="mt-3 rounded border border-dashed border-amber-400 dark:border-amber-700 px-2 py-1.5 text-[11.5px] text-amber-700 dark:text-amber-400"
+                >
+                  {conflict}
+                </p>
+              )}
+              {saveError !== null && (
+                <p
+                  data-testid="setup-save-error"
+                  className="mt-3 rounded border border-rose-300 dark:border-rose-800 px-2 py-1.5 text-[11.5px] text-rose-700 dark:text-rose-400"
+                >
+                  {saveError}
+                </p>
+              )}
+
               {selected.ref !== null && (
                 <div className="mt-4 border-t border-zinc-100 dark:border-zinc-800 pt-3.5">
-                  {file.isError ? (
+                  <div className="mb-2 flex items-center gap-2">
+                    {draft === null ? (
+                      <button
+                        type="button"
+                        onClick={() => setDraft(file.text ?? "")}
+                        disabled={file.text === null}
+                        data-testid="setup-edit"
+                        className="rounded-md border border-zinc-200 dark:border-zinc-800 px-2 py-1 text-[11.5px] text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 disabled:opacity-40"
+                      >
+                        Edit
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void save(selected, draft)}
+                          disabled={busy}
+                          data-testid="setup-save"
+                          className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1 text-[11.5px] font-medium disabled:opacity-40"
+                        >
+                          {busy ? "Saving…" : "Save"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDraft(null);
+                            setSaveError(null);
+                            setConflict(null);
+                          }}
+                          data-testid="setup-cancel"
+                          className="rounded-md border border-zinc-200 dark:border-zinc-800 px-2 py-1 text-[11.5px] text-zinc-600 dark:text-zinc-300"
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void runValidate(selected.ref as ClaudeRef, draft ?? undefined)
+                      }
+                      data-testid="setup-check"
+                      className="rounded-md border border-zinc-200 dark:border-zinc-800 px-2 py-1 text-[11.5px] text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                    >
+                      Check
+                    </button>
+                  </div>
+                  {draft !== null ? (
+                    /* A plain textarea, deliberately. An editor component would
+                       bring its own newline and encoding opinions, and this
+                       feature's whole promise is that a save changes only what
+                       the human changed. */
+                    <textarea
+                      data-testid="setup-editor"
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      spellCheck={false}
+                      className="h-72 w-full resize-y rounded border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-2 font-mono text-[12px] leading-relaxed outline-none focus:border-violet-500"
+                    />
+                  ) : file.isError ? (
                     <ErrorState variant="failed" subject={selected.name} />
                   ) : file.isLoading || file.text === null ? (
                     <Skeleton shape="text" label="Reading the file…" />

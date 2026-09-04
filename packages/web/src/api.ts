@@ -868,14 +868,118 @@ export async function fetchClaudeConfig(
  *
  * A file root (`claude-md`) has an empty `rel`, so the URL is just the root.
  */
+function refUrl(ref: ClaudeRef): string {
+  const tail = ref.rel === "" ? "" : `/${ref.rel.split("/").map(encodeURIComponent).join("/")}`;
+  return `${API_BASE}/claude-config/${encodeURIComponent(ref.rootId)}${tail}`;
+}
+
+export interface ClaudeConfigFile {
+  text: string;
+  /** The server's etag — a content hash, sent back as `if-match` on save. */
+  sha256: string;
+}
+
+/**
+ * Read a config file AS BYTES, then decode with `ignoreBOM: true`.
+ *
+ * TASK-1844, and this is not fussiness. `Response.text()` performs a UTF-8
+ * decode that STRIPS a leading BOM, so a client that reads with `.text()` and
+ * saves the string back silently rewrites every BOM-carrying file it touches —
+ * including `template-registry.json`, whose BOM has already broken `JSON.parse`
+ * in production once. The adapter pins this hazard with its own test; this is
+ * the client half.
+ *
+ * Measured, not assumed: default decode drops the BOM, `ignoreBOM: true` keeps
+ * it as U+FEFF, and encoding that string back produces byte-identical output
+ * with CRLF intact.
+ */
 export async function fetchClaudeConfigFile(
   ref: ClaudeRef,
   signal?: AbortSignal,
-): Promise<string> {
-  const tail = ref.rel === "" ? "" : `/${ref.rel.split("/").map(encodeURIComponent).join("/")}`;
-  const res = await fetch(`${API_BASE}/claude-config/${encodeURIComponent(ref.rootId)}${tail}`, {
-    signal,
-  });
+): Promise<ClaudeConfigFile> {
+  const res = await fetch(refUrl(ref), { signal });
   if (!res.ok) throw new Error(`GET /claude-config/${ref.rootId} failed: ${res.status}`);
-  return await res.text();
+  const bytes = await res.arrayBuffer();
+  return {
+    text: new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes),
+    sha256: (res.headers.get("etag") ?? "").replace(/^"|"$/g, ""),
+  };
+}
+
+/** The save refused because the file moved under the reader. */
+export class ConfigChangedOnDiskError extends Error {
+  constructor(readonly sha256: string) {
+    super("file changed on disk");
+    this.name = "ConfigChangedOnDiskError";
+  }
+}
+
+/** The save was refused by the adapter, with the reason it gave. */
+export class ConfigSaveRefusedError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ConfigSaveRefusedError";
+  }
+}
+
+/**
+ * Save a config file.
+ *
+ * `if-match` is REQUIRED by the adapter and carries the hash the read returned.
+ * Sending anything else — or nothing — turns the server's precondition into
+ * decoration, which is the clobber it exists to prevent.
+ *
+ * The body is encoded from the string, so a preserved BOM goes back out as
+ * bytes exactly as it came in.
+ */
+export async function saveClaudeConfigFile(
+  ref: ClaudeRef,
+  text: string,
+  ifMatch: string,
+): Promise<ClaudeConfigFile> {
+  const res = await fetch(refUrl(ref), {
+    method: "PUT",
+    headers: { "if-match": ifMatch, "content-type": "text/plain; charset=utf-8" },
+    body: new TextEncoder().encode(text),
+  });
+  if (res.status === 409) {
+    const body = (await res.json().catch(() => ({}))) as { sha256?: string };
+    throw new ConfigChangedOnDiskError(body.sha256 ?? "");
+  }
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new ConfigSaveRefusedError(res.status, body.error ?? `save failed: ${res.status}`);
+  }
+  const saved = (await res.json()) as { sha256?: string };
+  return { text, sha256: saved.sha256 ?? "" };
+}
+
+export interface ConfigFinding {
+  checkId: string;
+  severity: "error" | "warning" | "note";
+  message: string;
+  line: number | null;
+}
+
+/**
+ * Deterministic checks over a file. Free, and reaches no provider — the model
+ * call has its own route so a parameter here can never spend money.
+ *
+ * `text` is sent when the editor holds unsaved changes, so what is checked is
+ * what the reader is looking at rather than what is on disk.
+ */
+export async function validateClaudeConfig(
+  ref: ClaudeRef,
+  text?: string,
+): Promise<ConfigFinding[]> {
+  const res = await fetch(`${API_BASE}/claude-config/validate`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ rootId: ref.rootId, rel: ref.rel, ...(text === undefined ? {} : { text }) }),
+  });
+  if (!res.ok) throw new Error(`POST /claude-config/validate failed: ${res.status}`);
+  return ((await res.json()) as { findings?: ConfigFinding[] }).findings ?? [];
 }

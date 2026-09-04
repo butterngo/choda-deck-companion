@@ -48,20 +48,37 @@ describe("adapter routes this app claims to consume", () => {
   // A guard that a comment or a template string can satisfy proves the keyword
   // is present, not that the route is reached.
   const FETCHES_LIST = /fetch\(`\$\{API_BASE\}\/claude-config\$\{/;
-  const FETCHES_FILE = /fetch\(`\$\{API_BASE\}\/claude-config\/\$\{/;
+  // The file route's URL is built in one place and fetched from several, so the
+  // guard checks BOTH halves of that chain.
+  const BUILDS_FILE_URL = /`\$\{API_BASE\}\/claude-config\/\$\{/;
+  const FETCHES_BUILDER = /fetch\(refUrl\(/;
 
   it("the config inventory route has a caller", () => {
     expect(SOURCE).toMatch(FETCHES_LIST);
   });
 
   it("the config FILE route has a caller", () => {
-    // Red from TASK-1828 until TASK-1831: the route existed and nothing fetched it.
-    expect(SOURCE).toMatch(FETCHES_FILE);
+    // Red from TASK-1828 until TASK-1831: the route existed and nothing fetched
+    // it. Then TASK-1844 moved the URL into a helper and this went red again —
+    // a FALSE positive, because the route did have callers. A source grep cannot
+    // follow one hop of indirection, so it now asserts both halves: something
+    // builds the URL, and something fetches what the builder returns.
+    //
+    // The honest limitation, stated rather than hidden: this still proves a
+    // shape in text, not a request at runtime. Rename the helper and it goes red
+    // while the route is fine; call the builder without fetching and it stays
+    // green while the route is dead. A real answer needs a runtime assertion,
+    // which does not exist here — see INBOX-1933.
+    expect(SOURCE).toMatch(BUILDS_FILE_URL);
+    expect(SOURCE).toMatch(FETCHES_BUILDER);
   });
 
   it("CONTROL — mentioning the path is not the same as calling it", () => {
-    // The guard must reject the shape that fooled its first version.
+    // The guard must reject the shape that fooled its first version: an error
+    // message containing the route, which stayed green when the real fetch was
+    // removed.
     const mention = 'throw new Error(`GET /claude-config/${ref.rootId} failed`)';
-    expect(mention).not.toMatch(FETCHES_FILE);
+    expect(mention).not.toMatch(FETCHES_BUILDER);
+    expect(mention).not.toMatch(BUILDS_FILE_URL);
   });
 });
