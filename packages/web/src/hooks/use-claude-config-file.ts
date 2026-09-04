@@ -11,6 +11,8 @@ import { fetchClaudeConfigFile, type ClaudeRef } from "../api";
 
 export interface ClaudeConfigFileView {
   text: string | null;
+  /** The etag to send back as `if-match`. Empty until the read lands. */
+  sha256: string;
   isLoading: boolean;
   isError: boolean;
 }
@@ -28,7 +30,8 @@ export function useClaudeConfigFile(ref: ClaudeRef | null): ClaudeConfigFileView
   });
 
   return {
-    text: q.data ?? null,
+    text: q.data?.text ?? null,
+    sha256: q.data?.sha256 ?? "",
     isLoading: ref !== null && q.isLoading,
     isError: q.isError,
   };
