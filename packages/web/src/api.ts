@@ -983,3 +983,66 @@ export async function validateClaudeConfig(
   if (!res.ok) throw new Error(`POST /claude-config/validate failed: ${res.status}`);
   return ((await res.json()) as { findings?: ConfigFinding[] }).findings ?? [];
 }
+
+/**
+ * A model's judgement about a file, as opposed to a check's verdict.
+ *
+ * TASK-1845. Kept as its own type rather than reusing ConfigFinding, because
+ * the two must never be rendered alike: a finding is a fact — a missing field
+ * is missing — while a note is an opinion that can be wrong. Sharing the shape
+ * is how a wrong opinion inherits a check's authority.
+ */
+export interface ReviewNote {
+  checkId: string;
+  message: string;
+  /** The span the note is about, quoted from the file, or null. */
+  quote: string | null;
+}
+
+/** No model is configured. The normal state of most machines, not a failure. */
+export class ReviewUnavailableError extends Error {
+  constructor() {
+    super("no model configured");
+    this.name = "ReviewUnavailableError";
+  }
+}
+
+/** The provider was reached and did not answer usefully. `kind` says how. */
+export class ReviewFailedError extends Error {
+  constructor(
+    readonly kind: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ReviewFailedError";
+  }
+}
+
+/**
+ * Ask the model about one file. THIS IS THE ONLY CALL IN THE CLIENT THAT COSTS
+ * MONEY, and it has its own route for that reason — no parameter on /validate
+ * can reach a provider. The UI's job is to not undo that by calling this from
+ * anywhere but a button.
+ */
+export async function reviewClaudeConfig(
+  ref: ClaudeRef,
+  text?: string,
+  checkId?: string,
+): Promise<ReviewNote[]> {
+  const res = await fetch(`${API_BASE}/claude-config/review`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      rootId: ref.rootId,
+      rel: ref.rel,
+      ...(text === undefined ? {} : { text }),
+      ...(checkId === undefined ? {} : { checkId }),
+    }),
+  });
+  if (res.status === 501) throw new ReviewUnavailableError();
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { kind?: string; error?: string };
+    throw new ReviewFailedError(body.kind ?? "api", body.error ?? `review failed: ${res.status}`);
+  }
+  return ((await res.json()) as { notes?: ReviewNote[] }).notes ?? [];
+}

@@ -38,10 +38,19 @@ import { isMarkdown } from "./WorkspaceDocsView";
 import {
   ConfigChangedOnDiskError,
   ConfigSaveRefusedError,
+  ReviewFailedError,
+  ReviewUnavailableError,
+  reviewClaudeConfig,
   saveClaudeConfigFile,
   validateClaudeConfig,
 } from "../api";
-import type { ClaudeConfigResult, ClaudeRef, ConfigFinding, McpServer } from "../api";
+import type {
+  ClaudeConfigResult,
+  ClaudeRef,
+  ConfigFinding,
+  McpServer,
+  ReviewNote,
+} from "../api";
 
 type Origin = "Global" | "This project" | "Plugin";
 
@@ -186,6 +195,12 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
   const [conflict, setConflict] = useState<string | null>(null);
   const [findings, setFindings] = useState<ConfigFinding[] | null>(null);
   const [busy, setBusy] = useState(false);
+  // TASK-1845 — review state. Separate from `findings` because a note is an
+  // opinion and a finding is a fact, and the two must not share a container.
+  const [notes, setNotes] = useState<ReviewNote[] | null>(null);
+  const [reviewUnavailable, setReviewUnavailable] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewing, setReviewing] = useState(false);
 
   if (outdatedAdapter) {
     return (
@@ -226,6 +241,43 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
       // Validation is an aid, not a gate. A failed check must not make the file
       // unreadable or the save unavailable.
       setFindings(null);
+    }
+  }
+
+  /**
+   * Called from ONE place: the Review button's onClick. Not from an effect, not
+   * from save, not from selection. The adapter makes the boundary structural
+   * (TASK-1843 AC-5); this is the half the UI is responsible for.
+   */
+  async function runReview(ref: ClaudeRef, text?: string): Promise<void> {
+    setReviewing(true);
+    setReviewError(null);
+    setReviewUnavailable(false);
+    try {
+      setNotes(await reviewClaudeConfig(ref, text));
+    } catch (err) {
+      setNotes(null);
+      if (err instanceof ReviewUnavailableError) {
+        // Not an error state. On most machines no model is configured, and
+        // painting that rose would train the eye to ignore the real failures.
+        setReviewUnavailable(true);
+      } else if (err instanceof ReviewFailedError) {
+        setReviewError(
+          err.kind === "rate_limit"
+            ? "The model is rate limited right now. Wait a moment and ask again."
+            : err.kind === "network"
+              ? "Could not reach the model — check the network rather than the key."
+              : err.kind === "auth"
+                ? "The configured key was rejected."
+                : err.kind === "parse"
+                  ? "The model answered in a shape this app could not read."
+                  : `The model call failed (${err.kind}).`,
+        );
+      } else {
+        setReviewError("The model call failed.");
+      }
+    } finally {
+      setReviewing(false);
     }
   }
 
@@ -310,6 +362,11 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
                         setSaveError(null);
                         setConflict(null);
                         setFindings(null);
+                        // Cleared, never re-requested. Selecting a row must not
+                        // spend money — that is the whole cost boundary.
+                        setNotes(null);
+                        setReviewUnavailable(false);
+                        setReviewError(null);
                       }}
                       aria-current={selected?.key === row.key ? "true" : undefined}
                       data-testid={`setup-row-${row.key}`}
@@ -433,6 +490,62 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
                 </div>
               )}
 
+              {/* Deliberately its own block, labelled, and never merged into the
+                  findings list above. A finding is a fact about the file; a note
+                  is a judgement that can be wrong, and rendering them alike lets
+                  a wrong judgement inherit a check's authority. */}
+              {reviewUnavailable && (
+                <div className="mt-3">
+                  <CapabilityNote icon="ti-sparkles">
+                    <span data-testid="setup-review-unconfigured">
+                      <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                        No model is configured.
+                      </span>{" "}
+                      Set one up and this button will ask it to read the file for the things a
+                      check cannot judge — whether a description says when to trigger, whether two
+                      entries duplicate each other.
+                    </span>
+                  </CapabilityNote>
+                </div>
+              )}
+              {reviewError !== null && (
+                <p
+                  data-testid="setup-review-error"
+                  className="mt-3 rounded border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[11.5px] text-zinc-600 dark:text-zinc-300"
+                >
+                  {reviewError}
+                </p>
+              )}
+              {notes !== null && (
+                <div data-testid="setup-review-notes" className="mt-3">
+                  <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-violet-500">
+                    From the model — judgement, not a check
+                  </p>
+                  {notes.length === 0 ? (
+                    <p data-testid="setup-review-empty" className="text-[11.5px] text-zinc-500">
+                      The model read it and had nothing to add.
+                    </p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {notes.map((n, i) => (
+                        <li
+                          key={`${n.checkId}-${i}`}
+                          data-testid={`setup-review-note-${n.checkId}`}
+                          className="rounded border border-violet-200 dark:border-violet-900 px-2 py-1 text-[11.5px]"
+                        >
+                          {n.message}
+                          {n.quote !== null && (
+                            <span className="mt-0.5 block font-mono text-[11px] text-zinc-500">
+                              {n.quote}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
               {conflict !== null && (
                 <p
                   data-testid="setup-save-conflict"
@@ -497,6 +610,18 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
                       className="rounded-md border border-zinc-200 dark:border-zinc-800 px-2 py-1 text-[11.5px] text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
                     >
                       Check
+                    </button>
+                    {/* The only control in this app that spends money. Its label
+                        says so, because a button that costs something should not
+                        look like one that does not. */}
+                    <button
+                      type="button"
+                      onClick={() => void runReview(selected.ref as ClaudeRef, draft ?? undefined)}
+                      disabled={reviewing}
+                      data-testid="setup-review"
+                      className="rounded-md border border-violet-300 dark:border-violet-800 px-2 py-1 text-[11.5px] text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-950/40 disabled:opacity-40"
+                    >
+                      {reviewing ? "Asking…" : "Ask the model"}
                     </button>
                   </div>
                   {draft !== null ? (
