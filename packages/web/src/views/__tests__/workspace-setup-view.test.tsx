@@ -94,6 +94,8 @@ let fileEtag = "";
 let saveStatus = 200;
 let saveBody: Record<string, unknown> = {};
 let findings: { checkId: string; severity: string; message: string; line: number | null }[] = [];
+let reviewStatus = 200;
+let reviewBody: Record<string, unknown> = { notes: [] };
 
 beforeEach(() => {
   calls.length = 0;
@@ -108,6 +110,8 @@ beforeEach(() => {
   saveStatus = 200;
   saveBody = { sha256: "bbbb2222" };
   findings = [];
+  reviewStatus = 200;
+  reviewBody = { notes: [] };
   vi.stubGlobal("fetch", (input: RequestInfo, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? "GET";
@@ -120,6 +124,11 @@ beforeEach(() => {
     if (url.endsWith("/claude-config/validate")) {
       return Promise.resolve(
         new Response(JSON.stringify({ findings }), { status: 200 }),
+      );
+    }
+    if (url.endsWith("/claude-config/review")) {
+      return Promise.resolve(
+        new Response(JSON.stringify(reviewBody), { status: reviewStatus }),
       );
     }
     if (method === "PUT") {
@@ -519,5 +528,135 @@ describe("the editor does not offer to write where it cannot", () => {
     await settle();
     // Carrying it across would offer to save one file's text into another.
     expect(screen.queryByTestId("setup-editor")).toBeNull();
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// TASK-1845 — ask for a review, and show that it cost something
+// ---------------------------------------------------------------------------
+
+/** Every call that reached the paid route. */
+const reviewCalls = (): typeof calls => calls.filter((c) => c.url.endsWith("/claude-config/review"));
+
+describe("AC-1 — a review is a button, never a consequence", () => {
+  it("open, save and re-select spend nothing", async () => {
+    mount();
+
+    // open
+    fireEvent.click(screen.getByTestId("setup-row-skill:global:session-start"));
+    await screen.findByTestId("setup-file-markdown");
+
+    // save
+    fireEvent.click(screen.getByTestId("setup-edit"));
+    fireEvent.change(screen.getByTestId("setup-editor"), { target: { value: "# edited\n" } });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("setup-save"));
+    });
+
+    // re-select
+    fireEvent.click(screen.getByTestId("setup-row-cmd:deploy"));
+    await settle();
+
+    expect(reviewCalls()).toHaveLength(0);
+  });
+
+  it("CONTROL — pressing the control issues exactly one", async () => {
+    // Without this, "zero calls" would also be satisfied by a button that does
+    // nothing at all.
+    mount();
+    fireEvent.click(screen.getByTestId("setup-row-skill:global:session-start"));
+    await screen.findByTestId("setup-file-markdown");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("setup-review"));
+    });
+    expect(reviewCalls()).toHaveLength(1);
+  });
+});
+
+describe("AC-2 — no model configured is an invitation, not a failure", () => {
+  it("renders a capability note and no error state", async () => {
+    reviewStatus = 501;
+    reviewBody = { error: "no model configured" };
+    mount();
+    fireEvent.click(screen.getByTestId("setup-row-skill:global:session-start"));
+    await screen.findByTestId("setup-file-markdown");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("setup-review"));
+    });
+
+    expect(screen.getByTestId("setup-review-unconfigured")).toBeTruthy();
+    expect(screen.getByTestId("capability-note")).toBeTruthy();
+    // Painting an absent capability rose is how a reader learns to ignore the
+    // real errors.
+    expect(screen.queryByTestId("setup-review-error")).toBeNull();
+  });
+});
+
+describe("AC-3 — the error kinds reach the person reading them", () => {
+  it("rate_limit and network render different text", async () => {
+    mount();
+    fireEvent.click(screen.getByTestId("setup-row-skill:global:session-start"));
+    await screen.findByTestId("setup-file-markdown");
+
+    reviewStatus = 502;
+    reviewBody = { error: "provider failed", kind: "rate_limit" };
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("setup-review"));
+    });
+    const limited = screen.getByTestId("setup-review-error").textContent ?? "";
+
+    reviewBody = { error: "provider failed", kind: "network" };
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("setup-review"));
+    });
+    const offline = screen.getByTestId("setup-review-error").textContent ?? "";
+
+    expect(limited.length).toBeGreaterThan(0);
+    expect(offline.length).toBeGreaterThan(0);
+    // The union is typed all the way from the adapter; collapsing it here makes
+    // it pointless at the only place a human reads it.
+    expect(limited).not.toBe(offline);
+  });
+});
+
+describe("AC-4 — a note is not a finding", () => {
+  it("notes render under their own label, distinct from findings", async () => {
+    findings = [
+      { checkId: "skill-frontmatter", severity: "error", message: "no description", line: 1 },
+    ];
+    reviewBody = {
+      notes: [{ checkId: "trigger-clarity", message: "says what it does, not when", quote: null }],
+    };
+    mount();
+    fireEvent.click(screen.getByTestId("setup-row-skill:global:session-start"));
+    await screen.findByTestId("setup-file-markdown");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("setup-check"));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("setup-review"));
+    });
+
+    const notesBlock = screen.getByTestId("setup-review-notes");
+    const findingsBlock = screen.getByTestId("setup-findings");
+    // Separate containers, so a wrong judgement cannot inherit a check's
+    // authority by sitting in the same list.
+    expect(notesBlock.contains(findingsBlock)).toBe(false);
+    expect(within(notesBlock).getByTestId("setup-review-note-trigger-clarity")).toBeTruthy();
+    expect(within(findingsBlock).getByTestId("setup-finding-skill-frontmatter")).toBeTruthy();
+    expect(notesBlock.textContent).toContain("judgement, not a check");
+  });
+
+  it("CONTROL — an empty review states it rather than showing nothing", async () => {
+    // An empty area is indistinguishable from a review that never ran.
+    reviewBody = { notes: [] };
+    mount();
+    fireEvent.click(screen.getByTestId("setup-row-skill:global:session-start"));
+    await screen.findByTestId("setup-file-markdown");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("setup-review"));
+    });
+    expect(screen.getByTestId("setup-review-empty")).toBeTruthy();
   });
 });
