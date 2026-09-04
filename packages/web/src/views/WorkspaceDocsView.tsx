@@ -29,8 +29,14 @@ import { Skeleton } from "../components/state/Skeleton";
 // `workspaceId` prop: when the parent already knows which workspace (the
 // WorkspaceView tabs), the picker is noise — you cannot be "on" a workspace and
 // still be asked which one. Absent, the view keeps its standalone behaviour.
-/** Only a .md file goes through the markdown renderer. */
-function isMarkdown(path: string): boolean {
+/**
+ * Only a .md file goes through the markdown renderer.
+ *
+ * Exported for the Setup pane (TASK-1831), which faces the same choice for
+ * the same reason. A second copy of a one-line predicate is cheap right up
+ * until the two disagree about a file type.
+ */
+export function isMarkdown(path: string): boolean {
   return path.toLowerCase().endsWith(".md");
 }
 
