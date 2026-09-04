@@ -748,3 +748,97 @@ export async function fetchVaultNote(slug: string, signal?: AbortSignal): Promis
 export function rewriteVaultAssetPaths(markdown: string): string {
   return markdown.replace(/\]\(assets\//g, `](${API_BASE}/vault/assets/`);
 }
+
+
+// TASK-1828 / TASK-1829 — the effective config inventory seen from a project.
+// Mirror of the adapter's GET /claude-config
+// (choda-deck/src/adapters/companion/claude-config.ts).
+//
+// "Effective" is the whole point. ~/.claude/plugins holds 29 SKILL.md files and
+// one installed plugin; a tree walk reports 42 skills against a real 15. The
+// adapter does that discrimination — this client just renders what it is told.
+
+export interface ClaudeSkill {
+  name: string;
+  description: string;
+  scope: "global" | "plugin";
+  /** Non-null exactly when scope is "plugin". */
+  pluginId: string | null;
+  /** Absolute path, for display and copying. Never sent back as input. */
+  path: string;
+}
+
+export interface ClaudeCommand {
+  name: string;
+  path: string;
+}
+
+export interface ClaudeRule {
+  name: string;
+  path: string;
+}
+
+/**
+ * Three states, not two — measured, not assumed. A `.mcp.json` server that has
+ * never been approved is "pending"; one that was rejected is "disabled" and
+ * disappears from `claude mcp list` entirely, which is exactly why an inventory
+ * still shows it.
+ */
+export interface McpServer {
+  name: string;
+  origin: "global" | "project";
+  transport: string | null;
+  status: "active" | "disabled" | "pending";
+  source: string;
+  error: string | null;
+}
+
+/**
+ * What the inventory cannot see, carried with it.
+ *
+ * `claude mcp list` reports 16 servers on Butter's machine; ~/.claude.json
+ * declares 6. The other ten are claude.ai connectors configured account-side
+ * and cannot be enumerated from disk. A count is only honest when its boundary
+ * travels with it, so the adapter ships the boundary as a field.
+ */
+export interface McpScope {
+  localOnly: boolean;
+  note: string;
+}
+
+export interface ClaudeConfigResult {
+  skills: ClaudeSkill[];
+  commands: ClaudeCommand[];
+  rules: ClaudeRule[];
+  mcpServers: McpServer[];
+  mcpScope: McpScope;
+}
+
+/**
+ * The same two-404 problem as fetchWorkspaceSymbols, and separated the same
+ * way: an adapter without the route falls through to its router's "not found",
+ * while an adapter that HAS the route names the workspace it could not find.
+ * The packaged app carries a vendored bundle that lags a release (INBOX-1888),
+ * so "your app is behind" is a state a released build will really reach.
+ */
+export async function fetchClaudeConfig(
+  workspaceId: string | null,
+  signal?: AbortSignal,
+): Promise<ClaudeConfigResult> {
+  const query = workspaceId === null ? "" : `?workspaceId=${encodeURIComponent(workspaceId)}`;
+  const res = await fetch(`${API_BASE}/claude-config${query}`, { signal });
+  if (res.status === 404) {
+    let error = "";
+    try {
+      error = ((await res.json()) as { error?: string }).error ?? "";
+    } catch {
+      error = "";
+    }
+    if (error.startsWith("unknown workspace")) {
+      throw new UnknownWorkspaceError(workspaceId ?? "");
+    }
+    throw new AdapterRouteMissingError("/claude-config");
+  }
+  if (!res.ok) throw new Error(`GET /claude-config failed: ${res.status}`);
+  return (await res.json()) as ClaudeConfigResult;
+}
