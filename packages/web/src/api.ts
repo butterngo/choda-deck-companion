@@ -1099,3 +1099,42 @@ export async function reviewClaudeConfig(
   }
   return ((await res.json()) as { notes?: ReviewNote[] }).notes ?? [];
 }
+
+/** One criterion's verdict from the grader. `suggestion` is text to read, never a write. */
+export interface AcVerdict {
+  index: number;
+  text: string;
+  verdict: "ok" | "weak";
+  concern: string | null;
+  suggestion: string | null;
+}
+
+/** No criteria to grade, or no such task. Not an error worth painting red. */
+export class AcNothingToGradeError extends Error {
+  constructor() {
+    super("no acceptance criteria");
+    this.name = "AcNothingToGradeError";
+  }
+}
+
+/**
+ * TASK-1860 — grade a task's acceptance criteria against /choda-plan §3d.
+ *
+ * Costs money, so it is reached from exactly one place: a button. Never on open,
+ * never on a status change. The adapter gives it its own route for the same
+ * reason /review has one.
+ */
+export async function reviewTaskAc(taskId: string, model?: string): Promise<AcVerdict[]> {
+  const res = await fetch(`${API_BASE}/tasks/ac-review`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ taskId, ...(model === undefined ? {} : { model }) }),
+  });
+  if (res.status === 501) throw new ReviewUnavailableError();
+  if (res.status === 404) throw new AcNothingToGradeError();
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { kind?: string; error?: string };
+    throw new ReviewFailedError(body.kind ?? "api", body.error ?? `grading failed: ${res.status}`);
+  }
+  return ((await res.json()) as { criteria?: AcVerdict[] }).criteria ?? [];
+}
