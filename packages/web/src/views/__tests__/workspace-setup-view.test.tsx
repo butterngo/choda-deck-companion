@@ -95,6 +95,14 @@ let saveStatus = 200;
 let saveBody: Record<string, unknown> = {};
 let findings: { checkId: string; severity: string; message: string; line: number | null }[] = [];
 let reviewStatus = 200;
+let modelsStatus = 200;
+let modelsBody: Record<string, unknown> = {
+  models: [
+    { id: "gpt-4.1-mini", model: "gpt-4.1-mini" },
+    { id: "gpt-5-mini", model: "gpt-5-mini" },
+  ],
+  selected: "gpt-4.1-mini",
+};
 let reviewBody: Record<string, unknown> = { notes: [] };
 
 beforeEach(() => {
@@ -112,6 +120,14 @@ beforeEach(() => {
   findings = [];
   reviewStatus = 200;
   reviewBody = { notes: [] };
+  modelsStatus = 200;
+  modelsBody = {
+    models: [
+      { id: "gpt-4.1-mini", model: "gpt-4.1-mini" },
+      { id: "gpt-5-mini", model: "gpt-5-mini" },
+    ],
+    selected: "gpt-4.1-mini",
+  };
   vi.stubGlobal("fetch", (input: RequestInfo, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? "GET";
@@ -124,6 +140,11 @@ beforeEach(() => {
     if (url.endsWith("/claude-config/validate")) {
       return Promise.resolve(
         new Response(JSON.stringify({ findings }), { status: 200 }),
+      );
+    }
+    if (url.endsWith("/claude-config/models")) {
+      return Promise.resolve(
+        new Response(JSON.stringify(modelsBody), { status: modelsStatus }),
       );
     }
     if (url.endsWith("/claude-config/review")) {
@@ -383,7 +404,14 @@ describe("TASK-1831 — the pane reads the file it points at", () => {
     mount();
     fireEvent.click(screen.getByTestId("setup-row-mcp:global:choda-tasks"));
     await settle();
-    expect(calls.filter((c) => c.url.includes("/claude-config/"))).toHaveLength(0);
+    expect(
+      calls
+        .filter((c) => c.url.includes("/claude-config/"))
+        // TASK-1856 — the model listing fires on mount, not on selection, and
+        // is not a file read. The claim under test is unchanged: selecting an
+        // MCP row fetches no FILE.
+        .filter((c) => !c.url.endsWith("/claude-config/models")),
+    ).toHaveLength(0);
     // The path is still shown and copyable — the row is not degraded, it simply
     // points at a document the route deliberately refuses to serve.
     expect(screen.getByTestId("setup-detail-path")).toBeTruthy();
@@ -658,5 +686,77 @@ describe("AC-4 — a note is not a finding", () => {
       fireEvent.click(screen.getByTestId("setup-review"));
     });
     expect(screen.getByTestId("setup-review-empty")).toBeTruthy();
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// TASK-1856 — the model is picked in the pane
+// ---------------------------------------------------------------------------
+
+const reviewBodyOf = (i = 0): Record<string, unknown> =>
+  JSON.parse(reviewCalls()[i].body ?? "{}") as Record<string, unknown>;
+
+describe("AC-7 — the picked model is the model that is asked", () => {
+  it("sends the picked deployment, not the default", async () => {
+    mount();
+    fireEvent.click(screen.getByTestId("setup-row-skill:global:session-start"));
+    await screen.findByTestId("setup-file-markdown");
+    // The picker lives beside the button, so it exists only once a file is open.
+    await screen.findByTestId("setup-model-picker");
+
+    fireEvent.change(screen.getByTestId("setup-model-picker"), {
+      target: { value: "gpt-5-mini" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("setup-review"));
+    });
+
+    expect(reviewBodyOf().model).toBe("gpt-5-mini");
+    // The default is gpt-4.1-mini. A picker that renders but sends the default
+    // is a control that lies about what it did.
+    expect(reviewBodyOf().model).not.toBe("gpt-4.1-mini");
+  });
+
+  it("CONTROL — untouched, it sends the adapter's selected default", async () => {
+    // Without this, "not the default" would also pass against a picker that
+    // sent garbage.
+    mount();
+    fireEvent.click(screen.getByTestId("setup-row-skill:global:session-start"));
+    await screen.findByTestId("setup-file-markdown");
+    await screen.findByTestId("setup-model-picker");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("setup-review"));
+    });
+    expect(reviewBodyOf().model).toBe("gpt-4.1-mini");
+  });
+});
+
+describe("AC-5/AC-6 — listing the models is free, and losing it is survivable", () => {
+  it("listing the models spends nothing on the review route", async () => {
+    mount();
+    fireEvent.click(screen.getByTestId("setup-row-skill:global:session-start"));
+    await screen.findByTestId("setup-model-picker");
+    // The listing fires on mount. If that cost money, opening the tab would be
+    // a purchase — which is the boundary this whole feature is built around.
+    expect(reviewCalls()).toHaveLength(0);
+    expect(calls.some((c) => c.url.endsWith("/claude-config/models"))).toBe(true);
+  });
+
+  it("a listing outage says so and leaves review working", async () => {
+    modelsStatus = 502;
+    modelsBody = { error: "model listing unavailable", kind: "api" };
+    mount();
+    fireEvent.click(screen.getByTestId("setup-row-skill:global:session-start"));
+    await screen.findByTestId("setup-file-markdown");
+    await screen.findByTestId("setup-models-unavailable");
+    // No picker to offer, but the button must still work on the default.
+    expect(screen.queryByTestId("setup-model-picker")).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("setup-review"));
+    });
+    expect(reviewCalls()).toHaveLength(1);
+    // No model named means "whatever the adapter is configured with".
+    expect(reviewBodyOf().model).toBeUndefined();
   });
 });
