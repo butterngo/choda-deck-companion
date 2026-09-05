@@ -446,6 +446,19 @@ describe("TASK-1831 — the pane reads the file it points at", () => {
 // TASK-1844 — edit and save
 // ---------------------------------------------------------------------------
 
+/**
+ * TASK-1859 — Save became a proposal: it renders the diff, and a second press
+ * writes. These tests assert what the WRITE does, which is unchanged, so they
+ * go through the confirmation rather than around it.
+ */
+async function saveThroughPreview(): Promise<void> {
+  fireEvent.click(screen.getByTestId("setup-save"));
+  await screen.findByTestId("setup-save-preview");
+  await act(async () => {
+    fireEvent.click(screen.getByTestId("setup-save-confirm"));
+  });
+}
+
 /** Open a file-backed row and enter edit mode. */
 async function openAndEdit(testid = "setup-row-skill:global:session-start"): Promise<void> {
   mount();
@@ -458,9 +471,7 @@ describe("AC-1 — a save carries the hash the read returned", () => {
   it("issues exactly one PUT with if-match equal to the etag", async () => {
     await openAndEdit();
     fireEvent.change(screen.getByTestId("setup-editor"), { target: { value: "# edited\n" } });
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("setup-save"));
-    });
+    await saveThroughPreview();
 
     const puts = calls.filter((c) => c.method === "PUT");
     expect(puts).toHaveLength(1);
@@ -477,9 +488,7 @@ describe("AC-2 — the file moved under you", () => {
     saveBody = { error: "file changed on disk", sha256: "cccc3333" };
     await openAndEdit();
     fireEvent.change(screen.getByTestId("setup-editor"), { target: { value: "# mine\n" } });
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("setup-save"));
-    });
+    await saveThroughPreview();
 
     expect(screen.getByTestId("setup-save-conflict")).toBeTruthy();
     // The edit survives. Discarding it would lose the reader's work to a race
@@ -495,16 +504,17 @@ describe("AC-3 — refusals are distinguishable", () => {
     saveStatus = 403;
     saveBody = { error: "outside the allowed roots" };
     await openAndEdit();
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("setup-save"));
-    });
+    // An edit is required now: TASK-1859 made the preview refuse to write
+    // zero changed lines, so an untouched buffer no longer reaches the
+    // server at all. Driving an error path needs a real change.
+    fireEvent.change(screen.getByTestId("setup-editor"), { target: { value: "# one" } });
+    await saveThroughPreview();
     const forbidden = screen.getByTestId("setup-save-error").textContent ?? "";
 
     saveStatus = 413;
     saveBody = { error: "too large" };
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("setup-save"));
-    });
+    fireEvent.change(screen.getByTestId("setup-editor"), { target: { value: "# two" } });
+    await saveThroughPreview();
     const tooBig = screen.getByTestId("setup-save-error").textContent ?? "";
 
     expect(forbidden.length).toBeGreaterThan(0);
@@ -601,9 +611,7 @@ describe("AC-1 — a review is a button, never a consequence", () => {
     // save
     fireEvent.click(screen.getByTestId("setup-edit"));
     fireEvent.change(screen.getByTestId("setup-editor"), { target: { value: "# edited\n" } });
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("setup-save"));
-    });
+    await saveThroughPreview();
 
     // re-select
     fireEvent.click(screen.getByTestId("setup-row-cmd:deploy"));
@@ -988,5 +996,97 @@ describe("AC-5 — the keyboard moves the selection", () => {
     // unable to hold a "/" — which is half of every path a reader would type.
     fireEvent.keyDown(screen.getByTestId("setup-filter"), { key: "/" });
     expect(document.activeElement).toBe(screen.getByTestId("setup-filter"));
+  });
+});
+
+
+describe("AC-3 — a finding sits on the line it names", () => {
+  it("quotes the line and marks it, and still renders an unanchored finding", async () => {
+    findings = [
+      { checkId: "utf8-bom", severity: "warning", message: "starts with a BOM", line: 1 },
+      { checkId: "skill-frontmatter", severity: "error", message: "no description", line: null },
+    ];
+    mount();
+    fireEvent.click(screen.getByTestId("setup-row-skill:global:session-start"));
+    await screen.findByTestId("setup-file-markdown");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("setup-check"));
+    });
+
+    const anchored = screen.getByTestId("setup-finding-line-utf8-bom");
+    expect(anchored.getAttribute("data-line")).toBe("1");
+    // The quoted text is the file's ACTUAL first line, not the line number
+    // repeated — a finding that names a line you must go and find is read twice.
+    expect(anchored.textContent).toContain("# session-start");
+
+    // The null case is the one an implementation quietly drops, and it is
+    // exactly the vaguest kind of problem.
+    expect(screen.getByTestId("setup-finding-unanchored-skill-frontmatter")).toBeTruthy();
+    expect(screen.queryByTestId("setup-finding-line-skill-frontmatter")).toBeNull();
+  });
+});
+
+describe("AC-6 — a save shows what it will write", () => {
+  async function openEditor(): Promise<void> {
+    mount();
+    fireEvent.click(screen.getByTestId("setup-row-skill:global:session-start"));
+    await screen.findByTestId("setup-file-markdown");
+    fireEvent.click(screen.getByTestId("setup-edit"));
+  }
+
+  it("Save previews and writes nothing; confirming writes once with the same if-match", async () => {
+    await openEditor();
+    const edited = "# session-start\n\nSet up a clean working environment.\nplus one line\n";
+    fireEvent.change(screen.getByTestId("setup-editor"), { target: { value: edited } });
+
+    fireEvent.click(screen.getByTestId("setup-save"));
+    await screen.findByTestId("setup-save-preview");
+    // The whole point: pressing Save is a proposal, not a write.
+    expect(calls.filter((c) => c.method === "PUT")).toHaveLength(0);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("setup-save-confirm"));
+    });
+    const puts = calls.filter((c) => c.method === "PUT");
+    expect(puts).toHaveLength(1);
+    // Unchanged from TASK-1844 AC-1 — the confirmation step must not have
+    // dropped the precondition on the way through.
+    expect(puts[0].ifMatch).toBe("aaaa1111");
+  });
+
+  it("Cancel writes nothing and keeps the draft", async () => {
+    await openEditor();
+    fireEvent.change(screen.getByTestId("setup-editor"), { target: { value: "# mine\n" } });
+    fireEvent.click(screen.getByTestId("setup-save"));
+    await screen.findByTestId("setup-save-preview");
+    fireEvent.click(screen.getByTestId("setup-save-cancel"));
+
+    expect(calls.filter((c) => c.method === "PUT")).toHaveLength(0);
+    // Losing the edit on cancel would punish the reader for looking.
+    expect((screen.getByTestId("setup-editor") as HTMLTextAreaElement).value).toBe("# mine\n");
+  });
+
+  it("shows only the changed lines, not the whole file", async () => {
+    await openEditor();
+    const edited = "# session-start\n\nSet up a clean working environment.\nplus one line\n";
+    fireEvent.change(screen.getByTestId("setup-editor"), { target: { value: edited } });
+    fireEvent.click(screen.getByTestId("setup-save"));
+    await screen.findByTestId("setup-save-preview");
+
+    // One appended line: one added row, no removals. A preview that showed the
+    // file as wholly rewritten is the CRLF defect surfacing in the UI, and is
+    // the reading this test exists to make impossible.
+    expect(screen.getAllByTestId("setup-diff-added")).toHaveLength(1);
+    expect(screen.queryAllByTestId("setup-diff-removed")).toHaveLength(0);
+  });
+
+  it("an unchanged buffer offers nothing to write", async () => {
+    await openEditor();
+    fireEvent.click(screen.getByTestId("setup-save"));
+    await screen.findByTestId("setup-save-preview");
+    const btn = screen.getByTestId("setup-save-confirm") as HTMLButtonElement;
+    // Writing zero changed lines still costs a PUT and a new hash for nothing.
+    expect(btn.disabled).toBe(true);
+    expect(btn.textContent).toContain("Nothing to write");
   });
 });
