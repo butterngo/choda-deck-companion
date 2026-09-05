@@ -25,7 +25,7 @@
 // min-h-0 flex-1 overflow-y-auto. See the gotcha
 // "a-detail-pane-must-not-be-the-scrolling-element".
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useClaudeConfig } from "../hooks/use-claude-config";
 import { CapabilityNote } from "../components/state/CapabilityNote";
 import { EmptyState } from "../components/state/EmptyState";
@@ -40,6 +40,7 @@ import {
   ConfigSaveRefusedError,
   ReviewFailedError,
   ReviewUnavailableError,
+  fetchReviewModels,
   reviewClaudeConfig,
   saveClaudeConfigFile,
   validateClaudeConfig,
@@ -49,6 +50,7 @@ import type {
   ClaudeRef,
   ConfigFinding,
   McpServer,
+  ReviewModel,
   ReviewNote,
 } from "../api";
 
@@ -201,6 +203,12 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
   const [reviewUnavailable, setReviewUnavailable] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState(false);
+  // TASK-1856 — the deployments this resource actually has. Loaded once, and
+  // separately from review, because listing costs nothing and reviewing costs
+  // money; tying them together would make opening the pane a purchase.
+  const [models, setModels] = useState<ReviewModel[] | null>(null);
+  const [modelsUnavailable, setModelsUnavailable] = useState(false);
+  const [picked, setPicked] = useState<string>("");
 
   if (outdatedAdapter) {
     return (
@@ -249,12 +257,35 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
    * from save, not from selection. The adapter makes the boundary structural
    * (TASK-1843 AC-5); this is the half the UI is responsible for.
    */
+  // Deliberately NOT in the row-selection handler: the list belongs to the
+  // workspace's configured provider, not to a file, and re-fetching it per row
+  // would be work nobody asked for.
+  useEffect(() => {
+    const ac = new AbortController();
+    fetchReviewModels(ac.signal)
+      .then((list) => {
+        setModels(list.models);
+        setPicked((current) => (current === "" ? list.selected : current));
+      })
+      .catch(() => {
+        // A listing outage must not disable review — the adapter still has a
+        // configured default. Saying the list is unavailable is the whole
+        // response; hiding the button would make a convenience load-bearing.
+        if (!ac.signal.aborted) setModelsUnavailable(true);
+      });
+    return () => {
+      ac.abort();
+    };
+  }, []);
+
   async function runReview(ref: ClaudeRef, text?: string): Promise<void> {
     setReviewing(true);
     setReviewError(null);
     setReviewUnavailable(false);
     try {
-      setNotes(await reviewClaudeConfig(ref, text));
+      // An empty pick means "whatever the adapter is configured with", which is
+      // not the same as a model named "" — hence undefined, not the raw value.
+      setNotes(await reviewClaudeConfig(ref, text, undefined, picked === "" ? undefined : picked));
     } catch (err) {
       setNotes(null);
       if (err instanceof ReviewUnavailableError) {
@@ -623,6 +654,30 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
                     >
                       {reviewing ? "Asking…" : "Ask the model"}
                     </button>
+                    {models !== null && models.length > 0 && (
+                      <select
+                        value={picked}
+                        onChange={(e) => setPicked(e.target.value)}
+                        disabled={reviewing}
+                        aria-label="Model"
+                        data-testid="setup-model-picker"
+                        className="rounded-md border border-zinc-200 dark:border-zinc-800 bg-transparent px-1.5 py-1 text-[11.5px] text-zinc-600 dark:text-zinc-300 disabled:opacity-40"
+                      >
+                        {models.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.id}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {modelsUnavailable && (
+                      <span
+                        data-testid="setup-models-unavailable"
+                        className="text-[11px] text-zinc-500"
+                      >
+                        Model list unavailable — using the configured default.
+                      </span>
+                    )}
                   </div>
                   {draft !== null ? (
                     /* A plain textarea, deliberately. An editor component would

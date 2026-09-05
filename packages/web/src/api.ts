@@ -1024,10 +1024,40 @@ export class ReviewFailedError extends Error {
  * can reach a provider. The UI's job is to not undo that by calling this from
  * anywhere but a button.
  */
+/** A deployment the configured resource actually has and that can answer a chat. */
+export interface ReviewModel {
+  id: string;
+  model: string;
+}
+
+export interface ReviewModelList {
+  models: ReviewModel[];
+  /** The deployment the adapter falls back to when nothing is picked. */
+  selected: string;
+}
+
+/**
+ * TASK-1856 — what the picker offers. A GET, and it reaches no provider: the
+ * adapter reads the resource's own deployment list. Calling it costs nothing,
+ * which is why it is safe to call on open while `reviewClaudeConfig` is not.
+ */
+export async function fetchReviewModels(signal?: AbortSignal): Promise<ReviewModelList> {
+  const res = await fetch(`${API_BASE}/claude-config/models`, { signal });
+  if (res.status === 501) throw new ReviewUnavailableError();
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { kind?: string; error?: string };
+    throw new ReviewFailedError(body.kind ?? "api", body.error ?? `model listing failed`);
+  }
+  const body = (await res.json()) as Partial<ReviewModelList>;
+  return { models: body.models ?? [], selected: body.selected ?? "" };
+}
+
 export async function reviewClaudeConfig(
   ref: ClaudeRef,
   text?: string,
   checkId?: string,
+  /** The deployment the reader picked. Omitted means the adapter's default. */
+  model?: string,
 ): Promise<ReviewNote[]> {
   const res = await fetch(`${API_BASE}/claude-config/review`, {
     method: "POST",
@@ -1037,6 +1067,7 @@ export async function reviewClaudeConfig(
       rel: ref.rel,
       ...(text === undefined ? {} : { text }),
       ...(checkId === undefined ? {} : { checkId }),
+      ...(model === undefined ? {} : { model }),
     }),
   });
   if (res.status === 501) throw new ReviewUnavailableError();
