@@ -1024,6 +1024,28 @@ export class ReviewFailedError extends Error {
  * can reach a provider. The UI's job is to not undo that by calling this from
  * anywhere but a button.
  */
+/** One entry's verdict from the whole-inventory sweep. */
+export interface ConfigSweepEntry {
+  ref: ClaudeRef;
+  findings: ConfigFinding[];
+  /** Why this entry could not be read, or null. A dangling symlink is normal. */
+  unreadable: string | null;
+}
+
+/**
+ * TASK-1859 — check everything, once, on open.
+ *
+ * A GET, and it reaches no provider: the checks read bytes and apply
+ * declarations. That is what makes it safe to run automatically, and it is the
+ * only reason the header can state a verdict instead of leaving the reader to
+ * discover it one click at a time.
+ */
+export async function sweepClaudeConfig(signal?: AbortSignal): Promise<ConfigSweepEntry[]> {
+  const res = await fetch(`${API_BASE}/claude-config/validate-all`, { signal });
+  if (!res.ok) throw new Error(`config sweep failed: ${res.status}`);
+  return ((await res.json()) as { results?: ConfigSweepEntry[] }).results ?? [];
+}
+
 /** A deployment the configured resource actually has and that can answer a chat. */
 export interface ReviewModel {
   id: string;

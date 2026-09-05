@@ -42,6 +42,7 @@ import {
   ReviewUnavailableError,
   fetchReviewModels,
   reviewClaudeConfig,
+  sweepClaudeConfig,
   saveClaudeConfigFile,
   validateClaudeConfig,
 } from "../api";
@@ -49,6 +50,7 @@ import type {
   ClaudeConfigResult,
   ClaudeRef,
   ConfigFinding,
+  ConfigSweepEntry,
   McpServer,
   ReviewModel,
   ReviewNote,
@@ -209,6 +211,30 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
   const [models, setModels] = useState<ReviewModel[] | null>(null);
   const [modelsUnavailable, setModelsUnavailable] = useState(false);
   const [picked, setPicked] = useState<string>("");
+  // TASK-1859 — the whole inventory's verdict, fetched once on open. Keyed by
+  // "rootId/rel" so a row can look itself up without scanning.
+  const [sweep, setSweep] = useState<Map<string, ConfigSweepEntry> | null>(null);
+  const [sweepFailed, setSweepFailed] = useState(false);
+  const [filter, setFilter] = useState("");
+
+  // Same rule as the models effect below, and it is not a style preference:
+  // hooks must run on EVERY render. Placing one after the isLoading early
+  // return shipped a crash in 0.9.7 (React #310) that took out the whole tab.
+  useEffect(() => {
+    const ac = new AbortController();
+    sweepClaudeConfig(ac.signal)
+      .then((entries) => {
+        setSweep(new Map(entries.map((e) => [`${e.ref.rootId}/${e.ref.rel}`, e])));
+      })
+      .catch(() => {
+        // The list still works without a verdict; saying so beats a silent zero,
+        // which would read as "everything is fine".
+        if (!ac.signal.aborted) setSweepFailed(true);
+      });
+    return () => {
+      ac.abort();
+    };
+  }, []);
 
   // MUST stay above the early returns below. Placed next to runReview at first,
   // which put it after `isLoading` returns a skeleton: the first render ran
@@ -364,7 +390,128 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
     }
   }
 
+  // A row's verdict, or null while the sweep is still out. Null and "clean" are
+  // deliberately different: an unchecked row must not render as a passing one.
+  const verdictFor = (row: Row): ConfigSweepEntry | null => {
+    if (sweep === null || row.ref === null) return null;
+    return sweep.get(`${row.ref.rootId}/${row.ref.rel}`) ?? null;
+  };
+
+  const worstOf = (e: ConfigSweepEntry | null): "error" | "warning" | null => {
+    if (e === null || e.findings.length === 0) return null;
+    return e.findings.some((f) => f.severity === "error") ? "error" : "warning";
+  };
+
+  const sweptRows = groups.flatMap((g) => g.rows).filter((r) => r.ref !== null);
+  const needAttention = sweptRows.filter((r) => worstOf(verdictFor(r)) !== null).length;
+  const checkedCount = sweep === null ? 0 : sweptRows.filter((r) => verdictFor(r) !== null).length;
+
+  // The rows a reader can currently see, in render order. The keyboard walks
+  // THIS list, not the unfiltered one — moving to a row that is hidden would
+  // select something invisible.
+  const visibleRows = (): Row[] => groups.flatMap((g) => g.rows).filter(matchesFilter);
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>): void {
+    const target = e.target as HTMLElement;
+    const typing =
+      target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
+
+    if (e.key === "/" && !typing) {
+      e.preventDefault();
+      (document.querySelector('[data-testid="setup-filter"]') as HTMLInputElement | null)?.focus();
+      return;
+    }
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    // Arrows inside a textarea belong to the textarea.
+    if (target.tagName === "TEXTAREA") return;
+
+    const rows = visibleRows();
+    if (rows.length === 0) return;
+    e.preventDefault();
+    const at = rows.findIndex((r) => r.key === selected?.key);
+    const next =
+      e.key === "ArrowDown"
+        ? Math.min(at + 1, rows.length - 1)
+        : Math.max(at - 1, 0);
+    const row = rows[at === -1 ? 0 : next];
+    if (row !== undefined) openRow(row);
+  }
+
+  // One place, so a row opened by the keyboard resets exactly what a row
+  // opened by the mouse resets. Two copies of this drift, and the drift is
+  // invisible: a stale draft offered against the wrong file.
+  function openRow(row: Row): void {
+    setSelected(row);
+    setCopied(false);
+    // Everything below belongs to the row that was open.
+    // Carrying a draft across rows would offer to save one
+    // file's text into another.
+    setDraft(null);
+    setSaveError(null);
+    setConflict(null);
+    setFindings(null);
+    // Cleared, never re-requested. Selecting a row must not
+    // spend money — that is the whole cost boundary.
+    setNotes(null);
+    setReviewUnavailable(false);
+    setReviewError(null);
+  }
+
+  const matchesFilter = (row: Row): boolean => {
+    const q = filter.trim().toLowerCase();
+    if (q === "") return true;
+    return row.name.toLowerCase().includes(q) || row.path.toLowerCase().includes(q);
+  };
+
   return (
+    <div
+      className="flex min-h-0 flex-1 flex-col gap-3"
+      onKeyDown={onKeyDown}
+      data-testid="setup-root"
+    >
+      {/* The verdict, stated rather than left to be discovered. */}
+      <div
+        data-testid="setup-verdict"
+        className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-zinc-200 dark:border-zinc-800 pb-2.5"
+      >
+        {sweep === null && !sweepFailed && (
+          <span data-testid="setup-verdict-running" className="text-[11.5px] text-zinc-500">
+            Checking {sweptRows.length} items…
+          </span>
+        )}
+        {sweepFailed && (
+          <span data-testid="setup-verdict-failed" className="text-[11.5px] text-zinc-500">
+            Could not check this workspace — the list below is still accurate.
+          </span>
+        )}
+        {sweep !== null && (
+          <>
+            <span data-testid="setup-verdict-checked" className="text-[11.5px] tabular-nums text-zinc-500">
+              <span className="font-medium text-zinc-900 dark:text-zinc-100">{checkedCount}</span> items
+              checked
+            </span>
+            <span
+              data-testid="setup-verdict-attention"
+              className={[
+                "text-[11.5px] tabular-nums",
+                needAttention > 0 ? "text-red-700 dark:text-red-400" : "text-zinc-500",
+              ].join(" ")}
+            >
+              <span className="font-medium">{needAttention}</span>{" "}
+              {needAttention === 1 ? "needs" : "need"} attention
+            </span>
+          </>
+        )}
+        <input
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter by name or path"
+          aria-label="Filter"
+          data-testid="setup-filter"
+          className="ml-auto w-52 rounded-md border border-zinc-200 dark:border-zinc-800 bg-transparent px-2 py-1 text-[11.5px] text-zinc-700 dark:text-zinc-200 placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+        />
+      </div>
+
     <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(320px,440px)_1fr] lg:grid-rows-[minmax(0,1fr)]">
       <div data-testid="setup-list-pane" className="min-h-0 overflow-y-auto">
         {groups.map((group) => (
@@ -385,26 +532,11 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
               </p>
             ) : (
               <ul className="space-y-0.5">
-                {group.rows.map((row) => (
+                {group.rows.filter(matchesFilter).map((row) => (
                   <li key={row.key}>
                     <button
                       type="button"
-                      onClick={() => {
-                        setSelected(row);
-                        setCopied(false);
-                        // Everything below belongs to the row that was open.
-                        // Carrying a draft across rows would offer to save one
-                        // file's text into another.
-                        setDraft(null);
-                        setSaveError(null);
-                        setConflict(null);
-                        setFindings(null);
-                        // Cleared, never re-requested. Selecting a row must not
-                        // spend money — that is the whole cost boundary.
-                        setNotes(null);
-                        setReviewUnavailable(false);
-                        setReviewError(null);
-                      }}
+                      onClick={() => openRow(row)}
                       aria-current={selected?.key === row.key ? "true" : undefined}
                       data-testid={`setup-row-${row.key}`}
                       className={[
@@ -414,7 +546,39 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
                           : "border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-800/50",
                       ].join(" ")}
                     >
+                      {/* TASK-1859 — the verdict lives in the row, so one scan
+                          top to bottom finds the work. A row the sweep has not
+                          answered for yet renders NOTHING here, because an
+                          unchecked row must not look like a passing one. */}
+                      {(() => {
+                        const worst = worstOf(verdictFor(row));
+                        if (worst === null) return null;
+                        return (
+                          <span
+                            data-testid={`setup-sev-${row.key}`}
+                            data-severity={worst}
+                            aria-hidden="true"
+                            className={[
+                              "h-1.5 w-1.5 flex-none rounded-full",
+                              worst === "error" ? "bg-red-600 dark:bg-red-400" : "bg-amber-600 dark:bg-amber-400",
+                            ].join(" ")}
+                          />
+                        );
+                      })()}
                       <span className="min-w-0 flex-1 truncate text-[13.5px]">{row.name}</span>
+                      {(() => {
+                        const entry = verdictFor(row);
+                        const first = entry?.findings[0];
+                        if (first === undefined) return null;
+                        return (
+                          <span
+                            data-testid={`setup-sev-reason-${row.key}`}
+                            className="flex-none truncate text-[10.5px] text-zinc-500"
+                          >
+                            {first.message}
+                          </span>
+                        );
+                      })()}
                       {row.server !== null && <StatusChip server={row.server} />}
                       <span
                         data-testid={`setup-origin-${row.key}`}
@@ -717,6 +881,7 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
           </>
         )}
       </div>
+    </div>
     </div>
   );
 }
