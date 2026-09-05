@@ -10,6 +10,7 @@ import { useParams, Link, useLocation } from "react-router-dom";
 import { useTask } from "../hooks/use-task";
 import { TaskDetailPanel } from "../components/TaskDetailPanel";
 import { TaskProvenance } from "../components/TaskProvenance";
+import { AcGrader } from "../components/AcGrader";
 import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { Skeleton } from "../components/state/Skeleton";
@@ -65,6 +66,10 @@ export function TaskDetailView(): React.JSX.Element {
           {task && (
             <>
               <TaskDetailPanel task={task} />
+              {/* TASK-1860 — grading is a button, never a consequence of opening
+                  the task. It reaches a provider and everything else here does
+                  not. */}
+              <AcGrader taskId={task.id} />
               <TaskProvenance
                 adrs={adrs}
                 files={files}
