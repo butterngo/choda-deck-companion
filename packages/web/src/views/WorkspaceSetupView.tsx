@@ -210,6 +210,33 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
   const [modelsUnavailable, setModelsUnavailable] = useState(false);
   const [picked, setPicked] = useState<string>("");
 
+  // MUST stay above the early returns below. Placed next to runReview at first,
+  // which put it after `isLoading` returns a skeleton: the first render ran
+  // fewer hooks than the second, and React tore the whole view down with error
+  // #310. Hooks run on every render or they run wrong.
+  //
+  // Deliberately NOT in the row-selection handler either: the list belongs to
+  // the workspace's configured provider, not to a file, so re-fetching it per
+  // row would be work nobody asked for.
+  useEffect(() => {
+    const ac = new AbortController();
+    fetchReviewModels(ac.signal)
+      .then((list) => {
+        setModels(list.models);
+        setPicked((current) => (current === "" ? list.selected : current));
+      })
+      .catch(() => {
+        // A listing outage must not disable review — the adapter still has a
+        // configured default. Saying the list is unavailable is the whole
+        // response; hiding the button would make a convenience load-bearing.
+        if (!ac.signal.aborted) setModelsUnavailable(true);
+      });
+    return () => {
+      ac.abort();
+    };
+  }, []);
+
+
   if (outdatedAdapter) {
     return (
       <CapabilityNote icon="ti-refresh-alert">
@@ -257,27 +284,6 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
    * from save, not from selection. The adapter makes the boundary structural
    * (TASK-1843 AC-5); this is the half the UI is responsible for.
    */
-  // Deliberately NOT in the row-selection handler: the list belongs to the
-  // workspace's configured provider, not to a file, and re-fetching it per row
-  // would be work nobody asked for.
-  useEffect(() => {
-    const ac = new AbortController();
-    fetchReviewModels(ac.signal)
-      .then((list) => {
-        setModels(list.models);
-        setPicked((current) => (current === "" ? list.selected : current));
-      })
-      .catch(() => {
-        // A listing outage must not disable review — the adapter still has a
-        // configured default. Saying the list is unavailable is the whole
-        // response; hiding the button would make a convenience load-bearing.
-        if (!ac.signal.aborted) setModelsUnavailable(true);
-      });
-    return () => {
-      ac.abort();
-    };
-  }, []);
-
   async function runReview(ref: ClaudeRef, text?: string): Promise<void> {
     setReviewing(true);
     setReviewError(null);
