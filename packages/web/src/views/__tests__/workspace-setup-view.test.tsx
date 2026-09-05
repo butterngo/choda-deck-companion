@@ -760,3 +760,56 @@ describe("AC-5/AC-6 — listing the models is free, and losing it is survivable"
     expect(reviewBodyOf().model).toBeUndefined();
   });
 });
+
+
+// ---------------------------------------------------------------------------
+// The hooks-order regression — shipped in 0.9.7 and caught by a person, not by
+// this file. Every test above mounts with isLoading already false, so the
+// loading → loaded transition never ran and a hook placed after the skeleton's
+// early return looked fine. In the installed app the first render returned the
+// skeleton and ran fewer hooks than the second, and React tore the view down
+// with minified error #310.
+// ---------------------------------------------------------------------------
+
+describe("the pane survives the loading → loaded transition", () => {
+  it("renders through a real loading state without a hooks-order crash", async () => {
+    const onError = vi.fn();
+    // React logs the hooks-order violation through console.error before it
+    // throws; capturing it is what makes the failure legible when this regresses.
+    const spy = vi.spyOn(console, "error").mockImplementation(onError);
+    try {
+      state.isLoading = true;
+      state.config = null;
+
+      // Rendered here rather than through mount() because this test needs the
+      // SAME tree re-rendered, not a second one mounted beside it — a fresh
+      // mount would start from the loaded state and miss the transition
+      // entirely, which is exactly how this bug got past the suite.
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      });
+      const tree = (
+        <QueryClientProvider client={client}>
+          <WorkspaceSetupView workspaceId="choda-deck-companion" />
+        </QueryClientProvider>
+      );
+      const { rerender } = render(tree);
+      expect(screen.getByText(/Reading configuration/i)).toBeTruthy();
+
+      await act(async () => {
+        state.isLoading = false;
+        state.config = CONFIG as ClaudeConfigResult;
+        rerender(tree);
+      });
+
+      // The rows render, which they cannot do if the view threw.
+      expect(screen.getByTestId("setup-row-skill:global:session-start")).toBeTruthy();
+      const hookComplaint = onError.mock.calls
+        .map((c) => String(c[0]))
+        .find((m) => /Rendered more hooks|Rules of Hooks|#310/i.test(m));
+      expect(hookComplaint).toBeUndefined();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
