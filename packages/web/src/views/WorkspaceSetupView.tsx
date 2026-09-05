@@ -33,6 +33,7 @@ import { ErrorState } from "../components/state/ErrorState";
 import { Skeleton } from "../components/state/Skeleton";
 import { CaptureMarkdown } from "../components/CaptureMarkdown";
 import { SourceView } from "../components/SourceView";
+import { changedCount, diffLines } from "../lib/line-diff";
 import { useClaudeConfigFile } from "../hooks/use-claude-config-file";
 import { isMarkdown } from "./WorkspaceDocsView";
 import {
@@ -216,6 +217,9 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
   const [sweep, setSweep] = useState<Map<string, ConfigSweepEntry> | null>(null);
   const [sweepFailed, setSweepFailed] = useState(false);
   const [filter, setFilter] = useState("");
+  // TASK-1859 — the write the reader is being asked to approve. Null means no
+  // pending confirmation; a save goes through this state and never around it.
+  const [pending, setPending] = useState<string | null>(null);
 
   // Same rule as the models effect below, and it is not a style preference:
   // hooks must run on EVERY render. Placing one after the isLoading early
@@ -664,6 +668,88 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
               {/* TASK-1844 — findings sit BESIDE the text, not in a modal: they
                   are read while editing, and a dialog that must be dismissed to
                   see the line it names is worse than no dialog. */}
+              {/* TASK-1859 — the write, shown before it happens.
+                  The claim the whole feature rests on is that a save changes
+                  only what the reader changed. Until now that was a promise
+                  checked afterwards with git diff; showing it here makes it
+                  something they approved. Nothing is written until Write. */}
+              {pending !== null && file.text !== null && file.sha256 !== null && (() => {
+                // Captured, because TypeScript does not carry the narrowing
+                // above into this closure. The preview needs BOTH the text it
+                // is diffing against and the hash the write will send, so a
+                // file still loading renders no preview rather than a wrong one.
+                const proposed: string = pending;
+                const baseText: string = file.text;
+                const baseHash: string = file.sha256;
+                const d = diffLines(baseText, proposed);
+                const n = changedCount(d);
+                return (
+                  <div
+                    data-testid="setup-save-preview"
+                    className="mt-3 rounded-md border border-zinc-300 dark:border-zinc-700"
+                  >
+                    <p className="border-b border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[11.5px] text-zinc-600 dark:text-zinc-300">
+                      {n === 0
+                        ? "Nothing changed."
+                        : `${n} ${n === 1 ? "line" : "lines"} will change.`}
+                    </p>
+                    {n > 0 && (
+                      <div className="max-h-56 overflow-y-auto font-mono text-[11px]">
+                        {d.map((l, i) => (
+                          <div
+                            key={i}
+                            data-testid={`setup-diff-${l.kind}`}
+                            className={[
+                              "flex gap-2 px-2",
+                              l.kind === "removed"
+                                ? "bg-red-50 dark:bg-red-950/40"
+                                : l.kind === "added"
+                                  ? "bg-green-50 dark:bg-green-950/40"
+                                  : "",
+                            ].join(" ")}
+                          >
+                            <span className="w-7 flex-none text-right tabular-nums text-zinc-400">
+                              {l.number ?? ""}
+                            </span>
+                            <span className="flex-none text-zinc-400">
+                              {l.kind === "removed" ? "-" : l.kind === "added" ? "+" : " "}
+                            </span>
+                            <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">
+                              {l.text === "" ? " " : l.text}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 border-t border-zinc-200 dark:border-zinc-800 px-2 py-1.5">
+                      <span className="text-[10.5px] text-zinc-400">
+                        if-match {baseHash.slice(0, 8)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPending(null)}
+                        data-testid="setup-save-cancel"
+                        className="ml-auto rounded-md border border-zinc-200 dark:border-zinc-800 px-2 py-1 text-[11.5px] text-zinc-600 dark:text-zinc-300"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={n === 0 || busy}
+                        onClick={() => {
+                          setPending(null);
+                          void save(selected, proposed);
+                        }}
+                        data-testid="setup-save-confirm"
+                        className="rounded-md border border-zinc-900 dark:border-zinc-100 bg-zinc-900 dark:bg-zinc-100 px-2 py-1 text-[11.5px] text-white dark:text-zinc-900 disabled:opacity-40"
+                      >
+                        {n === 0 ? "Nothing to write" : `Write ${n === 1 ? "1 line" : `${n} lines`}`}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {findings !== null && (
                 <div data-testid="setup-findings" className="mt-3">
                   {findings.length === 0 ? (
@@ -674,18 +760,58 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
                       Checked — nothing to report.
                     </p>
                   ) : (
-                    <ul className="space-y-1">
-                      {findings.map((f, i) => (
-                        <li
-                          key={`${f.checkId}-${i}`}
-                          data-testid={`setup-finding-${f.checkId}`}
-                          data-severity={f.severity}
-                          className="rounded border border-zinc-200 dark:border-zinc-800 px-2 py-1 text-[11.5px]"
-                        >
-                          <span className="font-medium">{f.severity}</span> · {f.message}
-                          {f.line !== null && <span className="text-zinc-400"> (line {f.line})</span>}
-                        </li>
-                      ))}
+                    <ul className="space-y-1.5">
+                      {findings.map((f, i) => {
+                        // TASK-1859 — a finding that names a line you then have
+                        // to go and find is a finding you read twice. The line
+                        // is quoted here, from the text already in memory, and
+                        // marked. An EXCERPT rather than re-rendering the whole
+                        // file: TASK-1831 deliberately sends prose through the
+                        // markdown renderer, and line-numbering that would undo
+                        // it for every file to serve the few with findings.
+                        const lines = (draft ?? file?.text ?? "").split(/\r?\n/);
+                        const src = f.line === null ? null : lines[f.line - 1];
+                        return (
+                          <li
+                            key={`${f.checkId}-${i}`}
+                            data-testid={`setup-finding-${f.checkId}`}
+                            data-severity={f.severity}
+                            className="rounded border border-zinc-200 dark:border-zinc-800 px-2 py-1 text-[11.5px]"
+                          >
+                            <span className="font-medium">{f.severity}</span> · {f.message}
+                            {f.line === null ? (
+                              // Still rendered. A check that could not place its
+                              // finding has still found something, and dropping
+                              // it would hide exactly the vaguest problems.
+                              <span
+                                data-testid={`setup-finding-unanchored-${f.checkId}`}
+                                className="text-zinc-400"
+                              >
+                                {" "}
+                                · whole file
+                              </span>
+                            ) : (
+                              <span
+                                data-testid={`setup-finding-line-${f.checkId}`}
+                                data-line={f.line}
+                                className="mt-1 flex items-start gap-2 font-mono text-[11px]"
+                              >
+                                <span className="flex-none tabular-nums text-zinc-400">{f.line}</span>
+                                <span
+                                  className={[
+                                    "min-w-0 flex-1 whitespace-pre-wrap break-words px-1",
+                                    f.severity === "error"
+                                      ? "bg-red-50 dark:bg-red-950/40"
+                                      : "bg-amber-50 dark:bg-amber-950/40",
+                                  ].join(" ")}
+                                >
+                                  {src === undefined || src === "" ? " " : src}
+                                </span>
+                              </span>
+                            )}
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
                 </div>
@@ -781,7 +907,7 @@ export function WorkspaceSetupView({ workspaceId }: { workspaceId: string }): Re
                       <>
                         <button
                           type="button"
-                          onClick={() => void save(selected, draft)}
+                          onClick={() => setPending(draft)}
                           disabled={busy}
                           data-testid="setup-save"
                           className="rounded-md border border-zinc-300 dark:border-zinc-700 px-2 py-1 text-[11.5px] font-medium disabled:opacity-40"
