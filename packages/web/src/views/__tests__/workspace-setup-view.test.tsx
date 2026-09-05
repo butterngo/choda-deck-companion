@@ -95,6 +95,8 @@ let saveStatus = 200;
 let saveBody: Record<string, unknown> = {};
 let findings: { checkId: string; severity: string; message: string; line: number | null }[] = [];
 let reviewStatus = 200;
+let sweepStatus = 200;
+let sweepResults: unknown[] = [];
 let modelsStatus = 200;
 let modelsBody: Record<string, unknown> = {
   models: [
@@ -120,6 +122,8 @@ beforeEach(() => {
   findings = [];
   reviewStatus = 200;
   reviewBody = { notes: [] };
+  sweepStatus = 200;
+  sweepResults = [];
   modelsStatus = 200;
   modelsBody = {
     models: [
@@ -140,6 +144,11 @@ beforeEach(() => {
     if (url.endsWith("/claude-config/validate")) {
       return Promise.resolve(
         new Response(JSON.stringify({ findings }), { status: 200 }),
+      );
+    }
+    if (url.endsWith("/claude-config/validate-all")) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ results: sweepResults }), { status: sweepStatus }),
       );
     }
     if (url.endsWith("/claude-config/models")) {
@@ -404,14 +413,28 @@ describe("TASK-1831 — the pane reads the file it points at", () => {
     mount();
     fireEvent.click(screen.getByTestId("setup-row-mcp:global:choda-tasks"));
     await settle();
-    expect(
-      calls
-        .filter((c) => c.url.includes("/claude-config/"))
-        // TASK-1856 — the model listing fires on mount, not on selection, and
-        // is not a file read. The claim under test is unchanged: selecting an
-        // MCP row fetches no FILE.
-        .filter((c) => !c.url.endsWith("/claude-config/models")),
-    ).toHaveLength(0);
+    // The claim is "selecting an MCP row fetches no FILE", and it is asserted by
+    // the SHAPE of a file URL rather than by excluding named routes one at a
+    // time. Written the other way it needed narrowing twice — once when
+    // /claude-config/models arrived (TASK-1856) and again for
+    // /claude-config/validate-all (TASK-1859) — and each narrowing was a chance
+    // to accidentally exclude the very call the test exists to catch.
+    const NAMED = ["models", "validate", "validate-all", "review"];
+    const fileReads = calls.filter((c) => {
+      const m = /\/claude-config\/([^/?]+)(?:\/(.+))?$/.exec(c.url);
+      return m !== null && m[2] !== undefined && !NAMED.includes(m[1]);
+    });
+    expect(fileReads).toHaveLength(0);
+
+    // CONTROL — a matcher that matches nothing would also report zero. Prove it
+    // classifies a real file URL as a file read, and the named routes as not.
+    const isFileRead = (u: string): boolean => {
+      const m = /\/claude-config\/([^/?]+)(?:\/(.+))?$/.exec(u);
+      return m !== null && m[2] !== undefined && !NAMED.includes(m[1]);
+    };
+    expect(isFileRead("http://x/claude-config/skills/session-start/SKILL.md")).toBe(true);
+    expect(isFileRead("http://x/claude-config/validate-all")).toBe(false);
+    expect(isFileRead("http://x/claude-config/models")).toBe(false);
     // The path is still shown and copyable — the row is not degraded, it simply
     // points at a document the route deliberately refuses to serve.
     expect(screen.getByTestId("setup-detail-path")).toBeTruthy();
@@ -811,5 +834,159 @@ describe("the pane survives the loading → loaded transition", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// TASK-1859 — the list is the answer
+// ---------------------------------------------------------------------------
+
+const SKILL_REF = { rootId: "skills", rel: "session-start/SKILL.md" };
+const CMD_REF = { rootId: "commands", rel: "deploy.md" };
+
+const withFinding = (ref: typeof SKILL_REF, severity = "error", message = "no description") => ({
+  ref,
+  findings: [{ checkId: "skill-frontmatter", severity, message, line: 1 }],
+  unreadable: null,
+});
+const clean = (ref: typeof SKILL_REF) => ({ ref, findings: [], unreadable: null });
+
+describe("AC-1 — the header states the verdict", () => {
+  it("the attention count equals the number of rows with findings", async () => {
+    sweepResults = [withFinding(SKILL_REF), clean(CMD_REF)];
+    mount();
+    const strip = await screen.findByTestId("setup-verdict-attention");
+    // Exactly one of the two swept refs carries a finding.
+    expect(strip.textContent).toContain("1");
+    expect(strip.textContent).toMatch(/needs? attention/);
+  });
+
+  it("CONTROL — a clean workspace reports zero, not nothing", async () => {
+    // Without this, "1" above could come from a component that always renders
+    // the number of findings it happens to have seen last.
+    sweepResults = [clean(SKILL_REF), clean(CMD_REF)];
+    mount();
+    const strip = await screen.findByTestId("setup-verdict-attention");
+    expect(strip.textContent).toContain("0");
+  });
+
+  it("a sweep failure says so rather than reporting a silent zero", async () => {
+    sweepStatus = 503;
+    mount();
+    await screen.findByTestId("setup-verdict-failed");
+    // A zero here would read as "everything is fine", which is the worst
+    // possible rendering of "I could not check".
+    expect(screen.queryByTestId("setup-verdict-attention")).toBeNull();
+  });
+});
+
+describe("AC-2 — severity lives in the row", () => {
+  it("a row with findings carries a marker and a reason; a clean row carries neither", async () => {
+    sweepResults = [withFinding(SKILL_REF), clean(CMD_REF)];
+    mount();
+    const sev = await screen.findByTestId("setup-sev-skill:global:session-start");
+    expect(sev.getAttribute("data-severity")).toBe("error");
+    expect(
+      screen.getByTestId("setup-sev-reason-skill:global:session-start").textContent,
+    ).toContain("no description");
+
+    // The discriminator: both rows rendering alike is the flat list this task
+    // exists to replace.
+    expect(screen.queryByTestId("setup-sev-cmd:deploy")).toBeNull();
+    expect(screen.queryByTestId("setup-sev-reason-cmd:deploy")).toBeNull();
+  });
+
+  it("an unchecked row renders no marker, so it cannot pass for a clean one", async () => {
+    // The sweep never resolves for this ref, which is what a slow or partial
+    // sweep looks like. Rendering nothing is correct; rendering "clean" is a lie.
+    sweepResults = [clean(CMD_REF)];
+    mount();
+    await screen.findByTestId("setup-verdict-checked");
+    expect(screen.queryByTestId("setup-sev-skill:global:session-start")).toBeNull();
+  });
+
+  it("a warning and an error are distinguishable", async () => {
+    sweepResults = [withFinding(SKILL_REF, "warning", "starts with a BOM")];
+    mount();
+    const sev = await screen.findByTestId("setup-sev-skill:global:session-start");
+    // One colour for both would make the count honest and the list useless.
+    expect(sev.getAttribute("data-severity")).toBe("warning");
+  });
+});
+
+describe("AC-4 — the sweep is free", () => {
+  it("opening the tab and letting the sweep land spends nothing", async () => {
+    sweepResults = [withFinding(SKILL_REF), clean(CMD_REF)];
+    mount();
+    await screen.findByTestId("setup-verdict-attention");
+    fireEvent.click(screen.getByTestId("setup-row-skill:global:session-start"));
+    await screen.findByTestId("setup-file-markdown");
+
+    // The whole cost boundary, restated where the sweep could have broken it.
+    expect(reviewCalls()).toHaveLength(0);
+    expect(calls.some((c) => c.url.endsWith("/claude-config/validate-all"))).toBe(true);
+  });
+});
+
+describe("AC-5 — the filter narrows the list", () => {
+  it("hides rows that do not match, and restores them when cleared", async () => {
+    mount();
+    const box = await screen.findByTestId("setup-filter");
+    fireEvent.change(box, { target: { value: "deploy" } });
+    expect(screen.queryByTestId("setup-row-skill:global:session-start")).toBeNull();
+    expect(screen.getByTestId("setup-row-cmd:deploy")).toBeTruthy();
+
+    fireEvent.change(box, { target: { value: "" } });
+    expect(screen.getByTestId("setup-row-skill:global:session-start")).toBeTruthy();
+  });
+
+  it("matches on path, not only name", async () => {
+    // A developer looking for "what lives in .claude/commands" searches the path.
+    mount();
+    const box = await screen.findByTestId("setup-filter");
+    fireEvent.change(box, { target: { value: "commands" } });
+    expect(screen.getByTestId("setup-row-cmd:deploy")).toBeTruthy();
+  });
+});
+
+
+describe("AC-5 — the keyboard moves the selection", () => {
+  it("arrows walk the visible rows and open them", async () => {
+    mount();
+    await screen.findByTestId("setup-filter");
+    const root = screen.getByTestId("setup-root");
+
+    fireEvent.keyDown(root, { key: "ArrowDown" });
+    const first = screen.getAllByRole("button").find((b) => b.getAttribute("aria-current") === "true");
+    expect(first).toBeDefined();
+
+    fireEvent.keyDown(root, { key: "ArrowDown" });
+    const second = screen.getAllByRole("button").find((b) => b.getAttribute("aria-current") === "true");
+    // Moving must actually move — a handler that selects the first row on every
+    // press would satisfy "something is selected" and nothing else.
+    expect(second?.getAttribute("data-testid")).not.toBe(first?.getAttribute("data-testid"));
+  });
+
+  it("the arrows walk the FILTERED list, not the hidden one", async () => {
+    mount();
+    const box = await screen.findByTestId("setup-filter");
+    fireEvent.change(box, { target: { value: "deploy" } });
+    fireEvent.keyDown(screen.getByTestId("setup-root"), { key: "ArrowDown" });
+    // Selecting a row the reader cannot see is worse than not moving at all.
+    const cur = screen.getAllByRole("button").find((b) => b.getAttribute("aria-current") === "true");
+    expect(cur?.getAttribute("data-testid")).toBe("setup-row-cmd:deploy");
+  });
+
+  it("slash focuses the filter, and is typable once focused", async () => {
+    mount();
+    const root = await screen.findByTestId("setup-root");
+    fireEvent.keyDown(root, { key: "/" });
+    expect(document.activeElement).toBe(screen.getByTestId("setup-filter"));
+
+    // A shortcut that swallows the key while the box has focus makes the box
+    // unable to hold a "/" — which is half of every path a reader would type.
+    fireEvent.keyDown(screen.getByTestId("setup-filter"), { key: "/" });
+    expect(document.activeElement).toBe(screen.getByTestId("setup-filter"));
   });
 });
