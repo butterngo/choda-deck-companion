@@ -26,12 +26,21 @@ import { CommitFileView } from "../components/CommitFileView";
 import { useWorkspaceCommit } from "../hooks/use-workspace-commit";
 import { historyOrigin, tasksOrigin } from "../lib/origin";
 import { WorkspaceSetupView } from "./WorkspaceSetupView";
+import { WorkspaceDockerView } from "./WorkspaceDockerView";
 import { WorkspaceDocsView } from "./WorkspaceDocsView";
 import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { Skeleton } from "../components/state/Skeleton";
 
-type Tab = "files" | "tasks" | "history" | "setup";
+// TASK-1865 — one list, used by BOTH the strip and the ?tab= parse.
+// They were two lists before, and adding a tab to the strip while forgetting
+// the parse produced a tab you could click and could not link to. Deriving
+// the type from the array means the next tab cannot drift the same way.
+const TABS = ["files", "tasks", "history", "setup", "docker"] as const;
+type Tab = (typeof TABS)[number];
+
+const isTab = (v: string | null): v is Tab =>
+  v !== null && (TABS as readonly string[]).includes(v);
 
 export function WorkspaceView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
@@ -46,9 +55,7 @@ export function WorkspaceView(): React.JSX.Element {
   const [tabParams] = useSearchParams();
   const [tab, setTab] = useState<Tab>(() => {
     const asked = tabParams.get("tab");
-    return asked === "tasks" || asked === "history" || asked === "files" || asked === "setup"
-      ? asked
-      : "files";
+    return isTab(asked) ? asked : "files";
   });
 
   const ws = useWorkspaces();
@@ -271,7 +278,7 @@ export function WorkspaceView(): React.JSX.Element {
           aria-label="workspace sections"
           className="mb-4 flex gap-1 border-b border-zinc-200 dark:border-zinc-800"
         >
-          {(["files", "tasks", "history", "setup"] as Tab[]).map((t) => (
+          {TABS.map((t) => (
             <button
               key={t}
               type="button"
@@ -292,7 +299,9 @@ export function WorkspaceView(): React.JSX.Element {
                   ? "Tasks"
                   : t === "history"
                     ? "History"
-                    : "Setup"}
+                    : t === "setup"
+                      ? "Setup"
+                      : "Docker"}
             </button>
           ))}
         </div>
@@ -314,6 +323,14 @@ export function WorkspaceView(): React.JSX.Element {
           // having to scope it.
           <div data-testid="workspace-setup-pane" className="flex min-h-0 flex-1 flex-col">
             <WorkspaceSetupView workspaceId={workspace.id} />
+          </div>
+        )}
+        {tab === "docker" && (
+          // TASK-1865 — a fifth tab for the same reason Setup was a fourth:
+          // containers shown inside a workspace are scoped to it without
+          // anything having to scope them.
+          <div data-testid="workspace-docker-pane" className="flex min-h-0 flex-1 flex-col">
+            <WorkspaceDockerView workspaceId={workspace.id} />
           </div>
         )}
         {tab === "history" && (

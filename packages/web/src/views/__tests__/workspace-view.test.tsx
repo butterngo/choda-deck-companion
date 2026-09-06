@@ -575,10 +575,33 @@ describe("TASK-1786 — the way back does not scroll away with the code", () => 
 });
 
 describe("TASK-1830 — the Setup tab joins the strip without joining the sidebar", () => {
-  it("the workspace tab strip has exactly four tabs", () => {
+  it("the workspace tab strip carries the workspace-scoped sections, in order", () => {
+    // Was "exactly four tabs". TASK-1865 added Docker as a fifth, for the
+    // same reason Setup was a fourth: something scoped to a workspace
+    // belongs inside it, not as another sidebar entry.
+    //
+    // The count was never the claim — the describe above says "without
+    // joining the sidebar", and this test has never looked at the sidebar
+    // at all. It pins the strip's CONTENTS and ORDER, which is what it can
+    // see; the sidebar half of that promise is not asserted anywhere, and
+    // saying so is better than letting the title imply it is.
     mount();
     const tabs = screen.getAllByRole("tab");
-    expect(tabs.map((t) => t.textContent)).toEqual(["Files", "Tasks", "History", "Setup"]);
+    expect(tabs.map((t) => t.textContent)).toEqual([
+      "Files",
+      "Tasks",
+      "History",
+      "Setup",
+      "Docker",
+    ]);
+  });
+
+  it("?tab=docker selects it directly, so the tab is linkable", () => {
+    mount("choda-deck-companion", "?tab=docker");
+    expect(screen.getByTestId("workspace-tab-docker").getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByTestId("workspace-docker-pane")).toBeTruthy();
   });
 
   it("?tab=setup selects it directly, so the tab is linkable", () => {
