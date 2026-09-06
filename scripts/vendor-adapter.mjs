@@ -35,7 +35,16 @@ const adapterEntry = path.join(chodaDeckRoot, 'dist', 'companion-server.cjs')
 // being embedding-flavored. choda-deck's node-linker=hoisted means these are
 // flat top-level node_modules entries, not a nested per-package tree, so each
 // one needed at runtime must be listed explicitly here.
-const VENDORED_DEPS = ['better-sqlite3', 'bindings', 'file-uri-to-path', 'sqlite-vec', 'sqlite-vec-windows-x64']
+// TASK-1878 — node-pty is vendored but deliberately NOT rebuilt; see
+// NATIVE_MODULES_TO_REBUILD below for why.
+const VENDORED_DEPS = [
+  'better-sqlite3',
+  'bindings',
+  'file-uri-to-path',
+  'sqlite-vec',
+  'sqlite-vec-windows-x64',
+  'node-pty'
+]
 
 // TASK-1743 — the embedding stack, copied with a per-package filter because
 // copying these wholesale is ~440 MB and almost none of it is reachable.
@@ -102,6 +111,23 @@ const MODEL_CACHE = path.join(
 // not by inspection — the fix is to rebuild it here, against this repo's own
 // installed `electron` version, same as english-companion's own `rebuild`
 // script (`electron-rebuild -f -w better-sqlite3`).
+// TASK-1878 — node-pty is NOT in this list, and that is a measured result,
+// not an oversight.
+//
+// The plan said it must join better-sqlite3 here: a prebuilt native binary is
+// compiled against the system Node ABI and throws ERR_DLOPEN_FAILED under
+// Electron, which ships its own Node build. That is exactly true of
+// better-sqlite3, which is a V8/NAN addon.
+//
+// node-pty is not. It builds on node-addon-api, i.e. N-API, whose whole
+// purpose is an ABI that is stable ACROSS Node versions and Electron. Its
+// shipped prebuilds/<platform>-<arch>/*.node load unchanged, and lib/utils.js
+// falls back to that directory when build/Release is absent.
+//
+// Rebuilding it is also impossible rather than merely unnecessary: the
+// published tarball omits deps/winpty/src/shared/GetCommitHash.bat, so gyp
+// dies at configure. Discovered by running this script, which is the only
+// reason the wrong plan did not ship.
 const NATIVE_MODULES_TO_REBUILD = ['better-sqlite3']
 
 const vendorDir = path.join(repoRoot, 'electron', 'vendor')
