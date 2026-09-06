@@ -18,10 +18,10 @@ import {
   DockerUnavailableError,
   actOnContainer,
   fetchDockerContainers,
-  fetchDockerLogs,
 } from "../api";
 import type { DockerAction, DockerContainer } from "../api";
 import { CapabilityNote } from "../components/state/CapabilityNote";
+import { DockerLogs } from "../components/DockerLogs";
 import { ErrorState } from "../components/state/ErrorState";
 import { Skeleton } from "../components/state/Skeleton";
 
@@ -31,9 +31,7 @@ export function WorkspaceDockerView({ workspaceId }: { workspaceId: string }): R
   const [all, setAll] = useState<DockerContainer[] | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [logs, setLogs] = useState<string[] | null>(null);
-  const [logsBusy, setLogsBusy] = useState(false);
+  const [open, setOpen] = useState<DockerContainer | null>(null);
   // TASK-1866 — the pending confirmation. Null means nothing is being asked.
   // A write with no confirm breaks the standing rule for this app
   // (companion-write-actions-must-confirm-surface-result-or-error-never-silent),
@@ -87,19 +85,6 @@ export function WorkspaceDockerView({ workspaceId }: { workspaceId: string }): R
     }
   }
 
-  async function openLogs(c: DockerContainer): Promise<void> {
-    setOpenId(c.id);
-    setLogs(null);
-    setLogsBusy(true);
-    try {
-      setLogs(await fetchDockerLogs(c.id));
-    } catch {
-      setLogs([]);
-    } finally {
-      setLogsBusy(false);
-    }
-  }
-
   if (unavailable) {
     return (
       <CapabilityNote icon="ti-brand-docker">
@@ -147,7 +132,7 @@ export function WorkspaceDockerView({ workspaceId }: { workspaceId: string }): R
       </button>
       <button
         type="button"
-        onClick={() => void openLogs(c)}
+        onClick={() => setOpen(c)}
         data-testid={`docker-logs-${c.name}`}
         className="flex-none rounded-md border border-zinc-200 dark:border-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
       >
@@ -234,24 +219,10 @@ export function WorkspaceDockerView({ workspaceId }: { workspaceId: string }): R
         </section>
       )}
 
-      {openId !== null && (
-        <section data-testid="docker-logs-pane" className="mt-2 min-h-0">
-          <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-zinc-400">
-            Logs · last 200 lines
-          </p>
-          {logsBusy && <Skeleton shape="list" label="Reading logs…" />}
-          {!logsBusy && logs !== null && logs.length === 0 && (
-            <p data-testid="docker-logs-empty" className="text-[11.5px] text-zinc-500">
-              This container has written nothing.
-            </p>
-          )}
-          {!logsBusy && logs !== null && logs.length > 0 && (
-            <pre className="max-h-72 overflow-auto rounded-md border border-zinc-200 dark:border-zinc-800 p-2 font-mono text-[11px] leading-relaxed">
-              {logs.join("\n")}
-            </pre>
-          )}
-        </section>
+      {open !== null && (
+        <DockerLogs containerId={open.id} containerName={open.name} />
       )}
+
     </div>
   );
 }
