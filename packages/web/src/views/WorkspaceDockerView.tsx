@@ -13,8 +13,14 @@
 //     The distinction the Setup verdict strip exists to make.
 
 import { useEffect, useState } from "react";
-import { DockerUnavailableError, fetchDockerContainers, fetchDockerLogs } from "../api";
-import type { DockerContainer } from "../api";
+import {
+  DockerStillRunningError,
+  DockerUnavailableError,
+  actOnContainer,
+  fetchDockerContainers,
+  fetchDockerLogs,
+} from "../api";
+import type { DockerAction, DockerContainer } from "../api";
 import { CapabilityNote } from "../components/state/CapabilityNote";
 import { ErrorState } from "../components/state/ErrorState";
 import { Skeleton } from "../components/state/Skeleton";
@@ -28,6 +34,15 @@ export function WorkspaceDockerView({ workspaceId }: { workspaceId: string }): R
   const [openId, setOpenId] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[] | null>(null);
   const [logsBusy, setLogsBusy] = useState(false);
+  // TASK-1866 — the pending confirmation. Null means nothing is being asked.
+  // A write with no confirm breaks the standing rule for this app
+  // (companion-write-actions-must-confirm-surface-result-or-error-never-silent),
+  // and stopping a container someone is using is exactly the case it is for.
+  const [pending, setPending] = useState<{ c: DockerContainer; action: DockerAction } | null>(
+    null,
+  );
+  const [acting, setActing] = useState(false);
+  const [actionNote, setActionNote] = useState<string | null>(null);
 
   // Above every early return. Placing a hook below one shipped React #310 in
   // 0.9.7 and blanked a whole tab.
@@ -44,6 +59,33 @@ export function WorkspaceDockerView({ workspaceId }: { workspaceId: string }): R
       ac.abort();
     };
   }, []);
+
+  async function confirmAction(): Promise<void> {
+    if (pending === null) return;
+    const { c, action } = pending;
+    setPending(null);
+    setActing(true);
+    setActionNote(null);
+    try {
+      const out = await actOnContainer(c.id, action);
+      // The state comes from the daemon, read back by the adapter after the
+      // command exited. The row shows what IS, never what was asked for.
+      setAll((prev) =>
+        prev === null ? prev : prev.map((x) => (x.id === out.id ? { ...x, state: out.state } : x)),
+      );
+      setActionNote(`${c.name} is now ${out.state}.`);
+    } catch (err) {
+      if (err instanceof DockerStillRunningError) {
+        setActionNote(`${c.name} did not stop in time. It may still be shutting down.`);
+      } else if (err instanceof DockerUnavailableError) {
+        setUnavailable(true);
+      } else {
+        setActionNote(`Could not ${action} ${c.name}.`);
+      }
+    } finally {
+      setActing(false);
+    }
+  }
 
   async function openLogs(c: DockerContainer): Promise<void> {
     setOpenId(c.id);
@@ -96,6 +138,15 @@ export function WorkspaceDockerView({ workspaceId }: { workspaceId: string }): R
       <span className="flex-none text-[11px] text-zinc-500">{c.status}</span>
       <button
         type="button"
+        onClick={() => setPending({ c, action: RUNNING(c) ? "stop" : "start" })}
+        disabled={acting}
+        data-testid={`docker-act-${c.name}`}
+        className="flex-none rounded-md border border-amber-300 dark:border-amber-800 px-1.5 py-0.5 text-[11px] text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 disabled:opacity-40"
+      >
+        {RUNNING(c) ? "Stop" : "Start"}
+      </button>
+      <button
+        type="button"
         onClick={() => void openLogs(c)}
         data-testid={`docker-logs-${c.name}`}
         className="flex-none rounded-md border border-zinc-200 dark:border-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
@@ -112,6 +163,40 @@ export function WorkspaceDockerView({ workspaceId }: { workspaceId: string }): R
         {mine.length === 1 ? "container" : "containers"} for this workspace
         {mine.length > 0 && <> · {running} running</>}
       </p>
+
+      {pending !== null && (
+        <div
+          data-testid="docker-confirm"
+          className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 dark:border-amber-800 px-2.5 py-2 text-[12.5px]"
+        >
+          <span>
+            {pending.action === "stop" ? "Stop" : "Start"}{" "}
+            <span className="font-medium">{pending.c.name}</span>?
+          </span>
+          <button
+            type="button"
+            onClick={() => setPending(null)}
+            data-testid="docker-confirm-cancel"
+            className="ml-auto rounded-md border border-zinc-200 dark:border-zinc-800 px-2 py-1 text-[11.5px] text-zinc-600 dark:text-zinc-300"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void confirmAction()}
+            data-testid="docker-confirm-go"
+            className="rounded-md border border-zinc-900 dark:border-zinc-100 bg-zinc-900 dark:bg-zinc-100 px-2 py-1 text-[11.5px] text-white dark:text-zinc-900"
+          >
+            {pending.action === "stop" ? "Stop it" : "Start it"}
+          </button>
+        </div>
+      )}
+
+      {actionNote !== null && (
+        <p data-testid="docker-action-note" className="text-[11.5px] text-zinc-600 dark:text-zinc-300">
+          {actionNote}
+        </p>
+      )}
 
       {mine.length === 0 ? (
         // Stated, not empty. "No containers" and "we did not look" must not

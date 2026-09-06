@@ -1179,3 +1179,43 @@ export async function fetchDockerLogs(id: string, tail = 200): Promise<string[]>
   if (!res.ok) throw new Error(`docker logs failed: ${res.status}`);
   return ((await res.json()) as { lines?: string[] }).lines ?? [];
 }
+
+export type DockerAction = "start" | "stop" | "restart";
+
+/** The action ran but the container did not reach the state asked for. */
+export class DockerStillRunningError extends Error {
+  constructor(readonly tookMs: number) {
+    super("still running");
+    this.name = "DockerStillRunningError";
+  }
+}
+
+/**
+ * TASK-1866 — start, stop or restart one container.
+ *
+ * The only call in this client that changes the machine, and it is reached from
+ * exactly one place: a confirmation the reader accepted. The returned `state` is
+ * read back from the daemon by the adapter, so it is what IS rather than what
+ * was asked for.
+ */
+export async function actOnContainer(
+  id: string,
+  action: DockerAction,
+  timeoutSeconds?: number,
+): Promise<{ id: string; state: string; tookMs: number }> {
+  const res = await fetch(
+    `${API_BASE}/docker/containers/${encodeURIComponent(id)}/${action}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(timeoutSeconds === undefined ? {} : { timeoutSeconds }),
+    },
+  );
+  if (res.status === 501) throw new DockerUnavailableError();
+  if (res.status === 409) {
+    const b = (await res.json().catch(() => ({}))) as { tookMs?: number };
+    throw new DockerStillRunningError(b.tookMs ?? 0);
+  }
+  if (!res.ok) throw new Error(`docker ${action} failed: ${res.status}`);
+  return (await res.json()) as { id: string; state: string; tookMs: number };
+}
