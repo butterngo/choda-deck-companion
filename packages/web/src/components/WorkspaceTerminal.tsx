@@ -48,6 +48,17 @@ export function WorkspaceTerminal({
   const [phase, setPhase] = useState<Phase>("connecting");
   const [exitCode, setExitCode] = useState<number | null>(null);
   const [attempt, setAttempt] = useState(0);
+  // TASK-1889. Note what this is NOT keyed into: the effect below builds the
+  // terminal and the socket, and `full` is deliberately absent from its
+  // dependencies. Remounting the host would tear xterm down and close the
+  // socket, which by TASK-1878 AC-3 kills the PTY — going fullscreen would end
+  // the shell you went fullscreen to look at.
+  const [full, setFull] = useState(false);
+  const fullBtn = useRef<HTMLButtonElement | null>(null);
+  // Set when the overlay is dismissed, consumed AFTER the re-render. Calling
+  // focus() inside the handler targets the tree React is about to re-render,
+  // so the focus lands nowhere — the bug shipped in 0.9.7.
+  const restoreFocus = useRef(false);
 
   useEffect(() => {
     const el = host.current;
@@ -148,13 +159,87 @@ export function WorkspaceTerminal({
     if (term.current) term.current.options.disableStdin = phase === "exited" || phase === "failed";
   }, [phase]);
 
+  // TASK-1889 AC-1 — the CSS is not the feature; telling the shell is.
+  //
+  // A pane that grows without a size frame leaves vim redrawing inside the old
+  // grid on a screen twice that size, which reads as a broken terminal rather
+  // than a missing one. Both directions re-measure: leaving fullscreen has to
+  // hand the small grid back just as surely.
+  useEffect(() => {
+    const f = fit.current;
+    const socket = ws.current;
+    if (!f || !socket) return;
+    f.fit();
+    const dims = f.proposeDimensions();
+    if (dims && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ t: "size", cols: dims.cols, rows: dims.rows }));
+    }
+    term.current?.focus();
+  }, [full]);
+
+  // The chord, and NOT Escape.
+  //
+  // DockerLogs leaves fullscreen on Escape, and for a log pane that is right —
+  // it has no other use for the key. A terminal does: Escape leaves insert mode
+  // in vim, cancels a completion, dismisses a prompt. Single keys reaching the
+  // program is the whole reason a PTY was chosen over a command runner, so
+  // Escape goes down the socket untouched and the overlay uses a chord no shell
+  // claims.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.ctrlKey && e.shiftKey && (e.key === "F" || e.key === "f")) {
+        e.preventDefault();
+        // Both directions: a chord that only enters strands a reader with no
+        // pointer inside the overlay.
+        setFull((v) => {
+          if (v) restoreFocus.current = true;
+          return !v;
+        });
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Consumed after the commit, never inside the handler.
+  useEffect(() => {
+    if (full || !restoreFocus.current) return;
+    restoreFocus.current = false;
+    fullBtn.current?.focus();
+  }, [full]);
+
   return (
-    <section data-testid="workspace-terminal" className="mt-2 flex min-h-0 flex-col gap-1.5">
+    <section
+      data-testid="workspace-terminal"
+      data-full={full ? "true" : "false"}
+      // One element, one className that changes. Rendering the overlay as a
+      // DIFFERENT element would remount the host below it and take the shell
+      // with it (AC-3).
+      className={
+        full
+          ? "fixed inset-0 z-50 flex min-h-0 flex-col gap-1.5 overflow-hidden bg-white p-4 dark:bg-zinc-950"
+          : "mt-2 flex min-h-0 flex-col gap-1.5"
+      }
+    >
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">
           Terminal
         </span>
         <code className="font-mono text-[11.5px] text-zinc-500">{label}</code>
+        <button
+          type="button"
+          ref={fullBtn}
+          data-testid="term-fullscreen"
+          onClick={() => {
+            if (full) restoreFocus.current = true;
+            setFull((v) => !v);
+          }}
+          className="rounded-md border border-zinc-200 dark:border-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-600 dark:text-zinc-300"
+        >
+          {/* The chord is named, because Escape is the key a reader will try
+              first and it deliberately does not work here. */}
+          {full ? "Exit fullscreen (Ctrl+Shift+F)" : "Fullscreen"}
+        </button>
         {phase === "connecting" && (
           <span data-testid="term-connecting" className="text-[11px] text-zinc-500">
             Connecting…
@@ -192,7 +277,11 @@ export function WorkspaceTerminal({
       <div
         ref={host}
         data-testid="term-host"
-        className="min-h-[18rem] overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800"
+        className={
+          full
+            ? "min-h-0 flex-1 overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800"
+            : "min-h-[18rem] overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800"
+        }
       />
     </section>
   );

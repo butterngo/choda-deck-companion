@@ -24,6 +24,7 @@ let proposed: { cols: number; rows: number } | undefined = { cols: 137, rows: 41
 
 interface FakeTerm {
   written: string[];
+  focused: boolean;
   options: { disableStdin?: boolean };
   emitData: (d: string) => void;
   disposed: boolean;
@@ -37,6 +38,7 @@ vi.mock("@xterm/xterm", () => {
     cols = 80;
     rows = 24;
     disposed = false;
+    focused = false;
     private dataCb: ((d: string) => void) | null = null;
     constructor() {
       terms.push(this as unknown as FakeTerm);
@@ -53,6 +55,9 @@ vi.mock("@xterm/xterm", () => {
     /** Stand in for a keypress reaching xterm. */
     emitData(d: string): void {
       this.dataCb?.(d);
+    }
+    focus(): void {
+      this.focused = true;
     }
     dispose(): void {
       this.disposed = true;
@@ -304,5 +309,142 @@ describe("AC-4 — the socket does not outlive the view", () => {
     // is the half that makes that fire. Left open, a shell is left behind.
     expect(s.closed).toBe(true);
     expect(t.disposed).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TASK-1889 — fullscreen, and the one place it must NOT copy DockerLogs.
+
+describe("TASK-1889 AC-1 — the shell is told the new size, both ways", () => {
+  it("entering fullscreen sends a size frame carrying the NEW grid", async () => {
+    mount();
+    await opened();
+    const before = sock().framesOf("size").length;
+
+    proposed = { cols: 240, rows: 70 };
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("term-fullscreen"));
+    });
+
+    const sizes = sock().framesOf("size");
+    expect(sizes.length).toBe(before + 1);
+    // The NUMBERS. A fullscreen that only changes CSS passes "the pane is
+    // bigger" and leaves vim redrawing inside the old grid.
+    expect(sizes.at(-1)?.cols).toBe(240);
+    expect(sizes.at(-1)?.rows).toBe(70);
+  });
+
+  it("leaving fullscreen hands the SMALL grid back", async () => {
+    mount();
+    await opened();
+    proposed = { cols: 240, rows: 70 };
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("term-fullscreen"));
+    });
+
+    proposed = { cols: 137, rows: 41 };
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("term-fullscreen"));
+    });
+    // Both directions. Only re-measuring on the way in leaves the shell
+    // believing it still has a full screen it no longer has.
+    expect(sock().framesOf("size").at(-1)?.cols).toBe(137);
+  });
+});
+
+describe("TASK-1889 AC-2 — Escape belongs to the shell, not to the overlay", () => {
+  it("Escape does NOT leave fullscreen", async () => {
+    mount();
+    await opened();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("term-fullscreen"));
+    });
+    expect(screen.getByTestId("workspace-terminal").getAttribute("data-full")).toBe("true");
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "Escape" });
+    });
+    // DockerLogs closes here, deliberately. A terminal must not: this is the
+    // key that leaves insert mode in vim.
+    expect(screen.getByTestId("workspace-terminal").getAttribute("data-full")).toBe("true");
+  });
+
+  it("Escape reaches the shell as an in frame, unaltered", async () => {
+    mount();
+    await opened();
+    await act(async () => {
+      term().emitData("\x1b");
+    });
+    // The other half: not eating it is worthless if it never arrives.
+    expect(sock().framesOf("in").map((f) => f.d)).toEqual(["\x1b"]);
+  });
+});
+
+describe("TASK-1889 AC-3 — the shell survives the toggle", () => {
+  it("does not recreate the socket or dispose the terminal", async () => {
+    mount();
+    await opened();
+    const socketBefore = sock();
+    const termBefore = term();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("term-fullscreen"));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("term-fullscreen"));
+    });
+
+    // Identity, not existence: a remount would produce a NEW socket that also
+    // "exists", while the old one closed and took the PTY with it.
+    expect(sock()).toBe(socketBefore);
+    expect(term()).toBe(termBefore);
+    expect(socketBefore.closed).toBe(false);
+    expect(termBefore.disposed).toBe(false);
+    // And no second start frame — the shell was never restarted.
+    expect(sock().framesOf("start").length).toBe(1);
+  });
+});
+
+describe("TASK-1889 AC-4 — the chord works both ways", () => {
+  it("Ctrl+Shift+F enters and leaves", async () => {
+    mount();
+    await opened();
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "F", ctrlKey: true, shiftKey: true });
+    });
+    expect(screen.getByTestId("workspace-terminal").getAttribute("data-full")).toBe("true");
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "F", ctrlKey: true, shiftKey: true });
+    });
+    // A chord that only enters strands a reader who has no pointer.
+    expect(screen.getByTestId("workspace-terminal").getAttribute("data-full")).toBe("false");
+  });
+
+  it("a bare f does NOT toggle — it is a character the shell wants", async () => {
+    mount();
+    await opened();
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "f" });
+    });
+    expect(screen.getByTestId("workspace-terminal").getAttribute("data-full")).toBe("false");
+  });
+});
+
+describe("TASK-1889 AC-5 — focus comes back to the button", () => {
+  it("restores focus on leaving, after the commit", async () => {
+    mount();
+    await opened();
+    const btn = screen.getByTestId("term-fullscreen");
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("term-fullscreen"));
+    });
+    // Asserted against document.activeElement, not against a handler having
+    // run: 0.9.7 called focus() inside the handler, which targeted the tree
+    // React was about to re-render, and focus landed nowhere.
+    expect(document.activeElement).toBe(screen.getByTestId("term-fullscreen"));
   });
 });
