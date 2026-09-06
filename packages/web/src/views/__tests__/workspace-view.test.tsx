@@ -132,6 +132,15 @@ vi.mock("../WorkspaceSetupView", () => ({
     <div data-testid="setup-view-stub">{workspaceId}</div>
   ),
 }));
+// TASK-1879 — the terminal owns xterm, which reads window.matchMedia and a
+// canvas jsdom does not have. Stubbed here for the FOURTH time this pattern
+// has appeared in this file: a component gaining a dependency reddens a fake
+// that never named it. Its own file drives the real behaviour.
+vi.mock("../../components/WorkspaceTerminal", () => ({
+  WorkspaceTerminal: ({ cwd }: { cwd?: string }) => (
+    <div data-testid="terminal-view-stub">{cwd}</div>
+  ),
+}));
 vi.mock("../WorkspaceDocsView", () => ({
   WorkspaceDocsView: ({ workspaceId }: { workspaceId?: string }) => (
     <div data-testid="docs-view-stub">{workspaceId}</div>
@@ -576,9 +585,10 @@ describe("TASK-1786 — the way back does not scroll away with the code", () => 
 
 describe("TASK-1830 — the Setup tab joins the strip without joining the sidebar", () => {
   it("the workspace tab strip carries the workspace-scoped sections, in order", () => {
-    // Was "exactly four tabs". TASK-1865 added Docker as a fifth, for the
-    // same reason Setup was a fourth: something scoped to a workspace
-    // belongs inside it, not as another sidebar entry.
+    // Was "exactly four tabs". TASK-1865 added Docker as a fifth and
+    // TASK-1879 Terminal as a sixth, for the same reason Setup was a
+    // fourth: something scoped to a workspace belongs inside it, not as
+    // another sidebar entry. The shell starts in this workspace's cwd.
     //
     // The count was never the claim — the describe above says "without
     // joining the sidebar", and this test has never looked at the sidebar
@@ -593,6 +603,7 @@ describe("TASK-1830 — the Setup tab joins the strip without joining the sideba
       "History",
       "Setup",
       "Docker",
+      "Terminal",
     ]);
   });
 
@@ -615,5 +626,17 @@ describe("TASK-1830 — the Setup tab joins the strip without joining the sideba
     // still pass.
     mount("choda-deck-companion", "?tab=nonsense");
     expect(screen.getByTestId("workspace-tab-files").getAttribute("aria-selected")).toBe("true");
+  });
+});
+
+describe("TASK-1879 — the Terminal tab is linkable like its siblings", () => {
+  it("?tab=terminal selects it directly and renders the pane", () => {
+    // The strip and the ?tab= parse derive from one TABS const (TASK-1865's
+    // fix); this is the assertion that keeps them from drifting apart again.
+    mount("choda-deck-companion", "?tab=terminal");
+    expect(screen.getByTestId("workspace-tab-terminal").getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByTestId("workspace-terminal-pane")).toBeTruthy();
   });
 });

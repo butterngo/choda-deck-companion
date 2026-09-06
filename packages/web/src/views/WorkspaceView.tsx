@@ -27,6 +27,7 @@ import { useWorkspaceCommit } from "../hooks/use-workspace-commit";
 import { historyOrigin, tasksOrigin } from "../lib/origin";
 import { WorkspaceSetupView } from "./WorkspaceSetupView";
 import { WorkspaceDockerView } from "./WorkspaceDockerView";
+import { WorkspaceTerminal } from "../components/WorkspaceTerminal";
 import { WorkspaceDocsView } from "./WorkspaceDocsView";
 import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
@@ -36,8 +37,21 @@ import { Skeleton } from "../components/state/Skeleton";
 // They were two lists before, and adding a tab to the strip while forgetting
 // the parse produced a tab you could click and could not link to. Deriving
 // the type from the array means the next tab cannot drift the same way.
-const TABS = ["files", "tasks", "history", "setup", "docker"] as const;
+const TABS = ["files", "tasks", "history", "setup", "docker", "terminal"] as const;
 type Tab = (typeof TABS)[number];
+
+// One entry per tab, and the Record type makes that a compile error rather
+// than a rendering bug. The chain of ternaries this replaced ended in a bare
+// fallback, so adding a sixth tab silently labelled it "Docker" — the same
+// two-lists drift TASK-1865 fixed for the ?tab= parse, recurring in the label.
+const TAB_LABELS: Record<Tab, string> = {
+  files: "Files",
+  tasks: "Tasks",
+  history: "History",
+  setup: "Setup",
+  docker: "Docker",
+  terminal: "Terminal"
+};
 
 const isTab = (v: string | null): v is Tab =>
   v !== null && (TABS as readonly string[]).includes(v);
@@ -293,15 +307,7 @@ export function WorkspaceView(): React.JSX.Element {
                   : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200",
               ].join(" ")}
             >
-              {t === "files"
-                ? "Files"
-                : t === "tasks"
-                  ? "Tasks"
-                  : t === "history"
-                    ? "History"
-                    : t === "setup"
-                      ? "Setup"
-                      : "Docker"}
+              {TAB_LABELS[t]}
             </button>
           ))}
         </div>
@@ -331,6 +337,14 @@ export function WorkspaceView(): React.JSX.Element {
           // anything having to scope them.
           <div data-testid="workspace-docker-pane" className="flex min-h-0 flex-1 flex-col">
             <WorkspaceDockerView workspaceId={workspace.id} />
+          </div>
+        )}
+        {tab === "terminal" && (
+          // TASK-1879 — a sixth tab, for the same reason Docker was a fifth:
+          // the shell starts in THIS workspace's cwd, so it belongs where the
+          // workspace already is rather than in a global sidebar.
+          <div data-testid="workspace-terminal-pane" className="flex min-h-0 flex-1 flex-col">
+            <WorkspaceTerminal cwd={workspace.cwd} label={workspace.label} />
           </div>
         )}
         {tab === "history" && (
