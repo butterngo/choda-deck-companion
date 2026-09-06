@@ -113,8 +113,25 @@ describe("SourceView — symbol click targets", () => {
   });
 
   // AC-7 — the a11y promise, measured rather than asserted in prose.
+  //
+  // INBOX-1946 — this test renders and highlights the file TWICE, and that is
+  // not incidental: the second render carries the click targets and the first
+  // is the control it is compared against. Measured in isolation, 200 lines
+  // cost 1464 ms and 100 cost 888 ms.
+  //
+  // It failed once at 9655 ms inside a full `pnpm test` — ~6.6x its isolated
+  // cost, which is contention rather than a hang. Two changes, and neither
+  // alone was enough:
+  //
+  //   * 200 lines -> 100. Free, because the assertion is on the SYMBOL count
+  //     (>200) and 100 lines of this shape still produce well over 200. At 60
+  //     lines that assertion fails, which is how we know the symbol threshold
+  //     is what binds and not the line count.
+  //   * An explicit timeout. 888 ms under the same contention is still ~5.9 s,
+  //     past the 5 s default. 15 s is headroom on a slow machine while staying
+  //     far below anything that would hide a real hang.
   it("adds no focusable element to a long file", async () => {
-    const long = Array.from({ length: 200 }, (_, i) => `public class Type${i} { }`).join("\n");
+    const long = Array.from({ length: 100 }, (_, i) => `public class Type${i} { }`).join("\n");
     const focusable = "a[href], button, input, select, textarea, [tabindex]";
 
     const { unmount } = render(<SourceView path="Big.cs" code={long} />);
@@ -128,5 +145,5 @@ describe("SourceView — symbol click targets", () => {
     // And the file really did get click targets — otherwise the count above is
     // equal for the boring reason.
     expect(symbols().length).toBeGreaterThan(200);
-  });
+  }, 15_000);
 });
