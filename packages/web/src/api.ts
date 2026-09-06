@@ -1303,3 +1303,55 @@ export async function runContainer(
   }
   return (await res.json()) as { id: string; name: string; state: string };
 }
+
+export interface ContainerFile {
+  /** The line exactly as the container's own ls printed it. */
+  raw: string;
+  name: string;
+  mode: string;
+  owner: string;
+  group: string;
+  size: string;
+}
+
+/** The command exited non-zero — usually no such path. */
+export class ContainerPathError extends Error {
+  constructor(readonly path: string) {
+    super(`no such path: ${path}`);
+    this.name = "ContainerPathError";
+  }
+}
+
+/** The file is too big, or is not text. Both are refusals, not failures. */
+export class ContainerFileUnreadable extends Error {
+  constructor(readonly why: "too-large" | "not-text") {
+    super(why);
+    this.name = "ContainerFileUnreadable";
+  }
+}
+
+async function execGet(kind: "ls" | "cat", id: string, path: string): Promise<Response> {
+  return fetch(
+    `${API_BASE}/docker/exec/${kind}?id=${encodeURIComponent(id)}&path=${encodeURIComponent(path)}`,
+  );
+}
+
+/** TASK-1875 — list a directory inside a running container. */
+export async function listContainerPath(id: string, path: string): Promise<ContainerFile[]> {
+  const res = await execGet("ls", id, path);
+  if (res.status === 501) throw new DockerUnavailableError();
+  if (res.status === 422) throw new ContainerPathError(path);
+  if (!res.ok) throw new Error(`ls failed: ${res.status}`);
+  return ((await res.json()) as { entries?: ContainerFile[] }).entries ?? [];
+}
+
+/** TASK-1875 — read a file inside a running container. */
+export async function readContainerFile(id: string, path: string): Promise<string> {
+  const res = await execGet("cat", id, path);
+  if (res.status === 501) throw new DockerUnavailableError();
+  if (res.status === 422) throw new ContainerPathError(path);
+  if (res.status === 413) throw new ContainerFileUnreadable("too-large");
+  if (res.status === 415) throw new ContainerFileUnreadable("not-text");
+  if (!res.ok) throw new Error(`cat failed: ${res.status}`);
+  return ((await res.json()) as { text?: string }).text ?? "";
+}
