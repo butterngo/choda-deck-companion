@@ -1264,3 +1264,42 @@ export async function pruneDockerImages(): Promise<{ removed: number; freed: str
   if (!res.ok) throw new Error(`prune failed: ${res.status}`);
   return (await res.json()) as { removed: number; freed: string };
 }
+
+export interface RunPort {
+  host: number;
+  container: number;
+}
+
+/** The name is already used by another container. */
+export class ContainerNameTakenError extends Error {
+  constructor() {
+    super("name taken");
+    this.name = "ContainerNameTakenError";
+  }
+}
+
+/**
+ * TASK-1874 — create a container from an image the daemon already holds.
+ *
+ * The body carries exactly three fields. The adapter refuses any other, so a
+ * future caller cannot smuggle volumes past a permissive parser — and this
+ * client does not offer them either.
+ */
+export async function runContainer(
+  imageId: string,
+  name: string,
+  ports: RunPort[],
+): Promise<{ id: string; name: string; state: string }> {
+  const res = await fetch(`${API_BASE}/docker/run`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ imageId, name, ports }),
+  });
+  if (res.status === 501) throw new DockerUnavailableError();
+  if (res.status === 409) throw new ContainerNameTakenError();
+  if (!res.ok) {
+    const b = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(b.error ?? `run failed: ${res.status}`);
+  }
+  return (await res.json()) as { id: string; name: string; state: string };
+}
