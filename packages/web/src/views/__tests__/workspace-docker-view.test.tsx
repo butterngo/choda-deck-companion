@@ -8,6 +8,8 @@ const calls: string[] = [];
 let containersStatus = 200;
 let containersBody: unknown = { containers: [] };
 let logsBody: unknown = { lines: [] };
+let actionStatus = 200;
+let actionBody: unknown = { id: "x", state: "exited", tookMs: 10 };
 
 const container = (
   name: string,
@@ -30,9 +32,16 @@ beforeEach(() => {
   containersStatus = 200;
   containersBody = { containers: [] };
   logsBody = { lines: [] };
+  actionStatus = 200;
+  actionBody = { id: "x", state: "exited", tookMs: 10 };
   vi.stubGlobal("fetch", (input: RequestInfo) => {
     const url = String(input);
     calls.push(url);
+    if (/\/docker\/containers\/[^/]+\/(start|stop|restart)$/.test(url)) {
+      return Promise.resolve(
+        new Response(JSON.stringify(actionBody), { status: actionStatus }),
+      );
+    }
     if (url.includes("/docker/logs")) {
       return Promise.resolve(new Response(JSON.stringify(logsBody), { status: 200 }));
     }
@@ -150,5 +159,88 @@ describe("logs are a read, taken on request", () => {
     });
     // An empty pre is indistinguishable from a failed read.
     expect(screen.getByTestId("docker-logs-empty")).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TASK-1866 — starting and stopping, with a confirmation
+// ---------------------------------------------------------------------------
+
+const actionCalls = (): string[] =>
+  calls.filter((u) => /\/docker\/containers\/[^/]+\/(start|stop|restart)$/.test(u));
+
+describe("AC-6 — a click asks, it does not act", () => {
+  it("pressing Stop renders a confirmation and issues nothing", async () => {
+    containersBody = { containers: [container("jm-api", "ws-1")] };
+    await mount();
+    fireEvent.click(screen.getByTestId("docker-act-jm-api"));
+
+    const confirm = screen.getByTestId("docker-confirm");
+    // It names the container and the action, so a reader cannot confirm the
+    // wrong one by muscle memory.
+    expect(confirm.textContent).toContain("jm-api");
+    expect(confirm.textContent).toContain("Stop");
+    expect(actionCalls()).toHaveLength(0);
+  });
+
+  it("cancelling issues nothing and dismisses the question", async () => {
+    containersBody = { containers: [container("jm-api", "ws-1")] };
+    await mount();
+    fireEvent.click(screen.getByTestId("docker-act-jm-api"));
+    fireEvent.click(screen.getByTestId("docker-confirm-cancel"));
+    expect(actionCalls()).toHaveLength(0);
+    expect(screen.queryByTestId("docker-confirm")).toBeNull();
+  });
+
+  it("CONTROL — confirming issues exactly one, to the right container", async () => {
+    // Without this, "zero calls" above is also satisfied by a button that never
+    // works.
+    containersBody = { containers: [container("jm-api", "ws-1")] };
+    actionBody = { id: "id-jm-api", state: "exited", tookMs: 1400 };
+    await mount();
+    fireEvent.click(screen.getByTestId("docker-act-jm-api"));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("docker-confirm-go"));
+    });
+    expect(actionCalls()).toHaveLength(1);
+    expect(actionCalls()[0]).toContain("/docker/containers/id-jm-api/stop");
+  });
+
+  it("offers Start for a stopped container, not Stop", async () => {
+    containersBody = { containers: [container("down-one", "ws-1", "exited")] };
+    await mount();
+    fireEvent.click(screen.getByTestId("docker-act-down-one"));
+    expect(screen.getByTestId("docker-confirm").textContent).toContain("Start");
+  });
+});
+
+describe("AC-7 — the row shows what IS, not what was asked", () => {
+  it("takes the state from the response, even when it is not the one requested", async () => {
+    containersBody = { containers: [container("stubborn", "ws-1")] };
+    // The action succeeded and the container is STILL running. That is possible,
+    // and the row must say so rather than report the intent behind the click.
+    actionBody = { id: "id-stubborn", state: "running", tookMs: 10600 };
+    await mount();
+    fireEvent.click(screen.getByTestId("docker-act-stubborn"));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("docker-confirm-go"));
+    });
+    expect(screen.getByTestId("docker-row-stubborn").getAttribute("data-state")).toBe("running");
+    expect(screen.getByTestId("docker-action-note").textContent).toContain("now running");
+  });
+
+  it("a 409 says it did not stop in time, and leaves the row alone", async () => {
+    containersBody = { containers: [container("slow", "ws-1")] };
+    actionStatus = 409;
+    actionBody = { error: "still running", tookMs: 15000 };
+    await mount();
+    fireEvent.click(screen.getByTestId("docker-act-slow"));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("docker-confirm-go"));
+    });
+    expect(screen.getByTestId("docker-action-note").textContent).toContain("did not stop in time");
+    // Not flipped to exited on a timeout — that would be the UI inventing a
+    // state the daemon never reported.
+    expect(screen.getByTestId("docker-row-slow").getAttribute("data-state")).toBe("running");
   });
 });
