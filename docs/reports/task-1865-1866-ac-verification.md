@@ -76,3 +76,74 @@ What the measurement *did* overturn was synchrony, which nobody had questioned. 
 - **AC-8** — needs the packaged app and `docker ps`
 - `docker ps -a` was measured at 25 containers. The cost at 100+ is unmeasured, and the tab loads it on open
 - The tab-strip guard still does not assert its own sidebar promise; stated in the test rather than fixed, because the sidebar is not rendered in that test's mount
+
+---
+
+## Addendum, 2026-09-06 — three live runs that were missing
+
+Written after the report above, because re-reading it surfaced a gap: **every TASK-1866 test used an injected spawner, so `realSpawner` itself had never run.** The code that actually calls `docker` had never touched a daemon.
+
+### 1. The real spawner, against the real daemon
+
+On a container this harness created and removed, never one of Butter's:
+
+```
+probe created: 05fd90b36bcb   daemon says: running
+route lists it: true          state=running
+stop  -> 200 state=exited  tookMs=1334  wall=1655ms
+  daemon independently says: exited
+start -> 200 state=running
+  daemon independently says: running
+exec  -> 400 unknown action: exec
+  daemon still says: running
+probe removed. daemon says: absent
+```
+
+`-t 1` cost 1334 ms against the 1415 ms measured earlier — consistent. The line that matters is the independent one: after the route said `exited`, `docker inspect` said `exited` **too**. The app and the daemon agree, which is the substance of AC-8.
+
+**What this does not discharge.** AC-8 says *from the packaged app*. This ran the built source, not the vendored bundle, and not the UI. The remaining risk is the packaging path, not the behaviour.
+
+### 2. The save round trip, judged by git
+
+The claim the whole edit feature rests on, run against a real repo with `core.autocrlf=false` so git's own translation could not do the work:
+
+```
+baseline: 99 bytes, BOM=true CRLF=true
+read:  200, 99 bytes
+save:  200
+git diff --numstat: 1  1  skills/demo/SKILL.md
+  -description: Starts a thing.
+  +description: Use when starting a thing.
+after: 110 bytes, BOM=true CRLF=true
+CRLF count: 9 -> 9
+```
+
+One line changed, one line added. The BOM survived. All nine CRLFs survived. **`git diff` is the judge rather than our own byte comparison**, which is what TASK-1849 AC-2 asks for.
+
+**What this does not discharge.** AC-2 also says *in the packaged app*, through the UI. The byte behaviour is settled; the packaging and the editor path are not.
+
+### 3. The grader, on today's own criteria
+
+Turned on the two tasks written today, so the sample is not one I chose for it:
+
+| | criteria | flagged |
+|---|---|---|
+| TASK-1865 | 8 | **0** |
+| TASK-1866 | 8 | **1** — AC-6 |
+
+Its concern about AC-6: *"'Pressing the control' is vague and no concrete UI element or output surface is named."*
+
+**That flag is fair.** Every other criterion I wrote names its surface — `GET /docker/containers`, `data-severity`, an argv list. AC-6 says "the control", and in context that is clear only because the Test Plan names the testid. It is a real relative weakness in my own writing, found in writing I was being careful about.
+
+And it did not manufacture concerns for the other fifteen. That is the second half of the evidence, and it is the half that makes the first half worth anything.
+
+**This still does not discharge TASK-1860 AC-7**, which asks a person to judge whether the output is useful. It gives that person a third sample to judge from.
+
+## What remains human, precisely
+
+| | what is settled | what is not |
+|---|---|---|
+| TASK-1866 AC-8 | the route and the daemon agree, with the real spawner | the packaged bundle and the UI |
+| TASK-1849 AC-2 | bytes survive; git sees one changed line | the packaged bundle and the editor path |
+| TASK-1849 AC-3 | — | two windows, entirely |
+| TASK-1860 AC-7 | three live samples, consistent behaviour | whether a person finds the output worth having |
