@@ -22,6 +22,7 @@ import {
 import type { DockerAction, DockerContainer } from "../api";
 import { CapabilityNote } from "../components/state/CapabilityNote";
 import { DockerLogs } from "../components/DockerLogs";
+import { DockerImages } from "../components/DockerImages";
 import { ErrorState } from "../components/state/ErrorState";
 import { Skeleton } from "../components/state/Skeleton";
 
@@ -32,6 +33,10 @@ export function WorkspaceDockerView({ workspaceId }: { workspaceId: string }): R
   const [unavailable, setUnavailable] = useState(false);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<DockerContainer | null>(null);
+  // Containers and images are both "what docker holds", but they are two
+  // lists with two verbs. A sub-tab keeps them apart without adding a sixth
+  // workspace tab for something scoped the same way.
+  const [view, setView] = useState<"containers" | "images">("containers");
   // TASK-1866 — the pending confirmation. Null means nothing is being asked.
   // A write with no confirm breaks the standing rule for this app
   // (companion-write-actions-must-confirm-surface-result-or-error-never-silent),
@@ -143,6 +148,31 @@ export function WorkspaceDockerView({ workspaceId }: { workspaceId: string }): R
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="flex gap-1 border-b border-zinc-200 dark:border-zinc-800">
+        {(["containers", "images"] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            role="tab"
+            aria-selected={view === v}
+            onClick={() => setView(v)}
+            data-testid={`docker-subtab-${v}`}
+            className={[
+              "px-2.5 py-1 text-[12.5px] -mb-px border-b-2",
+              view === v
+                ? "border-zinc-900 dark:border-zinc-100 text-zinc-900 dark:text-zinc-100 font-medium"
+                : "border-transparent text-zinc-500",
+            ].join(" ")}
+          >
+            {v === "containers" ? "Containers" : "Images"}
+          </button>
+        ))}
+      </div>
+
+      {view === "images" && <DockerImages />}
+
+      {view === "containers" && (
+      <>
       <p data-testid="docker-verdict" className="text-[11.5px] tabular-nums text-zinc-500">
         <span className="font-medium text-zinc-900 dark:text-zinc-100">{mine.length}</span>{" "}
         {mine.length === 1 ? "container" : "containers"} for this workspace
@@ -221,6 +251,8 @@ export function WorkspaceDockerView({ workspaceId }: { workspaceId: string }): R
 
       {open !== null && (
         <DockerLogs containerId={open.id} containerName={open.name} />
+      )}
+      </>
       )}
 
     </div>

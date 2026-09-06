@@ -1219,3 +1219,48 @@ export async function actOnContainer(
   if (!res.ok) throw new Error(`docker ${action} failed: ${res.status}`);
   return (await res.json()) as { id: string; state: string; tookMs: number };
 }
+
+export interface DockerImage {
+  id: string;
+  repository: string;
+  tag: string;
+  size: string;
+  createdAt: string;
+  /** Containers holding this image. Non-empty means removal will be refused. */
+  inUseBy: string[];
+}
+
+export async function fetchDockerImages(signal?: AbortSignal): Promise<DockerImage[]> {
+  const res = await fetch(`${API_BASE}/docker/images`, { signal });
+  if (res.status === 501) throw new DockerUnavailableError();
+  if (!res.ok) throw new Error(`docker images failed: ${res.status}`);
+  return ((await res.json()) as { images?: DockerImage[] }).images ?? [];
+}
+
+/** The adapter refuses before the daemon does, and names the holders. */
+export class ImageInUseError extends Error {
+  constructor(readonly by: string[]) {
+    super("in use");
+    this.name = "ImageInUseError";
+  }
+}
+
+export async function removeDockerImage(id: string): Promise<{ id: string; freed: string }> {
+  const res = await fetch(`${API_BASE}/docker/images/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (res.status === 501) throw new DockerUnavailableError();
+  if (res.status === 409) {
+    const b = (await res.json().catch(() => ({}))) as { by?: string[] };
+    throw new ImageInUseError(b.by ?? []);
+  }
+  if (!res.ok) throw new Error(`remove failed: ${res.status}`);
+  return (await res.json()) as { id: string; freed: string };
+}
+
+export async function pruneDockerImages(): Promise<{ removed: number; freed: string }> {
+  const res = await fetch(`${API_BASE}/docker/images/prune`, { method: "POST" });
+  if (res.status === 501) throw new DockerUnavailableError();
+  if (!res.ok) throw new Error(`prune failed: ${res.status}`);
+  return (await res.json()) as { removed: number; freed: string };
+}
