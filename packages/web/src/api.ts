@@ -1138,3 +1138,44 @@ export async function reviewTaskAc(taskId: string, model?: string): Promise<AcVe
   }
   return ((await res.json()) as { criteria?: AcVerdict[] }).criteria ?? [];
 }
+
+/** A container as the daemon reports it, plus the workspace it belongs to. */
+export interface DockerContainer {
+  id: string;
+  name: string;
+  state: string;
+  status: string;
+  image: string;
+  project: string | null;
+  workingDir: string | null;
+  /** Null when the container carries no compose label. Never guessed. */
+  workspaceId: string | null;
+}
+
+/** Docker is not installed, or the daemon is not answering. Not a failure. */
+export class DockerUnavailableError extends Error {
+  constructor() {
+    super("docker not available");
+    this.name = "DockerUnavailableError";
+  }
+}
+
+/**
+ * TASK-1865 — every container the daemon reports, running or not.
+ *
+ * A GET that costs nothing but 206 ms over this machine's real 25 containers,
+ * which is what makes it safe to load on open.
+ */
+export async function fetchDockerContainers(signal?: AbortSignal): Promise<DockerContainer[]> {
+  const res = await fetch(`${API_BASE}/docker/containers`, { signal });
+  if (res.status === 501) throw new DockerUnavailableError();
+  if (!res.ok) throw new Error(`docker listing failed: ${res.status}`);
+  return ((await res.json()) as { containers?: DockerContainer[] }).containers ?? [];
+}
+
+export async function fetchDockerLogs(id: string, tail = 200): Promise<string[]> {
+  const res = await fetch(`${API_BASE}/docker/logs?id=${encodeURIComponent(id)}&tail=${tail}`);
+  if (res.status === 501) throw new DockerUnavailableError();
+  if (!res.ok) throw new Error(`docker logs failed: ${res.status}`);
+  return ((await res.json()) as { lines?: string[] }).lines ?? [];
+}
