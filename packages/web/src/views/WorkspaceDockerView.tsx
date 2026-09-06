@@ -23,6 +23,7 @@ import type { DockerAction, DockerContainer } from "../api";
 import { CapabilityNote } from "../components/state/CapabilityNote";
 import { DockerLogs } from "../components/DockerLogs";
 import { DockerImages } from "../components/DockerImages";
+import { ContainerFiles } from "../components/ContainerFiles";
 import { ErrorState } from "../components/state/ErrorState";
 import { Skeleton } from "../components/state/Skeleton";
 
@@ -33,6 +34,10 @@ export function WorkspaceDockerView({ workspaceId }: { workspaceId: string }): R
   const [unavailable, setUnavailable] = useState(false);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<DockerContainer | null>(null);
+  // TASK-1875 — the container whose filesystem is being browsed, or null.
+  // Only offered for a running one: exec needs one, and a button that is
+  // going to 409 is worse than no button.
+  const [browsing, setBrowsing] = useState<DockerContainer | null>(null);
   // Containers and images are both "what docker holds", but they are two
   // lists with two verbs. A sub-tab keeps them apart without adding a sixth
   // workspace tab for something scoped the same way.
@@ -135,6 +140,16 @@ export function WorkspaceDockerView({ workspaceId }: { workspaceId: string }): R
       >
         {RUNNING(c) ? "Stop" : "Start"}
       </button>
+      {RUNNING(c) && (
+        <button
+          type="button"
+          onClick={() => setBrowsing(c)}
+          data-testid={`docker-files-${c.name}`}
+          className="flex-none rounded-md border border-zinc-200 dark:border-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-600 dark:text-zinc-300"
+        >
+          Files
+        </button>
+      )}
       <button
         type="button"
         onClick={() => setOpen(c)}
@@ -247,6 +262,10 @@ export function WorkspaceDockerView({ workspaceId }: { workspaceId: string }): R
             ))}
           </ul>
         </section>
+      )}
+
+      {browsing !== null && (
+        <ContainerFiles containerId={browsing.id} containerName={browsing.name} />
       )}
 
       {open !== null && (
