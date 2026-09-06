@@ -16,6 +16,7 @@ import {
 } from "../api";
 import type { DockerImage } from "../api";
 import { CapabilityNote } from "./state/CapabilityNote";
+import { DockerRunForm } from "./DockerRunForm";
 import { Skeleton } from "./state/Skeleton";
 
 export function DockerImages(): React.JSX.Element {
@@ -26,6 +27,8 @@ export function DockerImages(): React.JSX.Element {
   const [pruning, setPruning] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // TASK-1874 — the image a Run form is open for, or null.
+  const [running, setRunning] = useState<DockerImage | null>(null);
 
   // Above every early return, for the reason 0.9.7 shipped a blank tab.
   useEffect(() => {
@@ -181,6 +184,18 @@ export function DockerImages(): React.JSX.Element {
         </div>
       )}
 
+      {running !== null && (
+        <DockerRunForm
+          image={running}
+          onCancel={() => setRunning(null)}
+          onDone={(msg) => {
+            setRunning(null);
+            setNote(msg);
+            void reload();
+          }}
+        />
+      )}
+
       {note !== null && (
         <p data-testid="images-note" className="text-[11.5px] text-zinc-600 dark:text-zinc-300">
           {note}
@@ -202,6 +217,15 @@ export function DockerImages(): React.JSX.Element {
             >
               <span className="min-w-0 flex-1 truncate text-[13px]">{label(i)}</span>
               <span className="flex-none tabular-nums text-[11px] text-zinc-500">{i.size}</span>
+              <button
+                type="button"
+                onClick={() => setRunning(i)}
+                disabled={busy}
+                data-testid={`image-run-${i.id}`}
+                className="flex-none rounded-md border border-zinc-200 dark:border-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-600 dark:text-zinc-300 disabled:opacity-40"
+              >
+                Run
+              </button>
               {i.inUseBy.length > 0 ? (
                 // No button at all. Offering one that the adapter is going to
                 // refuse is worse than offering none, and the reason is here
