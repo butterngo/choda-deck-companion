@@ -42,8 +42,66 @@ function resolveStaticFile(staticDir, urlPath) {
 // /api proxying, never on static files; never overwrites a token the request
 // already carries (an extension-origin request); absent token → forward as-is
 // (the gated route then 401s, exactly as today).
+// TASK-1877 — the same token injection, for an upgrade rather than a request.
+//
+// A browser `WebSocket` cannot set request headers, so the terminal's token has
+// to be attached here, during the handshake. This proxy has never relayed an
+// upgrade before: the http.request above answers with a response object, and an
+// upgrade answers with a raw socket instead, which has to be piped both ways
+// by hand and torn down from either end.
+//
+// The 101 status line and its headers are rebuilt rather than forwarded
+// wholesale, because there is no response body to pipe — after the handshake
+// the socket carries frames, not HTTP.
+function relayUpgrade({ req, socket, head, apiHost, apiPort, bridgeToken }) {
+  const headers = { ...req.headers };
+  if (bridgeToken && !headers["x-choda-bridge-token"]) {
+    headers["x-choda-bridge-token"] = bridgeToken;
+  }
+  const target = http.request({
+    host: apiHost,
+    port: apiPort,
+    path: req.url.replace(/^\/api/, "") || "/",
+    method: req.method,
+    headers,
+  });
+
+  target.on("upgrade", (upstreamRes, upstreamSocket, upstreamHead) => {
+    const lines = [`HTTP/1.1 ${upstreamRes.statusCode} ${upstreamRes.statusMessage}`];
+    for (const [k, v] of Object.entries(upstreamRes.headers)) lines.push(`${k}: ${v}`);
+    socket.write(lines.join("\r\n") + "\r\n\r\n");
+    if (upstreamHead && upstreamHead.length) socket.unshift(upstreamHead);
+    if (head && head.length) upstreamSocket.unshift(head);
+    upstreamSocket.pipe(socket);
+    socket.pipe(upstreamSocket);
+    // Either end closing takes the other with it. Without this a refused or
+    // dropped adapter leaves the browser holding a socket nobody is reading.
+    const bothDown = () => {
+      upstreamSocket.destroy();
+      socket.destroy();
+    };
+    upstreamSocket.on("error", bothDown);
+    upstreamSocket.on("close", bothDown);
+    socket.on("error", bothDown);
+    socket.on("close", bothDown);
+  });
+
+  // The adapter refused the upgrade (a bad token, an unknown path). Pass the
+  // refusal through and destroy, rather than leaving the client hanging on a
+  // handshake that will never complete.
+  target.on("response", (upstreamRes) => {
+    socket.write(`HTTP/1.1 ${upstreamRes.statusCode} ${upstreamRes.statusMessage}\r\n\r\n`);
+    socket.destroy();
+  });
+  target.on("error", () => {
+    socket.write("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+    socket.destroy();
+  });
+  target.end();
+}
+
 function createStaticProxyServer({ staticDir, apiPort, apiHost = "127.0.0.1", bridgeToken }) {
-  return http.createServer((req, res) => {
+  const server = http.createServer((req, res) => {
     if (req.url.startsWith("/api")) {
       const headers = { ...req.headers };
       if (bridgeToken && !headers["x-choda-bridge-token"]) {
@@ -75,6 +133,19 @@ function createStaticProxyServer({ staticDir, apiPort, apiHost = "127.0.0.1", br
       res.end(data);
     });
   });
+
+  server.on("upgrade", (req, socket, head) => {
+    // Only /api upgrades are relayed. A static path has no socket behind it,
+    // and an unanswered upgrade hangs until somebody else's timeout.
+    if (!req.url.startsWith("/api")) {
+      socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+    relayUpgrade({ req, socket, head, apiHost, apiPort, bridgeToken });
+  });
+
+  return server;
 }
 
-module.exports = { createStaticProxyServer, resolveStaticFile, contentTypeFor };
+module.exports = { createStaticProxyServer, resolveStaticFile, contentTypeFor, relayUpgrade };

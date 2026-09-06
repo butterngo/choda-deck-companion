@@ -148,3 +148,156 @@ describe("createStaticProxyServer bridge-token injection (integration)", () => {
     });
   });
 });
+
+// TASK-1877 AC-3 — the piece this proxy has never done.
+//
+// The relay is byte-level: it does not parse WebSocket frames, it pipes the
+// socket both ways after the handshake. So the test drives raw sockets rather
+// than a ws client — that is the actual contract, and it keeps `ws` out of the
+// companion's dependencies for a transport the companion does not implement.
+describe("upgrade relay", () => {
+  const net = require("node:net");
+  const CRLF = String.fromCharCode(13, 10);
+
+  const upgradeRequest = (path) =>
+    [
+      `GET ${path} HTTP/1.1`,
+      "Host: 127.0.0.1",
+      "Upgrade: websocket",
+      "Connection: Upgrade",
+      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+      "Sec-WebSocket-Version: 13",
+      "",
+      "",
+    ].join(CRLF);
+
+  // A stub adapter that completes the handshake and then echoes bytes, so the
+  // relay has something real on the far side.
+  function stubAdapter(onUpgrade) {
+    const srv = http.createServer((_req, res) => {
+      res.writeHead(200);
+      res.end("http");
+    });
+    srv.on("upgrade", (req, socket, head) => {
+      onUpgrade(req);
+      socket.write(
+        ["HTTP/1.1 101 Switching Protocols", "Upgrade: websocket", "Connection: Upgrade", "", ""].join(CRLF),
+      );
+      if (head && head.length) socket.unshift(head);
+      socket.on("data", (d) => socket.write(`up:${d}`));
+    });
+    return srv;
+  }
+
+  function listen(srv) {
+    return new Promise((resolve) => srv.listen(0, "127.0.0.1", () => resolve(srv.address().port)));
+  }
+
+  it("forwards the upgrade WITH the bridge token and relays bytes both ways", async () => {
+    let seenToken = "MISSING";
+    const adapter = stubAdapter((req) => {
+      seenToken = req.headers["x-choda-bridge-token"] ?? "MISSING";
+    });
+    const apiPort = await listen(adapter);
+    const staticDir = fs.mkdtempSync(path.join(os.tmpdir(), "cdc-up-"));
+    fs.writeFileSync(path.join(staticDir, "index.html"), "<html></html>");
+    const proxy = createStaticProxyServer({ staticDir, apiPort, bridgeToken: "tok-123" });
+    const proxyPort = await listen(proxy);
+
+    const sock = net.connect(proxyPort, "127.0.0.1");
+    const transcript = await new Promise((resolve) => {
+      let buf = "";
+      sock.on("data", (d) => {
+        buf += String(d);
+        if (buf.includes("101")) sock.write("ping");
+        if (buf.includes("up:ping")) resolve(buf);
+      });
+      sock.on("connect", () => sock.write(upgradeRequest("/api/terminal")));
+      setTimeout(() => resolve(buf), 3000);
+    });
+    sock.destroy();
+    adapter.close();
+    proxy.close();
+
+    // The token reached the adapter — the page cannot set it, so if this is
+    // MISSING the terminal is unreachable in the packaged app.
+    expect(seenToken).toBe("tok-123");
+    expect(transcript).toContain("101");
+    // And bytes crossed AFTER the handshake, in both directions. A relay that
+    // completes the handshake and then pipes nothing looks identical up to here.
+    expect(transcript).toContain("up:ping");
+  });
+
+  it("passes a refusal through and destroys, rather than hanging", async () => {
+    const adapter = http.createServer(() => {});
+    adapter.on("upgrade", (_req, socket) => {
+      socket.write(`HTTP/1.1 401 Unauthorized${CRLF}${CRLF}`);
+      socket.destroy();
+    });
+    const apiPort = await listen(adapter);
+    const staticDir = fs.mkdtempSync(path.join(os.tmpdir(), "cdc-up2-"));
+    fs.writeFileSync(path.join(staticDir, "index.html"), "<html></html>");
+    const proxy = createStaticProxyServer({ staticDir, apiPort, bridgeToken: "tok-123" });
+    const proxyPort = await listen(proxy);
+
+    const sock = net.connect(proxyPort, "127.0.0.1");
+    const raw = await new Promise((resolve) => {
+      let buf = "";
+      sock.on("data", (d) => {
+        buf += String(d);
+      });
+      sock.on("close", () => resolve(buf));
+      sock.on("connect", () => sock.write(upgradeRequest("/api/terminal")));
+      setTimeout(() => resolve(buf), 3000);
+    });
+    adapter.close();
+    proxy.close();
+
+    expect(raw).toContain("401");
+    // A hang is the failure this catches: the close only fires because the
+    // refusal was relayed and the socket torn down.
+    expect(sock.destroyed).toBe(true);
+  });
+
+  it("refuses an upgrade on a non-/api path instead of leaving it open", async () => {
+    const staticDir = fs.mkdtempSync(path.join(os.tmpdir(), "cdc-up3-"));
+    fs.writeFileSync(path.join(staticDir, "index.html"), "<html></html>");
+    const proxy = createStaticProxyServer({ staticDir, apiPort: 1, bridgeToken: "tok-123" });
+    const proxyPort = await listen(proxy);
+
+    const sock = net.connect(proxyPort, "127.0.0.1");
+    const raw = await new Promise((resolve) => {
+      let buf = "";
+      sock.on("data", (d) => {
+        buf += String(d);
+      });
+      sock.on("close", () => resolve(buf));
+      sock.on("connect", () => sock.write(upgradeRequest("/terminal")));
+      setTimeout(() => resolve(buf), 3000);
+    });
+    proxy.close();
+    expect(raw).toContain("404");
+    expect(sock.destroyed).toBe(true);
+  });
+
+  it("AC-5 — ordinary /api requests still proxy with the socket handler attached", async () => {
+    const adapter = http.createServer((req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ path: req.url, token: req.headers["x-choda-bridge-token"] }));
+    });
+    const apiPort = await listen(adapter);
+    const staticDir = fs.mkdtempSync(path.join(os.tmpdir(), "cdc-up4-"));
+    fs.writeFileSync(path.join(staticDir, "index.html"), "<html></html>");
+    const proxy = createStaticProxyServer({ staticDir, apiPort, bridgeToken: "tok-123" });
+    const proxyPort = await listen(proxy);
+
+    const res = await fetch(`http://127.0.0.1:${proxyPort}/api/workspaces`);
+    const body = await res.json();
+    adapter.close();
+    proxy.close();
+
+    // Adding an upgrade listener must not disturb the request path it shares.
+    expect(res.status).toBe(200);
+    expect(body).toEqual({ path: "/workspaces", token: "tok-123" });
+  });
+});
