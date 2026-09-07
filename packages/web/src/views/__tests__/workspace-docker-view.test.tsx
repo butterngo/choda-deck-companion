@@ -316,3 +316,138 @@ describe("TASK-1892 — the Docker tab scrolls on a short viewport", () => {
     expect(scroll.className).toContain("overflow-x-hidden");
   });
 });
+
+// TASK-1896 — one pane at a time, and a way out of it.
+//
+// Both panes used to be their own state, so "both open" was reachable by
+// clicking two buttons, and neither could be dismissed at all.
+describe("TASK-1896 — Logs and Files are one pane, and it closes", () => {
+  const two = (): Record<string, unknown>[] => [
+    container("api", "ws-1"),
+    container("db", "ws-1"),
+  ];
+
+  const openFiles = async (name: string): Promise<void> => {
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`docker-files-${name}`));
+    });
+  };
+  const openLogs = async (name: string): Promise<void> => {
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`docker-logs-${name}`));
+    });
+  };
+
+  it("AC-1 — opening Logs closes Files", async () => {
+    containersBody = { containers: two() };
+    await mount();
+    await openFiles("api");
+    expect(screen.getByTestId("container-files")).toBeTruthy();
+
+    await openLogs("api");
+
+    expect(screen.queryByTestId("container-files")).toBeNull();
+    expect(screen.getByTestId("docker-logs-pane")).toBeTruthy();
+  });
+
+  it("AC-1 — opening Files closes Logs", async () => {
+    // The reverse direction as its own test: a single handler that clears the
+    // other state can be right in one direction and forgotten in the other.
+    containersBody = { containers: two() };
+    await mount();
+    await openLogs("api");
+    expect(screen.getByTestId("docker-logs-pane")).toBeTruthy();
+
+    await openFiles("api");
+
+    expect(screen.queryByTestId("docker-logs-pane")).toBeNull();
+    expect(screen.getByTestId("container-files")).toBeTruthy();
+  });
+
+  it("AC-1 — a pane on one container closes when the OTHER container's pane opens", async () => {
+    containersBody = { containers: two() };
+    await mount();
+    await openLogs("api");
+    await openFiles("db");
+    expect(screen.queryByTestId("docker-logs-pane")).toBeNull();
+    expect(screen.getByTestId("container-files")).toBeTruthy();
+  });
+
+  it("AC-2 — clicking the open pane's own button closes it, and reads nothing", async () => {
+    containersBody = { containers: two() };
+    await mount();
+    await openLogs("api");
+    const before = calls.filter((c) => c.includes("/docker/logs")).length;
+    expect(before).toBe(1);
+
+    await openLogs("api");
+
+    expect(screen.queryByTestId("docker-logs-pane")).toBeNull();
+    // Closing is not a read. A close that refetched would shell out to docker
+    // to render nothing.
+    expect(calls.filter((c) => c.includes("/docker/logs"))).toHaveLength(before);
+  });
+
+  it("AC-3 — the logs pane's own Close dismisses it", async () => {
+    containersBody = { containers: two() };
+    await mount();
+    await openLogs("api");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("docker-logs-close"));
+    });
+    expect(screen.queryByTestId("docker-logs-pane")).toBeNull();
+  });
+
+  it("AC-3 — the files pane's own Close dismisses it", async () => {
+    containersBody = { containers: two() };
+    await mount();
+    await openFiles("api");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cf-close"));
+    });
+    expect(screen.queryByTestId("container-files")).toBeNull();
+  });
+
+  it("AC-4 — Files on another container SWITCHES rather than closing", async () => {
+    containersBody = { containers: two() };
+    await mount();
+    await openFiles("api");
+    expect(screen.getByTestId("container-files").textContent).toContain("api");
+
+    await openFiles("db");
+
+    // Still open, and now naming db — the comparison a reader is actually
+    // making when they click the second container.
+    expect(screen.getByTestId("container-files")).toBeTruthy();
+    expect(screen.getByTestId("container-files").textContent).toContain("db");
+    expect(screen.getByTestId("container-files").textContent).not.toContain("Inside api");
+  });
+
+  it("AC-5 — the open container's button says it will hide, and no other row does", async () => {
+    containersBody = { containers: two() };
+    await mount();
+    await openLogs("api");
+
+    const opened = screen.getByTestId("docker-logs-api");
+    expect(opened.textContent).toBe("Hide logs");
+    expect(opened.getAttribute("aria-pressed")).toBe("true");
+    // The other row is untouched — the label belongs to the pane that is open,
+    // not to the button that was clicked last.
+    expect(screen.getByTestId("docker-logs-db").textContent).toBe("Logs");
+    expect(screen.getByTestId("docker-logs-db").getAttribute("aria-pressed")).toBe("false");
+    // And the same container's Files button does not claim to be open.
+    expect(screen.getByTestId("docker-files-api").textContent).toBe("Files");
+  });
+
+  it("AC-6 — closing returns focus to the button that opened the pane", async () => {
+    containersBody = { containers: two() };
+    await mount();
+    await openFiles("api");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cf-close"));
+    });
+    // Not the body: a keyboard reader closing a pane must land back where they
+    // were, which is the obligation the fullscreen overlay already carries.
+    expect(document.activeElement).toBe(screen.getByTestId("docker-files-api"));
+  });
+});
