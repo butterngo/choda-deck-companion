@@ -8,7 +8,7 @@
 // beside them. busybox and GNU disagree about spacing, so a row this parser
 // cannot read still renders its own text rather than three blanks.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ContainerFileUnreadable,
   ContainerPathError,
@@ -48,6 +48,15 @@ export function ContainerFiles({
   const [busy, setBusy] = useState(true);
   const [file, setFile] = useState<{ path: string; text: string } | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+  // TASK-1899 — the overlay. A container's /usr is dozens of entries and a
+  // source file is hundreds of lines; neither fits a 288px box.
+  const [full, setFull] = useState(false);
+  // Where focus goes when the overlay closes, and the flag that says to move
+  // it. Calling focus() inside the handler focuses a button in the tree React
+  // is about to re-render, so it lands nowhere — the trap DockerLogs already
+  // documents.
+  const openerRef = useRef<HTMLButtonElement | null>(null);
+  const restoreFocus = useRef(false);
 
   useEffect(() => {
     let live = true;
@@ -76,6 +85,27 @@ export function ContainerFiles({
     };
   }, [containerId, path]);
 
+  // Escape leaves fullscreen here, unlike the terminal (TASK-1889), which
+  // deliberately lets the key through to the shell. A file browser has no use
+  // for Escape, and it is the first thing a reader tries.
+  useEffect(() => {
+    if (!full) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") {
+        restoreFocus.current = true;
+        setFull(false);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [full]);
+
+  useEffect(() => {
+    if (full || !restoreFocus.current) return;
+    restoreFocus.current = false;
+    openerRef.current?.focus();
+  }, [full]);
+
   async function open(e: ContainerFile): Promise<void> {
     if (isDir(e)) {
       setPath(join(path, e.name));
@@ -99,8 +129,8 @@ export function ContainerFiles({
     }
   }
 
-  return (
-    <section data-testid="container-files" className="mt-2 flex min-h-0 flex-col gap-1.5">
+  const body = (
+    <>
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">
           Inside {containerName}
@@ -119,10 +149,21 @@ export function ContainerFiles({
           </button>
         )}
         <button
+          ref={openerRef}
+          type="button"
+          onClick={() => { if (full) restoreFocus.current = true; setFull((v) => !v); }}
+          data-testid="cf-fullscreen"
+          className="ml-auto rounded-md border border-zinc-200 dark:border-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+        >
+          {full ? "Exit fullscreen (Esc)" : "Fullscreen"}
+        </button>
+        {/* Close dismisses the PANE, not the overlay — two different exits,
+            and both are reachable in fullscreen (TASK-1896). */}
+        <button
           type="button"
           onClick={onClose}
           data-testid="cf-close"
-          className="ml-auto rounded-md border border-zinc-200 dark:border-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+          className="rounded-md border border-zinc-200 dark:border-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
         >
           Close
         </button>
@@ -145,7 +186,16 @@ export function ContainerFiles({
       )}
 
       {!busy && entries !== null && entries.length > 0 && (
-        <ul className="max-h-72 space-y-px overflow-y-auto font-mono text-[11px]">
+        <ul
+          data-testid="cf-list"
+          className={[
+            "space-y-px overflow-y-auto font-mono text-[11px]",
+            // Half the viewport rather than all of it: in fullscreen an open
+            // file shares the screen with the listing that led to it, and a
+            // reader comparing the two should not have to scroll between them.
+            full ? "max-h-[45vh]" : "max-h-72"
+          ].join(" ")}
+        >
           {entries.map((e, i) => (
             <li key={`${e.name}-${i}`} data-testid={`cf-row-${e.name}`}>
               <button
@@ -190,11 +240,39 @@ export function ContainerFiles({
       {file !== null && (
         <div data-testid="cf-file" className="mt-1">
           <p className="mb-1 font-mono text-[10.5px] text-zinc-400">{file.path}</p>
-          <pre className="max-h-72 overflow-auto rounded-md border border-zinc-200 dark:border-zinc-800 p-2 font-mono text-[11px] leading-relaxed">
+          <pre
+            data-testid="cf-file-body"
+            className={[
+              "overflow-auto rounded-md border border-zinc-200 dark:border-zinc-800 p-2 font-mono text-[11px] leading-relaxed",
+              full ? "max-h-[45vh]" : "max-h-72"
+            ].join(" ")}
+          >
             {file.text}
           </pre>
         </div>
       )}
+    </>
+  );
+
+  if (!full) {
+    return (
+      <section data-testid="container-files" className="mt-2 flex min-h-0 flex-col gap-1.5">
+        {body}
+      </section>
+    );
+  }
+
+  // Same element with a different className would be enough for the CSS, but
+  // the overlay is what a test can point at, and the pane must keep its own
+  // testid so TASK-1896's "is it open?" assertions hold in both modes.
+  return (
+    <section
+      data-testid="container-files"
+      className="fixed inset-0 z-50 flex flex-col gap-1.5 overflow-auto bg-white p-4 dark:bg-zinc-950"
+    >
+      <div data-testid="cf-overlay" className="flex min-h-0 flex-col gap-1.5">
+        {body}
+      </div>
     </section>
   );
 }
