@@ -35,9 +35,12 @@ const isDir = (e: ContainerFile): boolean => e.mode.startsWith("d");
 export function ContainerFiles({
   containerId,
   containerName,
+  onClose,
 }: {
   containerId: string;
   containerName: string;
+  /** TASK-1896 — dismiss the pane; the row button toggles it too. */
+  onClose: () => void;
 }): React.JSX.Element {
   const [path, setPath] = useState(ROOT);
   const [entries, setEntries] = useState<ContainerFile[] | null>(null);
@@ -115,6 +118,14 @@ export function ContainerFiles({
             Up
           </button>
         )}
+        <button
+          type="button"
+          onClick={onClose}
+          data-testid="cf-close"
+          className="ml-auto rounded-md border border-zinc-200 dark:border-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+        >
+          Close
+        </button>
       </div>
 
       {busy && <Skeleton shape="list" label="Reading…" />}

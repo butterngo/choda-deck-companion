@@ -26,9 +26,13 @@ function split(line: string, needle: string): [string, string, string] | null {
 export function DockerLogs({
   containerId,
   containerName,
+  onClose,
 }: {
   containerId: string;
   containerName: string;
+  /** TASK-1896 — dismiss the pane. The row button toggles too, but a toggle
+      does not announce itself, and the reader is looking AT the pane. */
+  onClose: () => void;
 }): React.JSX.Element {
   const [lines, setLines] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(true);
@@ -156,6 +160,14 @@ export function DockerLogs({
           className="rounded-md border border-zinc-200 dark:border-zinc-800 px-2 py-1 text-[11px] text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 disabled:opacity-40"
         >
           {refreshing ? "Refreshing…" : "Refresh"}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          data-testid="docker-logs-close"
+          className="rounded-md border border-zinc-200 dark:border-zinc-800 px-2 py-1 text-[11px] text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+        >
+          Close
         </button>
         <button
           ref={openerRef}

@@ -12,7 +12,7 @@
 //   * A workspace with no containers — a stated "none", never an empty pane.
 //     The distinction the Setup verdict strip exists to make.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   DockerStillRunningError,
   DockerUnavailableError,
@@ -33,11 +33,41 @@ export function WorkspaceDockerView({ workspaceId }: { workspaceId: string }): R
   const [all, setAll] = useState<DockerContainer[] | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [open, setOpen] = useState<DockerContainer | null>(null);
-  // TASK-1875 — the container whose filesystem is being browsed, or null.
-  // Only offered for a running one: exec needs one, and a button that is
-  // going to 409 is worse than no button.
-  const [browsing, setBrowsing] = useState<DockerContainer | null>(null);
+  // TASK-1896 — ONE pane, not two booleans. Logs and Files used to be separate
+  // states, so opening one left the other rendered underneath it: two panes
+  // stacked in a tab that has to scroll to reach them. Making it a single
+  // nullable value means "both open" is not a state that can be reached, rather
+  // than a state two handlers have to remember to avoid.
+  //
+  // Files is only offered for a running container: exec needs one, and a button
+  // that is going to 409 is worse than no button (TASK-1875).
+  const [pane, setPane] = useState<{ kind: 'logs' | 'files'; c: DockerContainer } | null>(null);
+  // Where focus goes when the pane closes — the same obligation the fullscreen
+  // overlay carries. Held as the button's TESTID rather than as the element:
+  // Row is declared inside this component, so every render is a new component
+  // type and React replaces the row's DOM nodes. A captured element would be
+  // detached by the time the close re-render lands, and focus() on a detached
+  // node silently does nothing.
+  const restoreFocusTo = useRef<string | null>(null);
+
+  const showing = (kind: 'logs' | 'files', c: DockerContainer): boolean =>
+    pane !== null && pane.kind === kind && pane.c.id === c.id;
+
+  // Same button, same container -> close. Different container -> switch to it,
+  // which is what a reader comparing two containers is actually doing.
+  const toggle = (kind: 'logs' | 'files', c: DockerContainer): void => {
+    if (showing(kind, c)) {
+      restoreFocusTo.current = `docker-${kind}-${c.name}`;
+      setPane(null);
+      return;
+    }
+    setPane({ kind, c });
+  };
+
+  const closePane = (): void => {
+    if (pane !== null) restoreFocusTo.current = `docker-${pane.kind}-${pane.c.name}`;
+    setPane(null);
+  };
   // Containers and images are both "what docker holds", but they are two
   // lists with two verbs. A sub-tab keeps them apart without adding a sixth
   // workspace tab for something scoped the same way.
@@ -67,6 +97,17 @@ export function WorkspaceDockerView({ workspaceId }: { workspaceId: string }): R
       ac.abort();
     };
   }, []);
+
+  // Consumed after the render that removed the pane. Calling focus() inside the
+  // handler focuses a button in the tree React is about to re-render, so the
+  // focus lands nowhere and a keyboard reader is stranded — the same trap
+  // DockerLogs hit with its overlay.
+  useEffect(() => {
+    const target = restoreFocusTo.current;
+    if (pane !== null || target === null) return;
+    restoreFocusTo.current = null;
+    document.querySelector<HTMLButtonElement>(`[data-testid="${target}"]`)?.focus();
+  }, [pane]);
 
   async function confirmAction(): Promise<void> {
     if (pending === null) return;
@@ -143,20 +184,34 @@ export function WorkspaceDockerView({ workspaceId }: { workspaceId: string }): R
       {RUNNING(c) && (
         <button
           type="button"
-          onClick={() => setBrowsing(c)}
+          onClick={() => toggle('files', c)}
+          // The label names the state the click PRODUCES, so a reader can tell
+          // an open pane from a closed one without scrolling down to look.
+          aria-pressed={showing('files', c)}
           data-testid={`docker-files-${c.name}`}
-          className="flex-none rounded-md border border-zinc-200 dark:border-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-600 dark:text-zinc-300"
+          className={[
+            "flex-none rounded-md border px-1.5 py-0.5 text-[11px]",
+            showing('files', c)
+              ? "border-zinc-900 dark:border-zinc-100 text-zinc-900 dark:text-zinc-100"
+              : "border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300"
+          ].join(" ")}
         >
-          Files
+          {showing('files', c) ? "Hide files" : "Files"}
         </button>
       )}
       <button
         type="button"
-        onClick={() => setOpen(c)}
+        onClick={() => toggle('logs', c)}
+        aria-pressed={showing('logs', c)}
         data-testid={`docker-logs-${c.name}`}
-        className="flex-none rounded-md border border-zinc-200 dark:border-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+        className={[
+          "flex-none rounded-md border px-1.5 py-0.5 text-[11px] hover:bg-zinc-50 dark:hover:bg-zinc-800/50",
+          showing('logs', c)
+            ? "border-zinc-900 dark:border-zinc-100 text-zinc-900 dark:text-zinc-100"
+            : "border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300"
+        ].join(" ")}
       >
-        Logs
+        {showing('logs', c) ? "Hide logs" : "Logs"}
       </button>
     </li>
   );
@@ -276,14 +331,24 @@ export function WorkspaceDockerView({ workspaceId }: { workspaceId: string }): R
         </section>
       )}
 
-      {browsing !== null && (
-        <ContainerFiles containerId={browsing.id} containerName={browsing.name} />
+      {pane?.kind === 'files' && (
+        <ContainerFiles
+          key={pane.c.id}
+          containerId={pane.c.id}
+          containerName={pane.c.name}
+          onClose={closePane}
+        />
       )}
 
-      {open !== null && (
+      {pane?.kind === 'logs' && (
         // Keyed: opening a different container is a new pane with its own
         // first read, not the previous one refreshed (TASK-1893).
-        <DockerLogs key={open.id} containerId={open.id} containerName={open.name} />
+        <DockerLogs
+          key={pane.c.id}
+          containerId={pane.c.id}
+          containerName={pane.c.name}
+          onClose={closePane}
+        />
       )}
       </div>
       )}
