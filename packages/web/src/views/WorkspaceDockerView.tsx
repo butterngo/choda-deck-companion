@@ -184,10 +184,22 @@ export function WorkspaceDockerView({ workspaceId }: { workspaceId: string }): R
         ))}
       </div>
 
+      {/* TASK-1892 — the one scroll container for this tab.
+          The sub-tab strip above stays put; everything below it scrolls. The
+          Tasks and History tabs scroll their WHOLE pane, which for those is the
+          same thing — here it would carry the Containers/Images strip off the
+          top of a short window, and this tab's content is 25 rows plus an
+          Unattached section on a real machine. Nothing inside may add a second
+          vertical scroll: the logs pane's own max-h-72 is a bounded box, not a
+          competing page. */}
+      <div
+        data-testid="docker-scroll"
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
+      >
       {view === "images" && <DockerImages />}
 
       {view === "containers" && (
-      <>
+      <div className="flex flex-col gap-3">
       <p data-testid="docker-verdict" className="text-[11.5px] tabular-nums text-zinc-500">
         <span className="font-medium text-zinc-900 dark:text-zinc-100">{mine.length}</span>{" "}
         {mine.length === 1 ? "container" : "containers"} for this workspace
@@ -269,10 +281,13 @@ export function WorkspaceDockerView({ workspaceId }: { workspaceId: string }): R
       )}
 
       {open !== null && (
-        <DockerLogs containerId={open.id} containerName={open.name} />
+        // Keyed: opening a different container is a new pane with its own
+        // first read, not the previous one refreshed (TASK-1893).
+        <DockerLogs key={open.id} containerId={open.id} containerName={open.name} />
       )}
-      </>
+      </div>
       )}
+      </div>
 
     </div>
   );

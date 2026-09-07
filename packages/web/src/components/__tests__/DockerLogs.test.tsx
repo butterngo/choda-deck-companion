@@ -155,3 +155,194 @@ describe("AC-6 — the tail control is not decorative", () => {
     expect(calls[0]).toContain("tail=200");
   });
 });
+
+// TASK-1893 — the pane was a snapshot with no way to re-read it.
+describe("TASK-1893 — refreshing the log", () => {
+  const logCalls = (): string[] => calls.filter((c) => c.includes("/docker/logs"));
+
+  it("AC-1 — one click issues exactly one more read, on the same tail", async () => {
+    await mount();
+    expect(logCalls()).toHaveLength(1);
+    const first = logCalls()[0];
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("docker-logs-refresh"));
+    });
+
+    expect(logCalls()).toHaveLength(2);
+    // Same URL: a refresh must not quietly change what it asks for. If this
+    // ever differs, the button is doing something other than re-reading.
+    expect(logCalls()[1]).toBe(first);
+    expect(logCalls()[1]).toContain("tail=200");
+  });
+
+  it("AC-1 — the second read's lines REPLACE the first's", async () => {
+    await mount();
+    expect(shown()).toHaveLength(4);
+    lines = ["2026-09-07 restarted", "2026-09-07 listening"];
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("docker-logs-refresh"));
+    });
+    expect(shown()).toEqual(["2026-09-07 restarted", "2026-09-07 listening"]);
+  });
+
+  it("AC-4 — a shorter second read does not leave the old lines behind", async () => {
+    // The restart case, stated as its own test because appending would still
+    // pass the AC-1 test above: 2 new lines after 4 old ones "renders the new
+    // lines" perfectly well while lying about the log.
+    await mount();
+    lines = ["only this one"];
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("docker-logs-refresh"));
+    });
+    expect(shown()).toHaveLength(1);
+    expect(shown()[0]).not.toContain("server listening");
+  });
+
+  it("AC-2 — the query and the tail survive a refresh, and so does the count", async () => {
+    await mount();
+    fireEvent.change(screen.getByTestId("docker-logs-tail"), { target: { value: "1000" } });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.change(screen.getByTestId("docker-logs-search"), { target: { value: "error" } });
+    expect(screen.getByTestId("docker-logs-count").textContent).toContain("2 of 4");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("docker-logs-refresh"));
+    });
+
+    expect((screen.getByTestId("docker-logs-search") as HTMLInputElement).value).toBe("error");
+    expect((screen.getByTestId("docker-logs-tail") as HTMLSelectElement).value).toBe("1000");
+    expect(logCalls()[logCalls().length - 1]).toContain("tail=1000");
+    // The filter is still APPLIED to the new lines, not merely still typed in
+    // the box — the count proves which.
+    expect(screen.getByTestId("docker-logs-count").textContent).toContain("2 of 4");
+    expect(shown()).toHaveLength(2);
+  });
+
+  it("AC-3 — a second click while one read is in flight issues nothing", async () => {
+    let release: (() => void) | null = null;
+    vi.stubGlobal("fetch", (input: RequestInfo) => {
+      calls.push(String(input));
+      if (calls.length === 1) {
+        return Promise.resolve(new Response(JSON.stringify({ lines }), { status: 200 }));
+      }
+      return new Promise<Response>((resolve) => {
+        release = () => resolve(new Response(JSON.stringify({ lines }), { status: 200 }));
+      });
+    });
+    await mount();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("docker-logs-refresh"));
+    });
+    const btn = screen.getByTestId("docker-logs-refresh") as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(btn.textContent).toContain("Refresh");
+
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    expect(logCalls()).toHaveLength(2);
+
+    await act(async () => {
+      release?.();
+      await Promise.resolve();
+    });
+    expect((screen.getByTestId("docker-logs-refresh") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("AC-3 — the in-flight refresh does not blank the lines it is replacing", async () => {
+    // The reason `refreshing` is not `busy`: a skeleton here would hide the
+    // only true thing on screen for the length of a docker call.
+    vi.stubGlobal("fetch", (input: RequestInfo) => {
+      calls.push(String(input));
+      if (calls.length === 1) {
+        return Promise.resolve(new Response(JSON.stringify({ lines }), { status: 200 }));
+      }
+      return new Promise<Response>(() => {
+        /* never settles */
+      });
+    });
+    await mount();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("docker-logs-refresh"));
+    });
+    expect(shown()).toHaveLength(4);
+  });
+
+  it("AC-5 — a failed refresh keeps the old lines and says the re-read failed", async () => {
+    vi.stubGlobal("fetch", (input: RequestInfo) => {
+      calls.push(String(input));
+      if (calls.length === 1) {
+        return Promise.resolve(new Response(JSON.stringify({ lines }), { status: 200 }));
+      }
+      return Promise.reject(new Error("network"));
+    });
+    await mount();
+    expect(shown()).toHaveLength(4);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("docker-logs-refresh"));
+    });
+
+    // Both facts, rendered separately.
+    expect(shown()).toHaveLength(4);
+    expect(screen.getByTestId("docker-logs-stale").textContent).toContain("Could not re-read");
+    // NOT the empty state: "this container has written nothing" would be a
+    // different and false claim.
+    expect(screen.queryByTestId("docker-logs-empty")).toBeNull();
+  });
+
+  it("AC-5 — CONTROL: a refresh that succeeds clears the failure sentence", async () => {
+    let failNext = true;
+    vi.stubGlobal("fetch", (input: RequestInfo) => {
+      calls.push(String(input));
+      if (calls.length > 1 && failNext) {
+        failNext = false;
+        return Promise.reject(new Error("network"));
+      }
+      return Promise.resolve(new Response(JSON.stringify({ lines }), { status: 200 }));
+    });
+    await mount();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("docker-logs-refresh"));
+    });
+    expect(screen.getByTestId("docker-logs-stale")).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("docker-logs-refresh"));
+    });
+    expect(screen.queryByTestId("docker-logs-stale")).toBeNull();
+  });
+
+  it("AC-5 — a FIRST read that fails is still the empty state, not a stale one", async () => {
+    vi.stubGlobal("fetch", (input: RequestInfo) => {
+      calls.push(String(input));
+      return Promise.reject(new Error("network"));
+    });
+    await mount();
+    expect(screen.queryByTestId("docker-logs-stale")).toBeNull();
+    expect(screen.getByTestId("docker-logs-empty")).toBeTruthy();
+  });
+
+  it("AC-6 — the control is present and works in fullscreen", async () => {
+    await mount();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("docker-logs-fullscreen"));
+    });
+    expect(screen.getByTestId("docker-logs-overlay")).toBeTruthy();
+    const inOverlay = screen
+      .getByTestId("docker-logs-overlay")
+      .querySelector("[data-testid='docker-logs-refresh']");
+    expect(inOverlay).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(inOverlay as HTMLElement);
+    });
+    expect(logCalls()).toHaveLength(2);
+    // Still fullscreen afterwards — a refresh that dropped the overlay would
+    // send the reader back to a 288px box mid-read.
+    expect(screen.getByTestId("docker-logs-overlay")).toBeTruthy();
+  });
+});
