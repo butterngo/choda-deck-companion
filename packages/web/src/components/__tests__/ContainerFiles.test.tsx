@@ -169,3 +169,152 @@ describe("reading a file, and refusing to pretend", () => {
     expect(screen.queryByTestId("cf-file")).toBeNull();
   });
 });
+
+// TASK-1899 — a real directory does not fit in a 288px box.
+describe("TASK-1899 — the Files pane goes fullscreen", () => {
+  const closed = vi.fn();
+  const mountWithClose = async (): Promise<void> => {
+    closed.mockClear();
+    render(<ContainerFiles containerId="run1" containerName="jm-api" onClose={closed} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+  };
+  const enter = async (): Promise<void> => {
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cf-fullscreen"));
+    });
+  };
+
+  it("AC-1 — the control opens an overlay, and closing returns to the inline pane", async () => {
+    lsBody = { entries: [entry("package.json")] };
+    await mountWithClose();
+    expect(screen.queryByTestId("cf-overlay")).toBeNull();
+
+    await enter();
+    expect(screen.getByTestId("cf-overlay")).toBeTruthy();
+    // The listing came with it — an overlay that renders an empty box is not
+    // fullscreen, it is a second pane.
+    expect(screen.getByTestId("cf-overlay").textContent).toContain("package.json");
+
+    await enter();
+    expect(screen.queryByTestId("cf-overlay")).toBeNull();
+    expect(screen.getByTestId("container-files")).toBeTruthy();
+  });
+
+  it("AC-2 — Escape leaves fullscreen and leaves the PANE open", async () => {
+    lsBody = { entries: [entry("package.json")] };
+    await mountWithClose();
+    await enter();
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "Escape" });
+    });
+
+    // Two different exits. Escape is not Close, and conflating them would take
+    // the pane away from a reader who only wanted the overlay gone.
+    expect(screen.queryByTestId("cf-overlay")).toBeNull();
+    expect(screen.getByTestId("container-files")).toBeTruthy();
+    expect(closed).not.toHaveBeenCalled();
+  });
+
+  it("AC-3 — fullscreen gives the listing and the file MORE room", async () => {
+    lsBody = { entries: [entry("package.json")] };
+    catBody = { text: '{"a":1}' };
+    await mountWithClose();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cf-row-package.json").querySelector("button")!);
+    });
+    const inlineList = screen.getByTestId("cf-list").className;
+    const inlineFile = screen.getByTestId("cf-file-body").className;
+
+    await enter();
+
+    // Asserted as a DIFFERENCE, not as a class name: an overlay that kept
+    // max-h-72 would satisfy AC-1 while showing exactly as much as before.
+    expect(screen.getByTestId("cf-list").className).not.toBe(inlineList);
+    expect(screen.getByTestId("cf-file-body").className).not.toBe(inlineFile);
+    expect(inlineList).toContain("max-h-72");
+    expect(screen.getByTestId("cf-list").className).not.toContain("max-h-72");
+  });
+
+  it("AC-4 — path, entries and the open file survive the toggle, with no new request", async () => {
+    lsBody = { entries: [entry("app", "drwxr-xr-x"), entry("package.json")] };
+    await mountWithClose();
+    // Swapped BEFORE the click: the listing effect fires inside it, so setting
+    // the next body afterwards would serve the old one.
+    lsBody = { entries: [entry("index.ts")] };
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cf-row-app").querySelector("button")!);
+    });
+    catBody = { text: "export const x = 1" };
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cf-row-index.ts").querySelector("button")!);
+    });
+    const before = lsCalls().length;
+    expect(screen.getByTestId("cf-path").textContent).toBe("/app");
+
+    await enter();
+
+    expect(screen.getByTestId("cf-path").textContent).toBe("/app");
+    expect(screen.getByTestId("cf-row-index.ts")).toBeTruthy();
+    expect(screen.getByTestId("cf-file").textContent).toContain("export const x = 1");
+    // Going fullscreen is a CSS change, not a re-read. A toggle that refetched
+    // would shell out to docker for a layout.
+    expect(lsCalls()).toHaveLength(before);
+
+    await enter();
+    expect(screen.getByTestId("cf-path").textContent).toBe("/app");
+    expect(screen.getByTestId("cf-file").textContent).toContain("export const x = 1");
+    expect(lsCalls()).toHaveLength(before);
+  });
+
+  it("AC-5 — you can still walk into a directory and open a file from the overlay", async () => {
+    lsBody = { entries: [entry("app", "drwxr-xr-x")] };
+    await mountWithClose();
+    await enter();
+
+    lsBody = { entries: [entry("index.ts")] };
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cf-row-app").querySelector("button")!);
+    });
+    expect(screen.getByTestId("cf-path").textContent).toBe("/app");
+    expect(screen.getByTestId("cf-overlay").textContent).toContain("index.ts");
+
+    catBody = { text: "hello" };
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("cf-row-index.ts").querySelector("button")!);
+    });
+    expect(screen.getByTestId("cf-file").textContent).toContain("hello");
+    // Still fullscreen — navigating must not drop the reader back to the box
+    // they left.
+    expect(screen.getByTestId("cf-overlay")).toBeTruthy();
+  });
+
+  it("AC-6 — Escape returns focus to the fullscreen button", async () => {
+    lsBody = { entries: [entry("package.json")] };
+    await mountWithClose();
+    await enter();
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "Escape" });
+    });
+    expect(document.activeElement).toBe(screen.getByTestId("cf-fullscreen"));
+  });
+
+  it("AC-6 — Close is reachable in fullscreen and dismisses the PANE", async () => {
+    lsBody = { entries: [entry("package.json")] };
+    await mountWithClose();
+    await enter();
+    const inOverlay = screen
+      .getByTestId("cf-overlay")
+      .querySelector("[data-testid='cf-close']");
+    expect(inOverlay).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(inOverlay as HTMLElement);
+    });
+    // The pane's own removal belongs to the parent (TASK-1896); what this owns
+    // is telling it, which is what the spy proves.
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+});
