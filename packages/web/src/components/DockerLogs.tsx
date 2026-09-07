@@ -32,6 +32,16 @@ export function DockerLogs({
 }): React.JSX.Element {
   const [lines, setLines] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(true);
+  // TASK-1893 — a re-read of the SAME (container, tail). Bumping this is what
+  // re-runs the effect; calling the fetch from the click handler instead would
+  // be a second code path to the same route, and the two would drift.
+  const [nonce, setNonce] = useState(0);
+  // Separate from `busy`: a refresh keeps the lines it already has on screen,
+  // so the skeleton must not come back and hide them.
+  const [refreshing, setRefreshing] = useState(false);
+  // A refresh that failed. The lines beside it are the PREVIOUS read's, and
+  // saying so is the difference between stale data and a lie.
+  const [staleAfterFailure, setStale] = useState(false);
   const [tail, setTail] = useState<Tail>(200);
   const [query, setQuery] = useState("");
   const [full, setFull] = useState(false);
@@ -45,21 +55,39 @@ export function DockerLogs({
 
   useEffect(() => {
     let live = true;
-    setBusy(true);
+    // The first read of a container blanks the pane and shows a skeleton; a
+    // refresh does not, because there is already something true on screen.
+    // Safe as an identity for "not the first read" because the caller keys this
+    // component by container id — a different container is a different instance
+    // with its own nonce, not this one carrying a stale count into a new log.
+    const isRefresh = nonce > 0;
+    if (isRefresh) setRefreshing(true);
+    else setBusy(true);
     fetchDockerLogs(containerId, tail)
       .then((l) => {
-        if (live) setLines(l);
+        if (!live) return;
+        // Assigned, never appended. A container that was restarted has FEWER
+        // lines than before, and a concatenation would render lines that are
+        // no longer in the log as if they still were.
+        setLines(l);
+        setStale(false);
       })
       .catch(() => {
-        if (live) setLines([]);
+        if (!live) return;
+        // On a refresh the previous lines stay. Clearing them would throw away
+        // the only true thing the pane still holds because a later read failed.
+        if (isRefresh) setStale(true);
+        else setLines([]);
       })
       .finally(() => {
-        if (live) setBusy(false);
+        if (!live) return;
+        setBusy(false);
+        setRefreshing(false);
       });
     return () => {
       live = false;
     };
-  }, [containerId, tail]);
+  }, [containerId, tail, nonce]);
 
   useEffect(() => {
     if (!full) return;
@@ -119,6 +147,17 @@ export function DockerLogs({
           ))}
         </select>
         <button
+          type="button"
+          onClick={() => setNonce((n) => n + 1)}
+          // Guarded, not just styled: two clicks must not put two reads of the
+          // same tail in flight, each shelling out to docker.
+          disabled={busy || refreshing}
+          data-testid="docker-logs-refresh"
+          className="rounded-md border border-zinc-200 dark:border-zinc-800 px-2 py-1 text-[11px] text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 disabled:opacity-40"
+        >
+          {refreshing ? "Refreshing…" : "Refresh"}
+        </button>
+        <button
           ref={openerRef}
           type="button"
           onClick={() => { if (full) restoreFocus.current = true; setFull((v) => !v); }}
@@ -130,6 +169,18 @@ export function DockerLogs({
       </div>
 
       {busy && <Skeleton shape="list" label="Reading logs…" />}
+
+      {staleAfterFailure && (
+        // Two facts, two renderings: these lines are real, and the attempt to
+        // replace them failed. An error state that swallowed the lines would
+        // lose both.
+        <p
+          data-testid="docker-logs-stale"
+          className="mb-1.5 text-[11.5px] text-amber-700 dark:text-amber-300"
+        >
+          Could not re-read the log. These are the lines from the last successful read.
+        </p>
+      )}
 
       {!busy && all.length === 0 && (
         <p data-testid="docker-logs-empty" className="text-[11.5px] text-zinc-500">

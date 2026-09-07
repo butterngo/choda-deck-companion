@@ -244,3 +244,75 @@ describe("AC-7 — the row shows what IS, not what was asked", () => {
     expect(screen.getByTestId("docker-row-slow").getAttribute("data-state")).toBe("running");
   });
 });
+
+// TASK-1892 — the tab was clipped, not scrolled.
+//
+// jsdom has no layout, so none of this can measure a scrollbar. What it CAN
+// prove is the structure that produces one: a single element that owns the
+// overflow, every row inside it, and the sub-tab strip outside it. A test that
+// only asserted a class name would pass against a class on any div in the tree,
+// which is why containment is asserted instead.
+describe("TASK-1892 — the Docker tab scrolls on a short viewport", () => {
+  const many = (n: number): Record<string, unknown>[] =>
+    Array.from({ length: n }, (_, i) => container(`c${i}`, "ws-1"));
+
+  it("AC-1 — one scroll container owns the overflow, and it is the only one", async () => {
+    containersBody = { containers: many(3) };
+    await mount();
+    const scroll = screen.getByTestId("docker-scroll");
+    expect(scroll.className).toContain("overflow-y-auto");
+    // The whole point of "one": a second scrolling ancestor inside this tab
+    // would trap the wheel in whichever the pointer happened to be over.
+    const scrollers = Array.from(
+      document.querySelectorAll<HTMLElement>("[class*='overflow-y-auto']"),
+    );
+    expect(scrollers).toHaveLength(1);
+    expect(scrollers[0]).toBe(scroll);
+  });
+
+  it("AC-2 — with more rows than fit, the LAST one is inside the scroll container", async () => {
+    containersBody = { containers: many(30) };
+    await mount();
+    const scroll = screen.getByTestId("docker-scroll");
+    const last = screen.getByTestId("docker-row-c29");
+    expect(scroll.contains(last)).toBe(true);
+    // A control on the first row too: "inside" must not be satisfied by the
+    // list starting in the scroller and overflowing out of it, which is what
+    // the old markup effectively did at the pane boundary.
+    expect(scroll.contains(screen.getByTestId("docker-row-c0"))).toBe(true);
+    expect(screen.getAllByTestId(/^docker-row-/).length).toBe(30);
+  });
+
+  it("AC-2 — the unattached section scrolls with the list, not past it", async () => {
+    containersBody = {
+      containers: [...many(12), container("stray", null), container("stray2", null)],
+    };
+    await mount();
+    const scroll = screen.getByTestId("docker-scroll");
+    expect(scroll.contains(screen.getByTestId("docker-unattached"))).toBe(true);
+  });
+
+  it("AC-3 — the Images sub-tab renders inside the same scroll container", async () => {
+    containersBody = { containers: many(2) };
+    await mount();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("docker-subtab-images"));
+    });
+    const scroll = screen.getByTestId("docker-scroll");
+    // Whatever Images renders — a list, a note, or a failure — it must be in
+    // the scroller, or switching sub-tabs silently loses the ability to scroll.
+    expect(scroll.textContent).not.toBe("");
+    expect(scroll.contains(screen.getByTestId("docker-subtab-images"))).toBe(false);
+  });
+
+  it("AC-4 — the sub-tab strip stays OUTSIDE the scroll, and nothing scrolls sideways", async () => {
+    containersBody = { containers: many(30) };
+    await mount();
+    const scroll = screen.getByTestId("docker-scroll");
+    expect(scroll.contains(screen.getByTestId("docker-subtab-containers"))).toBe(false);
+    expect(scroll.contains(screen.getByTestId("docker-subtab-images"))).toBe(false);
+    // The rows truncate rather than widen; a horizontal scrollbar here would
+    // mean a row is pushing the pane, which is a layout bug, not a long list.
+    expect(scroll.className).toContain("overflow-x-hidden");
+  });
+});
