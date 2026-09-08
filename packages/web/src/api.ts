@@ -1104,7 +1104,8 @@ export async function reviewClaudeConfig(
 export interface AcVerdict {
   index: number;
   text: string;
-  verdict: "ok" | "weak";
+  /** TASK-1913 — `unanswered` means the model returned no row for this index. */
+  verdict: "ok" | "weak" | "unanswered";
   concern: string | null;
   suggestion: string | null;
 }

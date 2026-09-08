@@ -144,3 +144,50 @@ describe("AC-6 — a suggestion is text, never a write", () => {
     expect(screen.getByTestId("ac-verdicts").textContent).toContain("judgement, not a check");
   });
 });
+
+// TASK-1913 — the pane must not render "the model said nothing" as approval.
+describe("TASK-1913 — an unanswered verdict reads as neither ok nor weak", () => {
+  const three = {
+    criteria: [
+      { index: 0, text: "names its surface", verdict: "ok", concern: null, suggestion: null },
+      { index: 1, text: "handles errors properly", verdict: "weak", concern: "no surface", suggestion: "rewrite" },
+      { index: 2, text: "the third one", verdict: "unanswered", concern: "The model returned no verdict for this criterion.", suggestion: null },
+    ],
+  };
+
+  it("AC-3 — the three rows render differently from EACH OTHER", async () => {
+    body = three;
+    render(<AcGrader taskId="TASK-1" />);
+    await press();
+
+    const okRow = screen.getByTestId("ac-verdict-0");
+    const weakRow = screen.getByTestId("ac-verdict-1");
+    const unRow = screen.getByTestId("ac-verdict-2");
+
+    // Asserted pairwise. "The unanswered row exists" would pass against a
+    // component that renders it identically to ok — which is the defect.
+    expect(unRow.className).not.toBe(okRow.className);
+    expect(unRow.className).not.toBe(weakRow.className);
+    expect(okRow.className).not.toBe(weakRow.className);
+    expect(unRow.getAttribute("data-verdict")).toBe("unanswered");
+    expect(unRow.textContent).toContain("no verdict");
+  });
+
+  it("AC-4 — the summary counts unanswered separately from flagged", async () => {
+    body = three;
+    render(<AcGrader taskId="TASK-1" />);
+    await press();
+    const summary = screen.getByTestId("ac-summary").textContent ?? "";
+    expect(summary).toContain("1 of 3 flagged");
+    // Without this the line reads "1 of 3 flagged" while a criterion nobody
+    // graded sits below it.
+    expect(summary).toContain("1 unanswered");
+  });
+
+  it("AC-4 — CONTROL: with nothing unanswered the line does not mention it", async () => {
+    body = { criteria: three.criteria.slice(0, 2) };
+    render(<AcGrader taskId="TASK-1" />);
+    await press();
+    expect(screen.getByTestId("ac-summary").textContent).not.toContain("unanswered");
+  });
+});

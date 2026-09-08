@@ -65,6 +65,10 @@ export function AcGrader({ taskId }: { taskId: string }): React.JSX.Element {
   }
 
   const weak = verdicts?.filter((v) => v.verdict === "weak") ?? [];
+  // TASK-1913 — counted separately from flagged. A criterion the model never
+  // answered for is not a criterion it approved, and a summary that folded the
+  // two together would say "none flagged" over a row nobody graded.
+  const unanswered = verdicts?.filter((v) => v.verdict === "unanswered") ?? [];
 
   return (
     <section
@@ -135,6 +139,7 @@ export function AcGrader({ taskId }: { taskId: string }): React.JSX.Element {
                 {weak.length === 0
                   ? `${verdicts.length} criteria, none flagged.`
                   : `${weak.length} of ${verdicts.length} flagged.`}
+                {unanswered.length > 0 && ` ${unanswered.length} unanswered.`}
               </p>
               <ul className="space-y-1.5">
                 {verdicts.map((v) => (
@@ -146,7 +151,9 @@ export function AcGrader({ taskId }: { taskId: string }): React.JSX.Element {
                       "rounded border px-2 py-1.5 text-[11.5px]",
                       v.verdict === "weak"
                         ? "border-amber-300 dark:border-amber-800"
-                        : "border-zinc-200 dark:border-zinc-800",
+                        : v.verdict === "unanswered"
+                          ? "border-dashed border-zinc-400 dark:border-zinc-600"
+                          : "border-zinc-200 dark:border-zinc-800",
                     ].join(" ")}
                   >
                     <span className="flex items-start gap-2">
@@ -155,7 +162,9 @@ export function AcGrader({ taskId }: { taskId: string }): React.JSX.Element {
                           "flex-none rounded px-1 font-mono text-[10px] uppercase",
                           v.verdict === "weak"
                             ? "text-amber-700 dark:text-amber-400"
-                            : "text-zinc-400",
+                            : v.verdict === "unanswered"
+                              ? "text-zinc-600 dark:text-zinc-300"
+                              : "text-zinc-400",
                         ].join(" ")}
                       >
                         {v.verdict}
