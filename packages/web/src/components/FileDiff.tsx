@@ -109,7 +109,16 @@ export function FileDiff({
         <p data-testid={`diff-omitted-${file.path}`} className="px-2.5 py-2 text-[11px] text-zinc-500">
           {file.omitted === "binary"
             ? "Not text — there are no lines to show."
-            : "Too large to show line by line. The counts above are still exact."}
+            : file.omitted === "too-large"
+              ? `Too large to show line by line${
+                  file.capBytes === undefined ? "" : ` (over ${Math.round(file.capBytes / 1024)} KB)`
+                }. The counts above are still exact.`
+              : // TASK-1921 — anything else, INCLUDING an absent reason. This
+                // used to fall through to the cap sentence, so a renamed file
+                // announced itself as too large: a confident, wrong statement
+                // about a file that was neither large nor unchanged. Saying we
+                // do not know is worth more than a plausible guess.
+                "The lines could not be read for this file. The counts above are still exact."}
         </p>
       ) : file.hunks.length === 0 ? (
         <p data-testid={`diff-empty-${file.path}`} className="px-2.5 py-2 text-[11px] text-zinc-500">

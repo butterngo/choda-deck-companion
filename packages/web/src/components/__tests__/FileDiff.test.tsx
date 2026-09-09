@@ -173,3 +173,69 @@ describe("files that cannot be opened", () => {
     expect(screen.getByText(/renamed from/).textContent).toContain("src/old-name.ts");
   });
 });
+
+// TASK-1921 — a renamed file used to announce itself as too large.
+//
+// The adapter sent `hunks` ABSENT for a renamed file (the numstat/patch join
+// missed on the path), so the pane rendered the old-adapter note — telling a
+// reader to upgrade an adapter that was already current. Once the adapter was
+// fixed to send a reason, the fallback here was still wrong in the other
+// direction: any unrecognised reason fell through to the cap sentence.
+describe("a renamed file, and reasons we do not recognise (TASK-1921)", () => {
+  const renamed = {
+    path: "src/new-name.ts",
+    oldPath: "src/old-name.ts",
+    insertions: 4,
+    deletions: 1,
+    binary: false,
+    hunks: [
+      {
+        oldStart: 1,
+        oldLines: 2,
+        newStart: 1,
+        newLines: 3,
+        header: "",
+        lines: [
+          { kind: "ctx" as const, text: "one", oldNo: 1, newNo: 1 },
+          { kind: "add" as const, text: "TWO", oldNo: null, newNo: 2 },
+        ],
+      },
+    ],
+  };
+
+  it("AC-6 — says where the file came from", () => {
+    render(<FileDiff file={renamed} onOpen={() => {}} />);
+    expect(screen.getByText(/renamed from/)).toHaveTextContent("src/old-name.ts");
+  });
+
+  it("AC-6 — and is openable like any other text file", () => {
+    const opened: string[] = [];
+    render(<FileDiff file={renamed} onOpen={(p) => opened.push(p)} />);
+    fireEvent.click(screen.getByTestId("file-open-src/new-name.ts"));
+    // The NEW path, which is the one that exists.
+    expect(opened).toEqual(["src/new-name.ts"]);
+  });
+
+  it("AC-7 — an unknown reason does NOT claim the file is too large", () => {
+    const unknown = { ...renamed, hunks: null, omitted: "no-patch" as const };
+    render(<FileDiff file={unknown} onOpen={() => {}} />);
+    const note = screen.getByTestId("diff-omitted-src/new-name.ts");
+    expect(note.textContent).not.toContain("Too large");
+    expect(note.textContent).toContain("could not be read");
+  });
+
+  it("AC-7 CONTROL — a real too-large still says so, and names the cap", () => {
+    // Without this the assertion above passes on a build that never says
+    // "too large" about anything, including files that genuinely are.
+    const big = {
+      ...renamed,
+      hunks: null,
+      omitted: "too-large" as const,
+      capBytes: 262144,
+    };
+    render(<FileDiff file={big} onOpen={() => {}} />);
+    const note = screen.getByTestId("diff-omitted-src/new-name.ts");
+    expect(note.textContent).toContain("Too large");
+    expect(note.textContent).toContain("256 KB");
+  });
+})
