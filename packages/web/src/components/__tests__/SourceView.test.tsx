@@ -221,3 +221,63 @@ describe("lineFromHash", () => {
     }
   });
 });
+
+// TASK-1789 AC-3 — the language module is loaded ONCE, however many files of
+// that language are opened.
+//
+// This was the one criterion #80 shipped without a test. The guard is real —
+// `registered` in lib/highlight.ts, with a comment saying the core is "loaded
+// at most once for the life of the page" — but nothing observed it, so a
+// refactor that dropped the Set would have gone out green.
+//
+// The observation point took a moment to find. `LOADERS` is module-internal, so
+// the loader itself cannot be spied. A factory counter on the language module
+// cannot discriminate either: the module registry caches the module, so the
+// factory runs once whether `load()` is called once or ten times. What DOES
+// track calls is the property read — `mod.default` is read once per `load()`,
+// so a proxy counting that read separates "loaded once" from "loaded per file".
+const reads = vi.hoisted(() => ({ typescript: 0 }));
+
+vi.mock("highlight.js/lib/languages/typescript", async (importOriginal) => {
+  const real = (await importOriginal()) as { default: unknown };
+  return new Proxy(real, {
+    get(target, key, receiver) {
+      if (key === "default") reads.typescript += 1;
+      return Reflect.get(target, key, receiver) as unknown;
+    },
+  });
+});
+
+describe("AC-3 — one language module, however many files", () => {
+  const TS_A = "export const a = 1;";
+  const TS_B = "export function b(): number {\n  return 2;\n}";
+
+  beforeEach(() => {
+    reads.typescript = 0;
+  });
+
+  it("opening two different .ts files loads typescript once, not twice", async () => {
+    mount("src/a.ts", TS_A);
+    await waitFor(() => expect(reads.typescript).toBe(1));
+
+    // A SECOND file, different content and a different path, so nothing about
+    // the first render can be reused by accident.
+    mount("src/b.ts", TS_B);
+    await waitFor(() => expect(screen.getAllByTestId("doc-source")).toHaveLength(2));
+
+    // Still one. Without the `registered` guard this reads 2 — the count would
+    // scale with files opened, which is exactly what the criterion forbids.
+    expect(reads.typescript).toBe(1);
+  });
+
+  it("CONTROL — clearing the cache makes it load again, so the count is live", async () => {
+    // Without this, the assertion above would also pass against a counter that
+    // never increments at all.
+    mount("src/a.ts", TS_A);
+    await waitFor(() => expect(reads.typescript).toBe(1));
+
+    resetHighlightCacheForTests();
+    mount("src/b.ts", TS_B);
+    await waitFor(() => expect(reads.typescript).toBe(2));
+  });
+});
