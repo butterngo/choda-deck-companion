@@ -602,7 +602,9 @@ export interface CommitFileStat {
    *   Hunk[]    — the actual changed lines
    */
   hunks?: DiffHunk[] | null;
-  omitted?: "binary" | "too-large";
+  omitted?: "binary" | "too-large" | "no-patch";
+  /** The cap the adapter applied, in bytes. Present only with `too-large`. */
+  capBytes?: number;
   /** Set only on a rename. */
   oldPath?: string;
   /** null for a binary file — git reports `-`, and 0 would say it did not change. */
