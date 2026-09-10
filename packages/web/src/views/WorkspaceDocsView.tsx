@@ -17,6 +17,8 @@ import type { HealthView } from "../hooks/use-health";
 import { useWorkspaceDoc, useWorkspaceDocs } from "../hooks/use-workspace-docs";
 import { useWorkspaceSymbols } from "../hooks/use-workspace-symbols";
 import { CaptureMarkdown } from "../components/CaptureMarkdown";
+import { FenceEditor } from "../components/FenceEditor";
+import { listMermaidFences } from "../lib/mermaid-fences";
 import { DocTree } from "../components/DocTree";
 import { WorkspaceSelect } from "../components/WorkspaceSelect";
 import { ErrorState } from "../components/state/ErrorState";
@@ -78,6 +80,12 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
   // the reader knows which of the two they are doing, and a layout that
   // switched itself on some width guess would fight them.
   const [wide, setWide] = useState(false);
+  // TASK-1937 — which diagram is open for editing, by fence index. Null is the
+  // normal state: the pane stays a reader until someone asks to edit.
+  const [editing, setEditing] = useState<number | null>(null);
+  // A save returns the document it wrote, so the pane can show it without a
+  // refetch racing the write it just made.
+  const [savedMarkdown, setSavedMarkdown] = useState<{ path: string; text: string; etag: string } | null>(null);
   const list = useWorkspaceDocs(workspaceId);
   const detail = useWorkspaceDoc(workspaceId, selectedPath);
 
@@ -114,9 +122,17 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
     setPendingSymbol(null);
   }
 
+  /** Selecting a different file closes the editor: fence 2 of one document is
+      not fence 2 of another, and leaving it open would edit the wrong diagram. */
+  function openFile(path: string | null): void {
+    setSelectedPath(path);
+    setEditing(null);
+  }
+
   function pickWorkspace(id: string): void {
     setWorkspaceId(id);
     setSelectedPath(null);
+    setEditing(null);
   }
 
   function body(): React.JSX.Element {
@@ -169,6 +185,14 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
       );
     }
 
+    // A save hands back the exact document it wrote, so the pane shows that
+    // rather than waiting for a refetch that could race the write.
+    const fresh = savedMarkdown !== null && savedMarkdown.path === selectedPath ? savedMarkdown : null;
+    const docText = fresh?.text ?? detail.markdown ?? "";
+    const docEtag = fresh?.etag ?? detail.etag;
+    const fences =
+      selectedPath !== null && isMarkdown(selectedPath) ? listMermaidFences(docText) : [];
+
     return (
       <div
         className={[
@@ -198,7 +222,7 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
             data-testid="workspace-doc-list-pane"
             className="min-h-0 flex-1 overflow-y-auto p-1.5"
           >
-            <DocTree docs={list.docs} selected={selectedPath} onSelect={setSelectedPath} />
+            <DocTree docs={list.docs} selected={selectedPath} onSelect={openFile} />
           </div>
         </div>
 
@@ -267,7 +291,48 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
                   data-wide={wide ? "true" : "false"}
                   className={wide ? "max-w-none" : "max-w-[72ch]"}
                 >
-                  <CaptureMarkdown diagrams>{detail.markdown}</CaptureMarkdown>
+                  <CaptureMarkdown diagrams>{docText}</CaptureMarkdown>
+
+                  {/* TASK-1937 — the diagrams, listed and editable. Below the
+                      document rather than replacing it: a reader who came to
+                      READ must not have to dismiss an editor to see the file. */}
+                  {fences.length > 0 && (
+                    <div data-testid="fence-list" className="not-prose mt-4 flex flex-col gap-2">
+                      <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">
+                        Diagrams
+                      </span>
+                      {fences.map((f) =>
+                        editing === f.index ? (
+                          <FenceEditor
+                            key={f.index}
+                            workspaceId={workspaceId}
+                            rel={selectedPath}
+                            markdown={docText}
+                            etag={docEtag}
+                            fence={f}
+                            onSaved={(text, sha256) =>
+                              setSavedMarkdown({ path: selectedPath, text, etag: sha256 })
+                            }
+                            onClose={() => setEditing(null)}
+                          />
+                        ) : (
+                          <button
+                            key={f.index}
+                            type="button"
+                            data-testid={`fence-open-${f.index}`}
+                            onClick={() => setEditing(f.index)}
+                            className="flex items-center gap-1.5 rounded-md border border-zinc-200 dark:border-zinc-800 px-2 py-1 text-left text-[11px] text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                          >
+                            <i className="ti ti-sitemap flex-none text-zinc-400" aria-hidden="true" />
+                            Diagram {f.index + 1}
+                            <span className="ml-auto tabular-nums text-zinc-400">
+                              lines {f.start}–{f.end}
+                            </span>
+                          </button>
+                        )
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 /* Source is shown verbatim. Running it through the markdown

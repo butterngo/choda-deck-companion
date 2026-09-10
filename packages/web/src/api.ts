@@ -466,11 +466,27 @@ export class BinaryFileError extends Error {
   }
 }
 
+/** A document plus what a save has to send back to prove it read this version. */
+export interface WorkspaceDocContent {
+  text: string;
+  /** sha256 of the BYTES on disk, from the response's etag. Null on an old adapter. */
+  etag: string | null;
+}
+
+/**
+ * TASK-1937 — read the document as BYTES, not through `res.text()`.
+ *
+ * `Response.text()` strips a leading BOM. A client that decodes that way hands
+ * back a file it has already altered, and the server — which is deliberately
+ * byte-exact — faithfully writes the alteration. `git diff` then shows the whole
+ * file as modified with the real edit buried inside it. TASK-1849 recorded this
+ * hazard; this is the reader that respects it.
+ */
 export async function fetchWorkspaceDoc(
   workspaceId: string,
   path: string,
   signal?: AbortSignal
-): Promise<string> {
+): Promise<WorkspaceDocContent> {
   const encoded = path.split("/").map(encodeURIComponent).join("/");
   const res = await fetch(
     `${API_BASE}/workspace-docs/${encodeURIComponent(workspaceId)}/${encoded}`,
@@ -478,7 +494,135 @@ export async function fetchWorkspaceDoc(
   );
   if (res.status === 415) throw new BinaryFileError(path);
   if (!res.ok) throw new Error(`GET /workspace-docs/:id/:path failed: ${res.status}`);
-  return await res.text();
+  const bytes = await res.arrayBuffer();
+  return {
+    text: new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes),
+    etag: res.headers.get("etag"),
+  };
+}
+
+/** Why a save was refused, so the pane can say which limit was hit. */
+export type SaveDocFailure =
+  | "changed-on-disk"
+  | "precondition-missing"
+  | "too-large"
+  | "not-text"
+  | "not-found"
+  | "unknown";
+
+export class SaveDocError extends Error {
+  constructor(
+    readonly kind: SaveDocFailure,
+    message: string,
+    /** Present on a 409: what is on disk now, so a reader can re-read. */
+    readonly sha256: string | null = null
+  ) {
+    super(message);
+    this.name = "SaveDocError";
+  }
+}
+
+/**
+ * PUT the document back, byte-exact and behind the precondition.
+ *
+ * The text is encoded here and sent as bytes; the BOM survives because the
+ * reader above never removed it. `ifMatch` is the etag that came with the read —
+ * a save without it is refused by the server, which is the point.
+ */
+export async function saveWorkspaceDoc(
+  workspaceId: string,
+  path: string,
+  text: string,
+  ifMatch: string
+): Promise<{ sha256: string; bytes: number }> {
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
+  const res = await fetch(
+    `${API_BASE}/workspace-docs/${encodeURIComponent(workspaceId)}/${encoded}`,
+    {
+      method: "PUT",
+      headers: { "if-match": ifMatch, "content-type": "application/octet-stream" },
+      body: new TextEncoder().encode(text),
+    }
+  );
+  if (res.ok) return (await res.json()) as { sha256: string; bytes: number };
+
+  const body = (await res.json().catch(() => ({}))) as { error?: string; sha256?: string };
+  // Each limit gets its own kind. Collapsing them into one failure tells the
+  // reader nothing about which one they hit, which is the difference between
+  // "try again" and "this file is too big".
+  const kind: SaveDocFailure =
+    res.status === 409
+      ? "changed-on-disk"
+      : res.status === 400
+        ? "precondition-missing"
+        : res.status === 413
+          ? "too-large"
+          : res.status === 415
+            ? "not-text"
+            : res.status === 404
+              ? "not-found"
+              : "unknown";
+  throw new SaveDocError(kind, body.error ?? `save failed: ${res.status}`, body.sha256 ?? null);
+}
+
+/** The typed provider failures the pane renders differently. */
+export type DiagramFailure =
+  | "no-model"
+  | "does-not-parse"
+  | "rate-limit"
+  | "network"
+  | "auth"
+  | "provider";
+
+export class DiagramError extends Error {
+  constructor(
+    readonly kind: DiagramFailure,
+    message: string,
+    /** The parser's complaint, on a 422. */
+    readonly parseError: string | null = null
+  ) {
+    super(message);
+    this.name = "DiagramError";
+  }
+}
+
+/**
+ * Ask the model for a replacement diagram. Costs money, and is only ever called
+ * from a press — never on open, on save, on selection or on a timer.
+ *
+ * The adapter parses the answer before returning it, so a 200 here is always a
+ * diagram that at least parses. Whether it DRAWS is what the preview is for.
+ */
+export async function proposeDiagram(input: {
+  workspaceId: string;
+  rel: string;
+  fenceIndex: number;
+  instruction: string;
+}): Promise<{ mermaid: string; attempts: number }> {
+  const res = await fetch(`${API_BASE}/workspace-docs/diagram`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (res.ok) return (await res.json()) as { mermaid: string; attempts: number };
+
+  const body = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    kind?: string;
+    parseError?: string;
+  };
+  if (res.status === 501) throw new DiagramError("no-model", body.error ?? "no model configured");
+  if (res.status === 422) {
+    throw new DiagramError(
+      "does-not-parse",
+      body.error ?? "the model's diagram does not parse",
+      body.parseError ?? null
+    );
+  }
+  if (res.status === 429) throw new DiagramError("rate-limit", "the model is rate limited");
+  const kind: DiagramFailure =
+    body.kind === "network" ? "network" : body.kind === "auth" ? "auth" : "provider";
+  throw new DiagramError(kind, body.error ?? `diagram request failed: ${res.status}`);
 }
 
 // TASK-1797/1798 — where is a symbol declared? Mirror of the adapter's
