@@ -1,5 +1,13 @@
 # AC verification — TASK-1764: Browse the work: Projects → Workspaces → docs, tasks and the code behind them
 
+> **SUPERSEDED later the same day — TASK-1764 is now 6/6 and DONE.** Butter walked the
+> packaged app on 2026-09-10 and confirmed all six steps of §5 individually, which closed
+> AC-6 and removed the caveat on AC-1 and AC-2. All six criteria are ticked on the task
+> (session `SESSION-1789015471123-17`); the per-criterion evidence lives there.
+>
+> Everything below is left exactly as written, as the record of what was known *before*
+> that walk. Read it for the method and the measurements — not for the verdict.
+
 **Verdict:** 5/6 verified (2 with a caveat) · epic is substantively complete; AC-6 is human-class by construction and stays open
 **Date:** 2026-09-10 · **Session:** none active — no `ac_check` was written · **Commit:** ad5cc7d
 
