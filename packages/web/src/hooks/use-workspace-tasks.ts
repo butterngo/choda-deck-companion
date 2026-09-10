@@ -1,59 +1,73 @@
-// TASK-1766 — the tasks shown under a workspace.
+// TASK-1766 / TASK-1773 — the tasks shown under a workspace.
 //
-// HONEST LIMITATION, measured rather than assumed (2026-08-24):
+// WHAT THIS USED TO SAY, and why it changed (2026-09-10):
 //
-// The plan called for the touches → session cascade that /choda-task-focus §5.3
-// uses, so tasks would be scoped to a WORKSPACE. That is not implementable
-// against today's adapter:
+// The original version of this file recorded a measured limitation: GET /tasks
+// accepted no filter (`?projectId=` and `?workspaceId=` returned byte-identical
+// 4,042,663-byte responses), task rows had no workspace field, and there was no
+// touches route to fall back on. So scoping was by PROJECT and the UI said so
+// rather than implying precision it could not back.
 //
-//   * GET /tasks accepts no filter at all. `?projectId=` and `?workspaceId=`
-//     are both ignored — all three responses came back byte-identical
-//     (4,042,663 bytes, 1420 tasks, every one carrying its full body).
-//   * Task rows have no workspace field: id, projectId, parentTaskId, title,
-//     status, priority, labels, dueDate, pinned, filePath, body, blockedBy,
-//     createdAt, updatedAt.
-//   * There is no touches route to fall back on. The adapter serves exactly
-//     /capture /conversations /healthz /inbox /projects /sync/* /tasks
-//     /workspaces /workspace-docs.
+// TASK-1773 removed all three gaps. The adapter now filters, omits `body`
+// (4,779,941 → 566,133 bytes on the same database), and runs the §5.3 cascade
+// server-side, tagging each row `touches` | `session` | `unscoped`.
 //
-// So scoping is by PROJECT, and the UI says so rather than implying these are
-// the workspace's own tasks. Under-claiming is the safe direction: a task list
-// that silently claimed workspace precision it does not have would be the same
-// class of error as the port everyone assumed in TASK-1590.
-//
-// Real workspace scoping needs adapter work (filter + a touches surface), filed
-// separately. Filtering client-side also means downloading 4 MB per poll, which
-// is the second reason that task exists.
+// THE OLD ADAPTER HAS NOT DISAPPEARED. A packaged companion carries a vendored
+// adapter bundle, so a build from before TASK-1773 will ignore `?workspaceId=`
+// and answer with the whole unscoped table — a 200, and a plausible list. That
+// is the exact failure this feature exists to remove, so it is detected rather
+// than assumed away: rows that come back with no `scope` after a workspace was
+// requested mean the adapter is old, and the view says "project" again instead
+// of claiming a workspace narrowing that never happened.
 
 import { useQuery } from "@tanstack/react-query";
-import { fetchAllTasks, type TaskSummary } from "../api";
+import { fetchWorkspaceTasks, type TaskSummary } from "../api";
 
 /** Terminal states are hidden by default: a workspace view is about live work. */
 const CLOSED = new Set(["DONE", "CANCELLED"]);
 
+/**
+ * `workspace` — the adapter ran the cascade and every row is tagged.
+ * `project`   — the adapter is older than TASK-1773 and ignored the filter, so
+ *               the list is the project's, exactly as it was before.
+ */
+export type TaskScopeKind = "workspace" | "project";
+
 export interface WorkspaceTasksView {
   tasks: TaskSummary[];
   /** How the list was narrowed — rendered to the user, never left implicit. */
-  scope: "project";
+  scope: TaskScopeKind;
   isLoading: boolean;
   isError: boolean;
 }
 
-export function tasksForProject(all: TaskSummary[], projectId: string): TaskSummary[] {
-  return all.filter((t) => t.projectId === projectId && !CLOSED.has(t.status));
+export function openTasks(all: TaskSummary[]): TaskSummary[] {
+  return all.filter((t) => !CLOSED.has(t.status));
 }
 
-export function useWorkspaceTasks(projectId: string | null): WorkspaceTasksView {
+/**
+ * An adapter that served the cascade tags EVERY row. One untagged row among
+ * tagged ones would be a server bug rather than an old adapter, and reading
+ * `some` instead of `every` here would hide it.
+ */
+export function scopeOf(tasks: TaskSummary[]): TaskScopeKind {
+  if (tasks.length === 0) return "workspace";
+  return tasks.every((t) => t.scope !== undefined) ? "workspace" : "project";
+}
+
+export function useWorkspaceTasks(workspaceId: string | null): WorkspaceTasksView {
   const q = useQuery({
-    queryKey: ["tasks", "all"],
-    queryFn: ({ signal }) => fetchAllTasks(signal),
-    enabled: projectId !== null,
-    // 4 MB a poll would be indefensible; this list does not change by the second.
+    queryKey: ["tasks", "workspace", workspaceId],
+    queryFn: ({ signal }) => fetchWorkspaceTasks(workspaceId as string, signal),
+    enabled: workspaceId !== null,
+    // Server-side now, so this is no longer 4 MB a poll — but the list still
+    // does not change by the second.
     staleTime: 60_000,
   });
+  const tasks = openTasks(q.data?.tasks ?? []);
   return {
-    tasks: projectId === null ? [] : tasksForProject(q.data?.tasks ?? [], projectId),
-    scope: "project",
+    tasks,
+    scope: scopeOf(tasks),
     isLoading: q.isLoading,
     isError: q.isError,
   };

@@ -101,7 +101,14 @@ const commitState = {
   isError: false,
   gitUnavailable: null as { label: string; cwd: string } | null,
 };
-const taskState = { tasks: TASKS, scope: "project" as const, isLoading: false, isError: false };
+// TASK-1773 — mutable so a test can put the view in front of BOTH adapters:
+// one that scoped the list, and an older vendored one that ignored the filter.
+const taskState: {
+  tasks: TaskSummary[];
+  scope: "workspace" | "project";
+  isLoading: boolean;
+  isError: boolean;
+} = { tasks: TASKS, scope: "project", isLoading: false, isError: false };
 
 vi.mock("react-router-dom", async (orig) => ({
   ...(await orig<typeof import("react-router-dom")>()),
@@ -201,11 +208,48 @@ describe("WorkspaceView (TASK-1766)", () => {
   });
 
   it("states the scope instead of implying workspace precision it does not have", () => {
+    // TASK-1773 — an adapter that ignored ?workspaceId= (a vendored bundle from
+    // before that task) answers 200 with the whole project. The note must name
+    // the PROJECT then, because claiming a workspace narrowing over that
+    // response would be a false statement with a success code behind it.
+    taskState.scope = "project";
     mount();
     fireEvent.click(screen.getByTestId("workspace-tab-tasks"));
-    // The note must name the project — a silent list would claim these are the
-    // workspace's own tasks, which the adapter cannot currently support.
     expect(screen.getByTestId("task-scope-note").textContent).toContain("choda-deck");
+    expect(screen.getByTestId("task-scope-note").textContent).not.toContain("Companion");
+  });
+
+  it("names the WORKSPACE once the adapter actually scoped the list", () => {
+    taskState.scope = "workspace";
+    mount();
+    fireEvent.click(screen.getByTestId("workspace-tab-tasks"));
+    const note = screen.getByTestId("task-scope-note").textContent ?? "";
+    expect(note).toContain("Companion");
+    // CONTROL — the two sentences must differ, or this test and the one above
+    // would both pass on a single hard-coded string.
+    expect(note).not.toContain("across the");
+    taskState.scope = "project";
+  });
+
+  it("shows an unplaceable task WITH its marker rather than dropping it", () => {
+    // The rule TASK-1766 AC-2 hangs on: a task the cascade could not place is
+    // still listed, carrying the reason. Dropping it would make the list read
+    // as complete while hiding work.
+    taskState.scope = "workspace";
+    taskState.tasks = [
+      { ...TASKS[0], scope: "touches" },
+      { ...TASKS[1], scope: "unscoped" },
+    ];
+    mount();
+    fireEvent.click(screen.getByTestId("workspace-tab-tasks"));
+
+    expect(screen.getByTestId("workspace-task-TASK-1766")).toBeTruthy();
+    expect(screen.getByTestId("workspace-task-unscoped-TASK-1766")).toBeTruthy();
+    // CONTROL — the marker is not painted on every row, or it would say nothing.
+    expect(screen.queryByTestId("workspace-task-unscoped-TASK-1590")).toBeNull();
+
+    taskState.tasks = TASKS;
+    taskState.scope = "project";
   });
 
   it("shows docs first, and only swaps panes when the tab is clicked", () => {
