@@ -60,6 +60,12 @@ export interface WorkspaceDocView {
   isError: boolean;
   /** TASK-1788 — set only when the file is binary. Not a failure. */
   isBinary: boolean;
+  /**
+   * TASK-1937 — sha256 of the bytes this read saw, from the response's etag.
+   * A save sends it back as `if-match`; null means the adapter is older than
+   * the write route and the pane must not offer to save.
+   */
+  etag: string | null;
 }
 
 export function useWorkspaceDoc(
@@ -74,12 +80,13 @@ export function useWorkspaceDoc(
   });
   const binary = q.error instanceof BinaryFileError;
   return {
-    markdown: q.data ?? null,
+    markdown: q.data?.text ?? null,
     isLoading: q.isLoading,
     // Reported through its own field so a caller branching on isError cannot
     // render "couldn't load this" for a file that loaded fine and simply is
     // not text.
     isError: q.isError && !binary,
     isBinary: binary,
+    etag: q.data?.etag ?? null,
   };
 }
