@@ -319,3 +319,45 @@ describe("reading a file that is not markdown (TASK-1788)", () => {
     expect(screen.queryByTestId("doc-binary")).toBeNull();
   });
 });
+
+// Full-width reading. The measure and the two-column grid are right for prose
+// and wrong for a wide diagram, so the reader gets a switch.
+//
+// The pair below is the point: pressing the toggle must change BOTH the
+// wrapper's measure and the visibility of the list pane. A version that only
+// widened the text would leave the diagram in the same 1fr column it was
+// already in — i.e. look like it did something while changing nothing.
+describe("reading a file on the full pane width", () => {
+  function openDoc(): void {
+    docState.markdown = "# doc\n\nbody";
+    listState.docs = DOCS;
+    render(
+      <MemoryRouter initialEntries={["/workspace-docs?workspaceId=main&path=README.md"]}>
+        <WorkspaceDocsView />
+      </MemoryRouter>,
+    );
+  }
+
+  it("the toggle drops the reading measure AND hides the list pane", () => {
+    openDoc();
+    const pane = screen.getByTestId("workspace-doc-list-pane").parentElement!;
+    expect(screen.getByTestId("doc-markdown-measure")).toHaveAttribute("data-wide", "false");
+    expect(pane.classList.contains("hidden")).toBe(false);
+
+    fireEvent.click(screen.getByTestId("doc-wide-toggle"));
+
+    expect(screen.getByTestId("doc-markdown-measure")).toHaveAttribute("data-wide", "true");
+    expect(pane.classList.contains("hidden")).toBe(true);
+    expect(screen.getByTestId("doc-wide-toggle")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("CONTROL — it goes back, and the list pane returns", () => {
+    // Without this a toggle that only ever widened would pass the test above.
+    openDoc();
+    const pane = screen.getByTestId("workspace-doc-list-pane").parentElement!;
+    fireEvent.click(screen.getByTestId("doc-wide-toggle"));
+    fireEvent.click(screen.getByTestId("doc-wide-toggle"));
+    expect(pane.classList.contains("hidden")).toBe(false);
+    expect(screen.getByTestId("doc-wide-toggle")).toHaveAttribute("aria-pressed", "false");
+  });
+});

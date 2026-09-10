@@ -70,6 +70,14 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
     const n = Number.parseInt(raw, 10);
     return Number.isFinite(n) && n > 0 ? n : null;
   });
+  // Read the file on the full pane width.
+  //
+  // The two-column grid and the 72ch measure are right for prose; they are
+  // wrong for a wide mermaid diagram or a long code line, which is exactly
+  // where a reader wants the whole window. A toggle rather than a heuristic:
+  // the reader knows which of the two they are doing, and a layout that
+  // switched itself on some width guess would fight them.
+  const [wide, setWide] = useState(false);
   const list = useWorkspaceDocs(workspaceId);
   const detail = useWorkspaceDoc(workspaceId, selectedPath);
 
@@ -162,8 +170,21 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
     }
 
     return (
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,320px)_1fr] gap-6 flex-1 min-h-0 lg:grid-rows-[minmax(0,1fr)]">
-        <div className="flex min-h-0 flex-col overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800">
+      <div
+        className={[
+          "grid grid-cols-1 gap-6 flex-1 min-h-0 lg:grid-rows-[minmax(0,1fr)]",
+          wide ? "" : "lg:grid-cols-[minmax(260px,320px)_1fr]",
+        ].join(" ")}
+      >
+        {/* Hidden, not unmounted — remounting the tree would drop every
+            expanded folder, so leaving fullscreen would land the reader on a
+            collapsed list instead of where they were. */}
+        <div
+          className={[
+            "flex min-h-0 flex-col overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-800",
+            wide ? "hidden" : "",
+          ].join(" ")}
+        >
           <div className="flex flex-none items-center gap-1.5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-2.5 py-1.5">
             <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">
               Documents
@@ -208,8 +229,19 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
             <Skeleton shape="text" label="Loading file…" />
           ) : (
             <article>
-              <header className="mb-4 border-b border-zinc-100 dark:border-zinc-800 pb-3.5">
-                <h2 className="font-mono text-xs text-zinc-500">{selectedPath}</h2>
+              <header className="mb-4 flex items-center gap-2 border-b border-zinc-100 dark:border-zinc-800 pb-3.5">
+                <h2 className="min-w-0 truncate font-mono text-xs text-zinc-500">{selectedPath}</h2>
+                <button
+                  type="button"
+                  data-testid="doc-wide-toggle"
+                  aria-pressed={wide}
+                  onClick={() => setWide((v) => !v)}
+                  title={wide ? "Back to the list" : "Read full width"}
+                  className="ml-auto flex flex-none items-center gap-1.5 rounded-md border border-zinc-200 dark:border-zinc-800 px-1.5 py-1 text-[11px] text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                >
+                  <i className={wide ? "ti ti-arrows-minimize" : "ti ti-arrows-maximize"} aria-hidden="true" />
+                  {wide ? "Exit full width" : "Full width"}
+                </button>
               </header>
               {/* TASK-1799 — above the file, not instead of it. Every outcome
                   that is not a jump still leaves the reader on the code they
@@ -230,7 +262,11 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
               </div>
               {isMarkdown(selectedPath) ? (
                 /* Bounded to a reading measure, left-aligned — TASK-1608. */
-                <div className="max-w-[72ch]">
+                <div
+                  data-testid="doc-markdown-measure"
+                  data-wide={wide ? "true" : "false"}
+                  className={wide ? "max-w-none" : "max-w-[72ch]"}
+                >
                   <CaptureMarkdown diagrams>{detail.markdown}</CaptureMarkdown>
                 </div>
               ) : (
