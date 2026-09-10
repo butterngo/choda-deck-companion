@@ -74,7 +74,7 @@ export function WorkspaceView(): React.JSX.Element {
 
   const ws = useWorkspaces();
   const workspace = ws.workspaces.find((w) => w.id === id) ?? null;
-  const tasks = useWorkspaceTasks(workspace?.projectId ?? null);
+  const tasks = useWorkspaceTasks(workspace?.id ?? null);
   const commits = useWorkspaceCommits(workspace?.id ?? null);
   const [openSha, setOpenSha] = useState<string | null>(null);
   // TASK-1794 — the changed file being read, within the open commit. Cleared
@@ -227,14 +227,23 @@ export function WorkspaceView(): React.JSX.Element {
     }
     return (
       <>
-        {/* The scope is stated, never implied. These are the PROJECT's tasks:
-            the adapter serves no per-workspace filter and no touches surface,
-            so claiming workspace precision here would be a claim we cannot
-            back. Under-claiming is the safe direction. */}
-        <p data-testid="task-scope-note" className="mb-3 text-[11.5px] text-zinc-500">
-          Open tasks across the <span className="font-medium">{workspace?.projectId}</span> project —
-          not yet narrowed to this workspace.
-        </p>
+        {/* The scope is stated, never implied — and which sentence appears is
+            decided by what the ADAPTER actually answered, not by what this
+            build hopes it answered. A packaged app carries a vendored adapter,
+            so an older one silently ignores ?workspaceId= and returns the whole
+            project. Saying "narrowed to this workspace" over that response
+            would be a false claim with a 200 behind it. */}
+        {tasks.scope === "workspace" ? (
+          <p data-testid="task-scope-note" className="mb-3 text-[11.5px] text-zinc-500">
+            Open tasks in <span className="font-medium">{workspace?.label}</span> — marked by how
+            each one was traced here: the code it touches, a session that ran here, or neither.
+          </p>
+        ) : (
+          <p data-testid="task-scope-note" className="mb-3 text-[11.5px] text-zinc-500">
+            Open tasks across the <span className="font-medium">{workspace?.projectId}</span>{" "}
+            project — this adapter does not scope tasks to a workspace.
+          </p>
+        )}
         <ul data-testid="workspace-task-list" className="space-y-1.5">
           {tasks.tasks.map((t) => (
             <li key={t.id}>
@@ -250,6 +259,17 @@ export function WorkspaceView(): React.JSX.Element {
               >
                 <div className="flex items-baseline gap-2">
                   <span className="font-mono text-[11.5px] text-zinc-400">{t.id}</span>
+                  {/* A task the cascade could not place is SHOWN, carrying the
+                      reason. Dropping it would make this list read as complete
+                      while hiding work whose owner nobody recorded. */}
+                  {t.scope === "unscoped" && (
+                    <span
+                      data-testid={`workspace-task-unscoped-${t.id}`}
+                      className="rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 px-2 py-0.5 text-[11px] font-medium"
+                    >
+                      unscoped
+                    </span>
+                  )}
                   <span className="ml-auto text-[11px] text-zinc-400">{t.status}</span>
                 </div>
                 <p className="mt-0.5 text-sm">{t.title}</p>

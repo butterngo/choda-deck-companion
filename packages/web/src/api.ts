@@ -286,10 +286,37 @@ export interface TaskSummary {
   status: string;
   priority: string;
   labels: string[];
+  /**
+   * TASK-1773 — which arm of the §5.3 cascade claimed this task for the
+   * requested workspace: a code_ref that belongs to it, a session that ran in
+   * it, or neither.
+   *
+   * Absent when no workspace was asked about — AND absent on every row when the
+   * adapter predates TASK-1773, because that adapter ignores `?workspaceId=`
+   * and answers with the unscoped table. The two cases are told apart by the
+   * caller, not here: asking for a workspace and getting rows with no `scope`
+   * is the old-adapter signature.
+   */
+  scope?: "touches" | "session" | "unscoped";
 }
 
 export function fetchAllTasks(signal?: AbortSignal): Promise<{ tasks: TaskSummary[] }> {
   return getJson<{ tasks: TaskSummary[] }>("/tasks", signal);
+}
+
+/**
+ * TASK-1773 — the workspace-scoped list. Narrows server-side to the workspace's
+ * project and annotates every row with its cascade bucket, instead of pulling
+ * 4 MB of every task in the database and filtering in the browser.
+ */
+export function fetchWorkspaceTasks(
+  workspaceId: string,
+  signal?: AbortSignal,
+): Promise<{ tasks: TaskSummary[] }> {
+  return getJson<{ tasks: TaskSummary[] }>(
+    `/tasks?workspaceId=${encodeURIComponent(workspaceId)}`,
+    signal,
+  );
 }
 
 // TASK-1493 — cross-project search (GET /search?q=). Mirror of the adapter's
