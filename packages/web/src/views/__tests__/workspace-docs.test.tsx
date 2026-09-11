@@ -351,6 +351,25 @@ describe("reading a file on the full pane width", () => {
     expect(screen.getByTestId("doc-wide-toggle")).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("the toggle stays reachable from deep in a document", () => {
+    // A CLASS PIN, not a layout proof: jsdom lays nothing out, so it cannot
+    // observe that the header actually stops at the top of the pane. What it
+    // CAN do is fail when someone removes one of the three classes that make
+    // it work — position, offset, and an opaque background without which the
+    // document renders through the header as it passes under.
+    openDoc();
+    const header = screen.getByTestId("doc-detail-header");
+    expect(header.classList.contains("sticky")).toBe(true);
+    expect(header.classList.contains("top-0")).toBe(true);
+    expect(header.classList.contains("bg-white")).toBe(true);
+    // The scrolling ancestor sticky resolves against — if the overflow moves
+    // to another element, top-0 pins to the wrong box and the header scrolls
+    // away again while every assertion above still passes.
+    const pane = screen.getByTestId("workspace-doc-detail-pane");
+    expect(pane.classList.contains("overflow-y-auto")).toBe(true);
+    expect(pane.contains(header)).toBe(true);
+  });
+
   it("CONTROL — it goes back, and the list pane returns", () => {
     // Without this a toggle that only ever widened would pass the test above.
     openDoc();

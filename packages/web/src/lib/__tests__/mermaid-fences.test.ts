@@ -6,7 +6,7 @@
 // arriving from the client instead of the server.
 
 import { describe, it, expect } from "vitest";
-import { listMermaidFences, replaceFence } from "../mermaid-fences";
+import { fenceAtLine, listMermaidFences, replaceFence } from "../mermaid-fences";
 
 const LF = ["# doc", "", "```mermaid", "sequenceDiagram", "  A->>B: hi", "```", "", "prose", ""].join(
   "\n"
@@ -83,5 +83,58 @@ describe("replaceFence", () => {
     const after = listMermaidFences(next);
     expect(after[0]!.code).toBe("sequenceDiagram\n  A->>B: hi");
     expect(after[1]!.code).toBe("sequenceDiagram\n  A->>B: CHANGED");
+  });
+});
+
+// Which fence is the picture under the reader's cursor?
+//
+// Getting this wrong does not fail loudly — it writes to a different diagram
+// than the one pointed at. So the two cases that carry this block are the ones
+// where a lazier answer LOOKS right: two identical diagrams (text alone cannot
+// separate them) and a line map that has drifted (the line alone would happily
+// name the neighbour).
+describe("fenceAtLine", () => {
+  const TWINS = [
+    "# before and after",
+    "",
+    "```mermaid",
+    "graph TD; A-->B;",
+    "```",
+    "",
+    "and after the change:",
+    "",
+    "```mermaid",
+    "graph TD; A-->B;",
+    "```",
+    "",
+  ].join("\n");
+
+  it("separates two IDENTICAL diagrams by the line they open on", () => {
+    const fences = listMermaidFences(TWINS);
+    expect(fences).toHaveLength(2);
+    // Line 3 and line 9 are the ```mermaid markers; the body starts after each.
+    expect(fenceAtLine(fences, 3, "graph TD; A-->B;")?.index).toBe(0);
+    expect(fenceAtLine(fences, 9, "graph TD; A-->B;")?.index).toBe(1);
+  });
+
+  it("refuses when the line lands on a fence whose text is different", () => {
+    // The drift case: remark counted lines in one string and listMermaidFences
+    // in another, so the line now points one fence over. Without the text check
+    // this returns a confident, wrong index.
+    const fences = listMermaidFences(TWINS);
+    expect(fenceAtLine(fences, 3, "graph TD; A-->C;")).toBeNull();
+  });
+
+  it("refuses when no fence opens on that line", () => {
+    const fences = listMermaidFences(TWINS);
+    expect(fenceAtLine(fences, 4, "graph TD; A-->B;")).toBeNull();
+  });
+
+  it("matches across CRLF and a trailing newline", () => {
+    // The renderer hands back text it has already normalised; the fence keeps
+    // its carriage returns verbatim. Those are not differences in the drawing,
+    // and treating them as such would drop the button on every CRLF document.
+    const fences = listMermaidFences(TWINS.split("\n").join("\r\n"));
+    expect(fenceAtLine(fences, 3, "graph TD; A-->B;\n")?.index).toBe(0);
   });
 });
