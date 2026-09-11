@@ -11,7 +11,7 @@
 // FAILED load, not an empty one. Rendering an empty list there would be a
 // statement about the repository that isn't true.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import type { HealthView } from "../hooks/use-health";
 import { useWorkspaceDoc, useWorkspaceDocs } from "../hooks/use-workspace-docs";
@@ -83,6 +83,11 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
   // TASK-1937 — which diagram is open for editing, by fence index. Null is the
   // normal state: the pane stays a reader until someone asks to edit.
   const [editing, setEditing] = useState<number | null>(null);
+  // Set only by a press on a diagram, and cleared as soon as it is honoured —
+  // a standing "scroll to the editor" flag would drag the reader back there on
+  // every unrelated re-render.
+  const [jumpToEditor, setJumpToEditor] = useState(false);
+  const editorAnchor = useRef<HTMLDivElement | null>(null);
   // A save returns the document it wrote, so the pane can show it without a
   // refetch racing the write it just made.
   const [savedMarkdown, setSavedMarkdown] = useState<{ path: string; text: string; etag: string } | null>(null);
@@ -115,11 +120,34 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
     setPendingSymbol(null);
   }, [lookup.isResolved, lookup.matches]);
 
+  useEffect(() => {
+    if (!jumpToEditor) return;
+    // Optional-called: jsdom has no layout and does not implement this, and a
+    // view that throws in tests is worse than one that does not scroll in them.
+    editorAnchor.current?.scrollIntoView?.({ block: "start" });
+    setJumpToEditor(false);
+  }, [jumpToEditor]);
+
   /** Chosen from the picker — the same landing as a single match. */
   function openMatch(match: { path: string; line: number }): void {
     setSelectedPath(match.path);
     setJump({ path: match.path, line: match.line });
     setPendingSymbol(null);
+  }
+
+  /**
+   * Edit pressed on a diagram in the document.
+   *
+   * The editor stays in ONE place — the Diagrams list at the foot — rather than
+   * opening inline where the click happened. Two editors for one fence is a
+   * second place for the draft to live, and the editor carries its own preview,
+   * so the reader loses nothing by being taken to it. The scroll is what makes
+   * that honest: opening an editor a screen below the click, silently, reads as
+   * a button that did nothing.
+   */
+  function openFence(index: number): void {
+    setEditing(index);
+    setJumpToEditor(true);
   }
 
   /** Selecting a different file closes the editor: fence 2 of one document is
@@ -253,7 +281,17 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
             <Skeleton shape="text" label="Loading file…" />
           ) : (
             <article>
-              <header className="mb-4 flex items-center gap-2 border-b border-zinc-100 dark:border-zinc-800 pb-3.5">
+              {/* Sticky within the detail pane, which is the scrolling
+                  ancestor. The toggle used to scroll away with the header, so
+                  a reader who noticed the 72ch measure was wrong — which only
+                  happens once they are DEEP in a document, at the diagram —
+                  had to scroll back to the top to widen it. Needs its own
+                  background: transparent would let the document render through
+                  the header as it passes under. */}
+              <header
+                data-testid="doc-detail-header"
+                className="sticky top-0 z-10 mb-4 flex items-center gap-2 border-b border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 pb-3.5"
+              >
                 <h2 className="min-w-0 truncate font-mono text-xs text-zinc-500">{selectedPath}</h2>
                 <button
                   type="button"
@@ -291,13 +329,28 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
                   data-wide={wide ? "true" : "false"}
                   className={wide ? "max-w-none" : "max-w-[72ch]"}
                 >
-                  <CaptureMarkdown diagrams>{docText}</CaptureMarkdown>
+                  {/* The Edit button belongs ON the diagram. The list below
+                      reaches every fence and is the reason nothing is lost when
+                      a picture cannot be identified — but finding it means
+                      scrolling to the foot of the document, which is exactly
+                      the distance a reader looking at a wrong diagram should
+                      not have to travel. */}
+                  <CaptureMarkdown
+                    diagrams
+                    editFence={{ fences, onEdit: openFence }}
+                  >
+                    {docText}
+                  </CaptureMarkdown>
 
                   {/* TASK-1937 — the diagrams, listed and editable. Below the
                       document rather than replacing it: a reader who came to
                       READ must not have to dismiss an editor to see the file. */}
                   {fences.length > 0 && (
-                    <div data-testid="fence-list" className="not-prose mt-4 flex flex-col gap-2">
+                    <div
+                      ref={editorAnchor}
+                      data-testid="fence-list"
+                      className="not-prose mt-4 flex flex-col gap-2"
+                    >
                       <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">
                         Diagrams
                       </span>

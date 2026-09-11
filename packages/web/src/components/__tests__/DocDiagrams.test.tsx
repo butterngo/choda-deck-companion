@@ -7,7 +7,7 @@
 // A zero-call assertion alone is satisfied by doing nothing.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 // Counts every call that actually reaches the mermaid module. This is the
 // property under test — an earlier version counted MermaidBlock RENDERS, which
@@ -32,6 +32,7 @@ vi.mock("mermaid", () => ({
 }));
 
 const { CaptureMarkdown } = await import("../CaptureMarkdown");
+const { listMermaidFences } = await import("../../lib/mermaid-fences");
 
 const WITH_DIAGRAM = `# Doc
 
@@ -120,5 +121,118 @@ describe("GFM tables", () => {
     // decisions in tables, and those are read through knowledge detail too.
     render(<CaptureMarkdown>{WITH_TABLE}</CaptureMarkdown>);
     expect(screen.getByRole("table")).toBeTruthy();
+  });
+});
+
+// Edit, on the diagram itself.
+//
+// The number that matters is the INDEX the press reports. A button that always
+// reports 0 looks identical on screen and writes to the wrong diagram, so the
+// assertions here drive the SECOND fence of a two-fence document — the fixture
+// is sized to the claim rather than to convenience.
+//
+// None of these wait for mermaid. The button is deliberately present in all
+// three states of a block — drawing, drawn, failed — so asserting it needs no
+// diagram to resolve. That is not only convenient: two blocks importing the
+// 84 MB chunk at once is a real race, and a test that waited on it would be
+// measuring the mock rather than the wiring.
+describe("editing a diagram from the document", () => {
+  const TWO_FENCES = `# Doc
+
+\`\`\`mermaid
+graph TD; A-->B;
+\`\`\`
+
+Then, after the change:
+
+\`\`\`mermaid
+graph TD; A-->C;
+\`\`\`
+`;
+
+  const ONE_FENCE = `# Doc
+
+\`\`\`mermaid
+graph TD; A-->B;
+\`\`\`
+`;
+
+  it("reports the index of the diagram that was pressed, not the first one", () => {
+    const pressed: number[] = [];
+    render(
+      <CaptureMarkdown
+        diagrams
+        editFence={{ fences: listMermaidFences(TWO_FENCES), onEdit: (i) => pressed.push(i) }}
+      >
+        {TWO_FENCES}
+      </CaptureMarkdown>,
+    );
+    const buttons = screen.getAllByTestId("diagram-edit");
+    expect(buttons).toHaveLength(2);
+
+    fireEvent.click(buttons[1]!);
+    expect(pressed).toEqual([1]);
+
+    // And the first still reports 0 — without this, a button reporting its
+    // position in the DOM rather than the fence index would pass above.
+    fireEvent.click(buttons[0]!);
+    expect(pressed).toEqual([1, 0]);
+  });
+
+  it("labels each diagram with its own number", () => {
+    render(
+      <CaptureMarkdown diagrams editFence={{ fences: listMermaidFences(TWO_FENCES), onEdit: () => {} }}>
+        {TWO_FENCES}
+      </CaptureMarkdown>,
+    );
+    expect(screen.getByText("Diagram 1")).toBeTruthy();
+    expect(screen.getByText("Diagram 2")).toBeTruthy();
+  });
+
+  it("drops the button rather than guessing when the fence list does not match", () => {
+    // A list built from a DIFFERENT document — the shape of a line map that has
+    // drifted. The blocks must still be there; only the shortcut goes away, and
+    // the Diagrams list at the foot of the pane still reaches every fence.
+    const { container } = render(
+      <CaptureMarkdown
+        diagrams
+        editFence={{
+          fences: listMermaidFences(["```mermaid", "graph TD; X-->Y;", "```", ""].join("\n")),
+          onEdit: () => {},
+        }}
+      >
+        {TWO_FENCES}
+      </CaptureMarkdown>,
+    );
+    expect(container.querySelectorAll('[data-testid^="mermaid-"]')).toHaveLength(2);
+    expect(screen.queryAllByTestId("diagram-edit")).toHaveLength(0);
+  });
+
+  it("CONTROL — no editFence, no buttons, and the blocks are still there", () => {
+    // Everything but the docs pane. Without this, the zero-button assertion
+    // above would pass on a build where the button was never wired.
+    const { container } = render(<CaptureMarkdown diagrams>{TWO_FENCES}</CaptureMarkdown>);
+    expect(container.querySelectorAll('[data-testid^="mermaid-"]')).toHaveLength(2);
+    expect(screen.queryAllByTestId("diagram-edit")).toHaveLength(0);
+  });
+
+  it("offers Edit on a diagram that could not be drawn", async () => {
+    // The commonest reason to want the editor at all. Withholding it here would
+    // send the reader to the foot of the document precisely when the picture
+    // they are looking at is broken. One fence, so the mocked module is not
+    // raced and the error state is reached deterministically.
+    shouldThrow = true;
+    const pressed: number[] = [];
+    render(
+      <CaptureMarkdown
+        diagrams
+        editFence={{ fences: listMermaidFences(ONE_FENCE), onEdit: (i) => pressed.push(i) }}
+      >
+        {ONE_FENCE}
+      </CaptureMarkdown>,
+    );
+    await waitFor(() => expect(screen.getByTestId("mermaid-error")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("diagram-edit"));
+    expect(pressed).toEqual([0]);
   });
 });

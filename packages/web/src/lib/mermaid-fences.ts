@@ -51,6 +51,43 @@ export function listMermaidFences(markdown: string): MermaidFence[] {
 }
 
 /**
+ * Which fence is the diagram the renderer just drew?
+ *
+ * The reader clicks Edit on a PICTURE; every request downstream names a fence
+ * by INDEX. Getting this map wrong does not fail — it edits a different diagram
+ * than the one pointed at, and nothing reports it. So the answer is required to
+ * agree twice before it is given:
+ *
+ *   - `line` is remark's own position for the fence's opening ```mermaid, so
+ *     the body starts on the next line. This is the real key; matching on text
+ *     alone cannot tell two identical diagrams apart, and a before/after pair
+ *     in one document is exactly that.
+ *   - the text must ALSO match, because remark counts lines in the string it
+ *     was handed and listMermaidFences counts them in the file. Those are the
+ *     same string today. If a pre-parse step ever adds or drops a line, the
+ *     line key silently points one fence over — and this check is what turns
+ *     that into a missing button instead of a misdirected write.
+ *
+ * Null means "cannot say", and the caller must then offer no Edit button. The
+ * Diagrams list at the foot of the document reaches every fence by construction,
+ * so the reader loses a shortcut, never the ability to edit.
+ */
+export function fenceAtLine(
+  fences: MermaidFence[],
+  line: number,
+  code: string,
+): MermaidFence | null {
+  const hit = fences.find((f) => f.start === line + 1);
+  if (!hit) return null;
+  return sameDiagram(hit.code, code) ? hit : null;
+}
+
+/** Carriage returns and a trailing newline are not differences in the drawing. */
+function sameDiagram(a: string, b: string): boolean {
+  return a.replace(/\r/g, "").trimEnd() === b.replace(/\r/g, "").trimEnd();
+}
+
+/**
  * Replace one fence's body, touching nothing else in the document.
  *
  * The replacement is spliced by LINE RANGE rather than by string search: two

@@ -23,6 +23,7 @@
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MermaidBlock } from "./MermaidBlock";
+import { fenceAtLine, type MermaidFence } from "../lib/mermaid-fences";
 import {
   isImageRef,
   normalizeCaptureBody,
@@ -38,20 +39,51 @@ function fileNameOf(ref: string): string {
 export function CaptureMarkdown({
   children,
   diagrams = false,
+  editFence,
 }: {
   children: string;
   /** Render ```mermaid fences as diagrams. Off everywhere but the docs pane. */
   diagrams?: boolean;
+  /**
+   * Put an Edit button on each diagram that can be identified.
+   *
+   * The docs pane passes the fence list it already computed rather than letting
+   * this component re-derive one: two lists built by two callers is how the
+   * index a click sends stops meaning the diagram under the click.
+   */
+  editFence?: { fences: MermaidFence[]; onEdit: (index: number) => void };
 }): React.JSX.Element {
   return (
     <div className="prose prose-sm dark:prose-invert max-w-none">
       <Markdown
         remarkPlugins={[remarkGfm]}
         components={{
-          code: ({ className, children: codeChildren, ...rest }) => {
+          code: ({ node, className, children: codeChildren, ...rest }) => {
             const isMermaid = (className ?? "").split(" ").includes("language-mermaid");
             if (diagrams && isMermaid) {
-              return <MermaidBlock code={String(codeChildren).trimEnd()} />;
+              const code = String(codeChildren).trimEnd();
+              const line = node?.position?.start.line;
+              // No editFence, no position, or a fence this cannot identify with
+              // confidence — draw the picture with no button on it. Silently
+              // dropping the control is the safe failure; a button carrying a
+              // guessed index would write to the wrong diagram.
+              const fence =
+                editFence !== undefined && typeof line === "number"
+                  ? fenceAtLine(editFence.fences, line, code)
+                  : null;
+              return (
+                <MermaidBlock
+                  code={code}
+                  edit={
+                    fence === null || editFence === undefined
+                      ? undefined
+                      : {
+                          label: `Diagram ${fence.index + 1}`,
+                          onEdit: () => editFence.onEdit(fence.index),
+                        }
+                  }
+                />
+              );
             }
             return (
               <code className={className} {...rest}>
