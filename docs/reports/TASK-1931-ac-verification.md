@@ -179,14 +179,33 @@ AC-2 is still holding open, so one session at the app can discharge both.
 
 ## 7. Findings
 
-⚠️ **First `/diagram/check` on a cold process takes ~36 s.** The first parse in a fresh
-process blew a 15 s test budget; warm calls answer in under a second. The dynamic import
-is deliberate (documented in `mermaid-check.ts` — a process that never validates never
-evaluates the module), but the cost lands on the *user's first diagram check* in the
-packaged app, with no UI signalling a one-time warm-up. Worth deciding whether the
-adapter should warm the import on boot, or whether the client should say something during
-a first call. This is adjacent to **TASK-1941** (bundled vs external) and is a data point
-that argument did not have.
+⚠️ **CORRECTED 2026-09-13 — the ~36 s cold start does NOT apply to the shipped app.**
+
+This finding originally read: *"First `/diagram/check` on a cold process takes ~36 s … the
+cost lands on the user's first diagram check in the packaged app."* **That attribution was
+wrong**, and it was wrong because the number was measured under vitest and never against
+the adapter that ships.
+
+Measured properly while working TASK-1941 (a real adapter process, real HTTP, three runs each):
+
+| | bundled — what ships | external — what vitest does |
+|---|---|---|
+| cold process, warm FS cache | **64–71 ms** | 874–909 ms |
+| cold process + cold FS cache | ~71 ms | **71,111 ms** |
+| second call onward | 8–10 ms | 7–11 ms |
+
+The 36 s was real but it measured the **un-bundled** path: vitest resolves mermaid from
+`node_modules` across 99 MB of loose files, which is the *external* build option, not the
+packaged one. esbuild inlines mermaid into `companion-server.cjs`, so the shipped app pays
+**64–71 ms**, and there is no user-facing warm-up to signal.
+
+The dynamic import remains deliberate and correct (`mermaid-check.ts`: a process that never
+validates a diagram never evaluates the module). What changed is only who pays for it.
+
+The original mistake is left visible rather than deleted, because the lesson is the reusable
+part: a number measured in the test environment was written into two records as a property of
+the product, and checking it against a real process took four minutes. See TASK-1941 for the
+full measurement; these figures are what decided that task in favour of bundling.
 
 ⚠️ **One unexplained red under injection 1, cause NOT captured.** On the first injected
 run AC-8 also failed; on a re-run under the identical injection it passed and only
