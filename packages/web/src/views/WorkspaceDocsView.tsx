@@ -25,6 +25,7 @@ import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { CapabilityNote } from "../components/state/CapabilityNote";
 import { SourceView } from "../components/SourceView";
+import { HtmlDocView } from "../components/HtmlDocView";
 import { SymbolLookupPanel } from "../components/SymbolLookupPanel";
 import { Skeleton } from "../components/state/Skeleton";
 
@@ -40,6 +41,18 @@ import { Skeleton } from "../components/state/Skeleton";
  */
 export function isMarkdown(path: string): boolean {
   return path.toLowerCase().endsWith(".md");
+}
+
+/**
+ * TASK-1956 — a document to RENDER rather than to read as source.
+ *
+ * `.htm` as well as `.html`: a predicate written as `endsWith(".html")` looks
+ * complete, passes every test anyone thinks to write, and silently misses the
+ * one extension most likely to be legacy.
+ */
+export function isHtmlDoc(path: string): boolean {
+  const lower = path.toLowerCase();
+  return lower.endsWith(".html") || lower.endsWith(".htm");
 }
 
 export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: string } = {}): React.JSX.Element {
@@ -387,6 +400,12 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
                     </div>
                   )}
                 </div>
+              ) : isHtmlDoc(selectedPath) ? (
+                /* TASK-1956 — a report is rendered, not spelled out. The
+                   isolation lives in HtmlDocView's sandbox attribute; the
+                   branch order matters only in that .md is decided first, and
+                   no file is both. */
+                <HtmlDocView html={docText} path={selectedPath} />
               ) : (
                 /* Source is shown verbatim. Running it through the markdown
                    renderer would eat leading hashes, asterisks and underscores
