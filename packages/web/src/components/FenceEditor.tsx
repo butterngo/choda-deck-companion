@@ -46,6 +46,12 @@ const DIAGRAM_MESSAGE: Record<DiagramFailure, string> = {
   network: "The model could not be reached — check the network rather than the key.",
   auth: "The model rejected the configured key.",
   provider: "The model failed to answer.",
+  // TASK-1943 — not a failure of the model, and not something pressing again
+  // can fix. The adapter resolved a DIFFERENT diagram than the one on screen,
+  // so it refused rather than rewriting the wrong picture. The only useful
+  // instruction is to re-read the document.
+  "fence-mismatch":
+    "This document changed on disk, so the diagram you are editing is no longer the one the adapter would edit. Nothing was changed. Reload the document and start again.",
 };
 
 export function FenceEditor({
@@ -89,6 +95,12 @@ export function FenceEditor({
         rel,
         fenceIndex: fence.index,
         instruction,
+        // TASK-1943 — what THIS pane believes fence.index contains. The adapter
+        // finds fences with its own copy of listMermaidFences, in another repo;
+        // if the two disagree, this is what lets it refuse instead of rewriting
+        // a diagram the reader never selected. Sent verbatim — a normalised copy
+        // would fail the comparison for a difference nobody made.
+        fenceText: fence.code,
       });
       setDraft(answer.mermaid);
     } catch (e) {

@@ -572,7 +572,12 @@ export type DiagramFailure =
   | "rate-limit"
   | "network"
   | "auth"
-  | "provider";
+  | "provider"
+  // TASK-1943 — the adapter resolved a DIFFERENT fence than the one this client
+  // is showing. Its own kind rather than a generic failure, because the only
+  // useful response is "reload the document", and a reader told "the provider
+  // failed" would retry forever against a disagreement that never resolves.
+  | "fence-mismatch";
 
 export class DiagramError extends Error {
   constructor(
@@ -598,6 +603,20 @@ export async function proposeDiagram(input: {
   rel: string;
   fenceIndex: number;
   instruction: string;
+  /**
+   * TASK-1943 — the fence body THIS client is looking at.
+   *
+   * `fenceIndex` means the ADAPTER's index, and the adapter finds fences with a
+   * second implementation of `listMermaidFences` that lives in another
+   * repository and cannot be imported here. Should the two ever disagree, index
+   * 1 on screen and index 1 there are different diagrams — and the model would
+   * be asked to rewrite one the reader never chose, with no error anywhere.
+   *
+   * Sending the text lets the adapter refuse (409) instead of serving the wrong
+   * fence. Optional on the wire so an older adapter still works; sending it
+   * costs nothing and removes a silent failure.
+   */
+  fenceText?: string;
 }): Promise<{ mermaid: string; attempts: number }> {
   const res = await fetch(`${API_BASE}/workspace-docs/diagram`, {
     method: "POST",
@@ -610,6 +629,7 @@ export async function proposeDiagram(input: {
     error?: string;
     kind?: string;
     parseError?: string;
+    detail?: string;
   };
   if (res.status === 501) throw new DiagramError("no-model", body.error ?? "no model configured");
   if (res.status === 422) {
@@ -620,6 +640,15 @@ export async function proposeDiagram(input: {
     );
   }
   if (res.status === 429) throw new DiagramError("rate-limit", "the model is rate limited");
+  // TASK-1943 — the fence-text precondition refused. The document on disk is not
+  // what this pane is showing, so editing would have rewritten another diagram.
+  if (res.status === 409) {
+    throw new DiagramError(
+      "fence-mismatch",
+      body.error ?? "fence text does not match",
+      body.detail ?? null
+    );
+  }
   const kind: DiagramFailure =
     body.kind === "network" ? "network" : body.kind === "auth" ? "auth" : "provider";
   throw new DiagramError(kind, body.error ?? `diagram request failed: ${res.status}`);
