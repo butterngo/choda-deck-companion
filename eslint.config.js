@@ -34,8 +34,13 @@ export default tseslint.config(
   // TASK-1437 — electron/ is plain CommonJS (electron-builder/main-process
   // convention, mirrors english-companion's electron/*.cjs); require() is the
   // point, and its *.test.cjs files run under vitest's globals: true.
+  // TASK-1964 — scripts/*.cjs joins it: a script Electron runs as a main
+  // process is CommonJS for the same reason, and proof-loopback.cjs requires
+  // electron/display-media.cjs directly so the proof drives the real handler.
+  // It stays in scripts/ rather than electron/ because electron/** is packaged
+  // into the installer and a proof script has no business shipping.
   {
-    files: ["electron/**/*.cjs"],
+    files: ["electron/**/*.cjs", "scripts/**/*.cjs"],
     languageOptions: {
       sourceType: "commonjs",
       globals: {

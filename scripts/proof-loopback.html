@@ -1,0 +1,137 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>TASK-1964 loopback proof</title>
+<body style="font: 14px system-ui; padding: 24px; background: #18181b; color: #e4e4e7">
+  <p id="status">idle</p>
+  <script>
+    // TASK-1964 — the renderer half of the loopback proof. Everything that can
+    // only be observed inside a real Chromium runtime lives here: the actual
+    // getDisplayMedia grant, MediaRecorder, and decoding the result back to
+    // samples. The main process (proof-loopback.cjs) drives this through
+    // executeJavaScript and writes the files.
+
+    const say = (t) => { document.getElementById("status").textContent = t; };
+
+    // Peak level in dBFS. A recording of pure digital silence has peak 0 and
+    // therefore -Infinity dBFS; this is the number AC-2's -60 floor tests.
+    // Peak rather than RMS on purpose: RMS over a mostly-quiet meeting can sit
+    // below -60 even when speech is clearly present, which would fail a good
+    // recording. Peak answers the question actually being asked — did ANY
+    // signal arrive.
+    async function peakDbfs(blob) {
+      const bytes = await blob.arrayBuffer();
+      const ctx = new AudioContext();
+      try {
+        const buf = await ctx.decodeAudioData(bytes);
+        let peak = 0;
+        for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+          const data = buf.getChannelData(ch);
+          for (let i = 0; i < data.length; i++) {
+            const v = Math.abs(data[i]);
+            if (v > peak) peak = v;
+          }
+        }
+        return {
+          // -999 rather than -Infinity: the result crosses the renderer→main
+          // boundary through executeJavaScript, and -Infinity does not survive
+          // that serialization intact. Any sentinel below the -60 floor reads
+          // as silence to the caller either way.
+          peakDbfs: peak === 0 ? -999 : 20 * Math.log10(peak),
+          seconds: buf.duration,
+          channels: buf.numberOfChannels,
+          sampleRate: buf.sampleRate,
+        };
+      } finally {
+        ctx.close();
+      }
+    }
+
+    function recordFor(stream, ms) {
+      return new Promise((resolve, reject) => {
+        const chunks = [];
+        let rec;
+        try {
+          // Same format ADR-006 measured at ~0.92 MB/min in a real Electron
+          // runtime. No transcoding, no dependency — the encoder is the browser's.
+          rec = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
+        } catch (e) {
+          return reject(e);
+        }
+        rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+        rec.onerror = (e) => reject(e.error || new Error("MediaRecorder error"));
+        rec.onstop = () => resolve(new Blob(chunks, { type: "audio/webm" }));
+        // A timeslice, not one blob at the end: this is the crash-flush shape
+        // the real recorder (TASK-1966) will use, so the proof exercises it too.
+        rec.start(1000);
+        setTimeout(() => rec.stop(), ms);
+      });
+    }
+
+    async function blobToBase64(blob) {
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      let s = "";
+      for (let i = 0; i < buf.length; i += 0x8000) {
+        s += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+      }
+      return btoa(s);
+    }
+
+    // Returns a plain object; main writes the files and applies the verdict.
+    // Never throws for a missing microphone — that is reported as its own
+    // failure so a machine with no mic cannot be mistaken for broken loopback.
+    window.runProof = async function runProof(ms) {
+      const out = { audioTrackCount: null, loopback: null, mic: null, errors: [] };
+
+      say("requesting display media…");
+      let display;
+      try {
+        display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      } catch (e) {
+        out.errors.push("getDisplayMedia rejected: " + (e && e.message));
+        return out;
+      }
+
+      // AC-1. Today's handler grants video only, so this is 0 before the fix
+      // and 1 after it.
+      out.audioTrackCount = display.getAudioTracks().length;
+      if (out.audioTrackCount === 0) {
+        out.errors.push("display stream carries no audio track — handler did not grant loopback");
+        display.getTracks().forEach((t) => t.stop());
+        return out;
+      }
+
+      // Record only the audio; the video track is dropped so the proof writes
+      // audio files, not screen video.
+      const loopbackOnly = new MediaStream(display.getAudioTracks());
+
+      let micStream = null;
+      try {
+        say("requesting microphone…");
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e) {
+        out.errors.push("getUserMedia (microphone) rejected: " + (e && e.message));
+      }
+
+      say("recording " + ms / 1000 + "s — play audio now");
+      const jobs = [recordFor(loopbackOnly, ms).then(async (b) => {
+        out.loopback = { ...(await peakDbfs(b)), bytes: b.size, b64: await blobToBase64(b) };
+      })];
+      if (micStream) {
+        jobs.push(recordFor(micStream, ms).then(async (b) => {
+          out.mic = { ...(await peakDbfs(b)), bytes: b.size, b64: await blobToBase64(b) };
+        }).catch((e) => out.errors.push("mic record failed: " + (e && e.message))));
+      }
+
+      try {
+        await Promise.all(jobs);
+      } catch (e) {
+        out.errors.push("loopback record failed: " + (e && e.message));
+      }
+
+      display.getTracks().forEach((t) => t.stop());
+      if (micStream) micStream.getTracks().forEach((t) => t.stop());
+      say("done");
+      return out;
+    };
+  </script>
+</body>
