@@ -9,6 +9,7 @@ const { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveModelDir, r
 const { createStaticProxyServer } = require("./static-proxy-server.cjs");
 const { configureLoginItem } = require("./login-item.cjs");
 const { initUpdater } = require("./updater.cjs");
+const { createDisplayMediaHandler } = require("./display-media.cjs");
 
 // PNG works for the window + tray; packaged builds also bake the .ico into the
 // exe via electron-builder. Same asset english-companion uses for its tray.
@@ -74,17 +75,10 @@ if (!app.requestSingleInstanceLock()) {
 
     // TASK-1494 — screen capture. Electron ships no built-in screen picker, so a
     // renderer getDisplayMedia() call rejects unless we handle the request here.
-    // Grant the primary screen (video only — this is a screenshot, no audio).
-    // Same pattern as english-companion's Watch tab.
-    session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
-      desktopCapturer
-        .getSources({ types: ["screen"] })
-        .then((sources) => {
-          if (!sources.length) return callback(); // no source → reject cleanly
-          callback({ video: sources[0] });
-        })
-        .catch(() => callback());
-    });
+    // TASK-1964 moved the callback into display-media.cjs and added loopback
+    // audio, so a meeting recording can capture the remote party. See that file
+    // for why the microphone is deliberately NOT mixed in here.
+    session.defaultSession.setDisplayMediaRequestHandler(createDisplayMediaHandler({ desktopCapturer }));
 
     const staticDir = path.join(__dirname, "..", "packages", "web", "dist");
     const entry = resolveAdapterEntry({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
