@@ -1558,3 +1558,81 @@ export async function readContainerFile(id: string, path: string): Promise<strin
   if (!res.ok) throw new Error(`cat failed: ${res.status}`);
   return ((await res.json()) as { text?: string }).text ?? "";
 }
+
+// ---------------------------------------------------------------------------
+// TASK-1966 — meeting recordings (adapter routes from choda-deck TASK-1965).
+// ---------------------------------------------------------------------------
+
+/** The two streams a meeting records. Stored as separate files, never mixed. */
+export type MeetingTrack = "mic" | "loopback";
+
+/** Mirror of the adapter's meta.json (choda-deck src/adapters/companion/meetings.ts). */
+export interface MeetingMeta {
+  id: string;
+  startedAt: string;
+  endedAt: string;
+  tracks: MeetingTrack[];
+  bytes: number;
+}
+
+/**
+ * `GET /meetings` answered 404 — the route does not exist on this adapter.
+ *
+ * Not an error in the ordinary sense: the shipped app carries a VENDORED copy of
+ * the adapter, and a route added after that copy was taken 404s until
+ * `pnpm run vendor:adapter` runs and a release goes out. The view renders this as
+ * a capability note naming the stale adapter, because "you have no recordings"
+ * and "this build cannot store recordings" must never look the same.
+ */
+export class MeetingsRouteMissingError extends Error {
+  constructor() {
+    super("meetings route not present on this adapter");
+    this.name = "MeetingsRouteMissingError";
+  }
+}
+
+export async function fetchMeetings(signal?: AbortSignal): Promise<MeetingMeta[]> {
+  const res = await fetch(`${API_BASE}/meetings`, { signal });
+  if (res.status === 404) throw new MeetingsRouteMissingError();
+  if (!res.ok) throw new Error(`meetings listing failed: ${res.status}`);
+  return (await res.json()) as MeetingMeta[];
+}
+
+/**
+ * One timeslice of one track. The adapter refuses anything but `last + 1` with
+ * 409, so callers MUST send a track's chunks strictly in order — see the upload
+ * queue in RecorderProvider, which serialises them per track.
+ */
+export async function postMeetingChunk(
+  id: string,
+  track: MeetingTrack,
+  seq: number,
+  chunk: Blob,
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/meetings/${encodeURIComponent(id)}/chunk?track=${track}&seq=${seq}`,
+    { method: "POST", headers: { "content-type": "audio/webm" }, body: chunk },
+  );
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(detail?.error ?? `chunk ${track}#${seq} failed: ${res.status}`);
+  }
+}
+
+export async function finalizeMeeting(
+  id: string,
+  times: { startedAt: string; endedAt: string },
+): Promise<MeetingMeta> {
+  const res = await fetch(`${API_BASE}/meetings/${encodeURIComponent(id)}/finalize`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(times),
+  });
+  if (!res.ok) throw new Error(`finalize failed: ${res.status}`);
+  return (await res.json()) as MeetingMeta;
+}
+
+/** Playback goes through the existing artifacts byte route, which serves audio/webm. */
+export function meetingAudioUrl(id: string, track: MeetingTrack): string {
+  return `${API_BASE}/artifacts/meetings/${encodeURIComponent(id)}/${track}.webm`;
+}

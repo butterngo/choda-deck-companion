@@ -1,9 +1,15 @@
 // TASK-1494 — the Capture pillar: screenshot the screen (Electron-granted) or
 // share an existing image, then Save/Copy it. Self-contained — no laptop API
 // call, so it works even when the adapter is down (unlike the other pillars).
+//
+// TASK-1966 — and record a meeting. It lives here as a second tab rather than as
+// its own sidebar entry because of TASK-1830's standing rule: no new menu. The
+// Capture action already exists in the Shell foot, and recording a meeting is a
+// capture, so it joins this page instead of adding a destination. The tab is kept
+// in the URL (`?mode=meeting`) so it deep-links and survives a refresh.
 
 import { useEffect, useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useOutletContext, useSearchParams } from "react-router-dom";
 import {
   captureScreenshotDataUrl,
   captureFilename,
@@ -17,11 +23,12 @@ import type { HealthView } from "../hooks/use-health";
 import { useWorkspace } from "../hooks/use-workspace";
 import { useWorkspaces } from "../hooks/use-workspaces";
 import { EmptyState } from "../components/state/EmptyState";
+import { MeetingsView } from "./MeetingsView";
 
 // idle → (screen capture) region → preview ; file share jumps straight to preview.
 type Stage = "idle" | "region" | "preview";
 
-export function CaptureView(): React.JSX.Element {
+function ScreenshotCapture(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
   const { workspaceId } = useWorkspace();
   const { workspaces } = useWorkspaces();
@@ -87,7 +94,6 @@ export function CaptureView(): React.JSX.Element {
 
   return (
     <section aria-label="capture" className="flex-1 min-h-0 overflow-y-auto">
-      <h1 className="text-lg font-medium mb-3">Capture</h1>
 
       <div className="flex items-center gap-2 mb-4">
         <button
@@ -142,5 +148,54 @@ export function CaptureView(): React.JSX.Element {
         />
       )}
     </section>
+  );
+}
+
+type CaptureMode = "screenshot" | "meeting";
+
+const MODES: CaptureMode[] = ["screenshot", "meeting"];
+const MODE_LABELS: Record<CaptureMode, string> = {
+  screenshot: "Screenshot",
+  meeting: "Meeting",
+};
+
+export function CaptureView(): React.JSX.Element {
+  const [params, setParams] = useSearchParams();
+  const mode: CaptureMode = params.get("mode") === "meeting" ? "meeting" : "screenshot";
+
+  return (
+    <div className="flex flex-col min-h-0 flex-1">
+      <h1 className="flex-none text-lg font-medium mb-3">Capture</h1>
+      <div
+        role="tablist"
+        aria-label="capture modes"
+        className="flex-none mb-4 flex gap-1 border-b border-zinc-200 dark:border-zinc-800"
+      >
+        {MODES.map((m) => (
+          <button
+            key={m}
+            type="button"
+            role="tab"
+            aria-selected={mode === m}
+            data-testid={`capture-tab-${m}`}
+            onClick={() => setParams(m === "screenshot" ? {} : { mode: m }, { replace: true })}
+            className={[
+              "px-3 py-1.5 text-sm -mb-px border-b-2",
+              mode === m
+                ? "border-zinc-900 dark:border-zinc-100 text-zinc-900 dark:text-zinc-100 font-medium"
+                : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200",
+            ].join(" ")}
+          >
+            {MODE_LABELS[m]}
+          </button>
+        ))}
+      </div>
+
+      {/* Only the active tab mounts. That scopes the Ctrl+V image-paste listener
+          to the Screenshot tab, so pasting while on the Meeting tab does not
+          yank you into a screenshot preview. Leaving the Meeting tab does NOT
+          stop a recording — the recorder lives in Shell, not in this view. */}
+      {mode === "screenshot" ? <ScreenshotCapture /> : <MeetingsView />}
+    </div>
   );
 }

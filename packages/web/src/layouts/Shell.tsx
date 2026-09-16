@@ -20,12 +20,17 @@ import { useHealth } from "../hooks/use-health";
 import { useSidebar } from "../hooks/use-sidebar";
 import { StatusBar } from "../components/StatusBar";
 import { SidebarNav } from "../components/nav/SidebarNav";
+import { RecorderProvider } from "../hooks/use-recorder";
+import { RecordingIndicator } from "../components/RecordingIndicator";
 
 export function Shell(): React.JSX.Element {
   const view = useHealth();
   const sidebar = useSidebar();
 
+  // TASK-1966 — the recorder wraps the whole frame, not a view. A MediaRecorder
+  // owned by a view dies when that view unmounts, which is every navigation.
   return (
+    <RecorderProvider>
     <div
       className="h-screen flex overflow-hidden group/shell"
       data-collapsed={sidebar.collapsed}
@@ -117,8 +122,12 @@ export function Shell(): React.JSX.Element {
           `min-h-0` is load-bearing: without it a flex child refuses to shrink
           below its content and the inner `overflow-y-auto` never engages. */}
       <main className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col px-4 rail:px-6 py-5">
+        {/* TASK-1966 — above the outlet so it is on every view. Renders nothing
+            unless a recording is live. */}
+        <RecordingIndicator />
         <Outlet context={view} />
       </main>
     </div>
+    </RecorderProvider>
   );
 }
