@@ -22,6 +22,7 @@ import { useEffect, useRef, useState } from "react";
 import type { MeetingMeta, MeetingTrack, TranscriptSegment } from "../api";
 import { fetchTranscript, meetingAudioUrl, transcribeMeeting, TranscribeError } from "../api";
 import { CapabilityNote } from "../components/state/CapabilityNote";
+import { MeetingSave } from "./MeetingSave";
 import { ErrorState } from "../components/state/ErrorState";
 
 const TRACK_LABEL: Record<MeetingTrack, string> = {
@@ -195,6 +196,17 @@ export function MeetingRow({ meeting }: { meeting: MeetingMeta }): React.JSX.Ele
               </li>
             ))}
           </ol>
+        )}
+
+        {transcript.kind === "ready" && (
+          <MeetingSave
+            meeting={meeting}
+            segments={transcript.segments}
+            currentMs={() => {
+              const el = players.current.loopback ?? players.current.mic;
+              return (el?.currentTime ?? 0) * 1000;
+            }}
+          />
         )}
       </div>
     </li>

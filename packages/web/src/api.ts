@@ -1700,3 +1700,78 @@ export async function finalizeMeeting(
 export function meetingAudioUrl(id: string, track: MeetingTrack): string {
   return `${API_BASE}/artifacts/meetings/${encodeURIComponent(id)}/${track}.webm`;
 }
+
+// ---------------------------------------------------------------------------
+// TASK-1994 — save a meeting's transcript and note; draft the note (choda-deck
+// TASK-1992 / TASK-1994 adapter routes).
+// ---------------------------------------------------------------------------
+
+export type MeetingFileName = "transcript.md" | "note.md";
+
+export interface SaveMeetingFilesRequest {
+  projectId: string | null;
+  workspaceId: string | null;
+  date: string;
+  slug: string;
+  files: Array<{ name: MeetingFileName; markdown: string }>;
+  alsoRepo: boolean;
+  keepOutOfGit: boolean;
+}
+
+export async function saveMeetingFiles(id: string, body: SaveMeetingFilesRequest): Promise<{ written: string[] }> {
+  const res = await fetch(`${API_BASE}/meetings/${encodeURIComponent(id)}/files`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = (await res.json().catch(() => null)) as { written?: string[]; error?: string; path?: string } | null;
+  if (res.status === 409) throw new Error(`Already saved: ${json?.path ?? "a file with this name exists"}`);
+  if (!res.ok) throw new Error(json?.error ?? `save failed: ${res.status}`);
+  return { written: json?.written ?? [] };
+}
+
+export interface NotePart {
+  fromMs: number;
+  toMs: number;
+  kind: "client" | "internal";
+}
+
+export interface GlossaryEntry {
+  heard: string[];
+  term: string;
+}
+
+export interface DraftNoteRequest {
+  client: string;
+  project: string | null;
+  topic?: string;
+  attendees?: string[];
+  language: "vi" | "en";
+  parts?: NotePart[];
+  includeInternal: boolean;
+  glossary?: GlossaryEntry[];
+}
+
+export interface DroppedNoteItem {
+  section: string;
+  text: string;
+  atMs: number | null;
+  reason: "no-timestamp" | "outside-segments" | "internal-part";
+}
+
+export interface DraftNoteResponse {
+  markdown: string;
+  dropped: DroppedNoteItem[];
+}
+
+export async function draftMeetingNote(id: string, body: DraftNoteRequest): Promise<DraftNoteResponse> {
+  const res = await fetch(`${API_BASE}/meetings/${encodeURIComponent(id)}/note/draft`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = (await res.json().catch(() => null)) as (DraftNoteResponse & { error?: string; kind?: string }) | null;
+  if (res.status === 501) throw new Error("No AI model is configured on this adapter, so it cannot draft a note.");
+  if (!res.ok || !json) throw new Error(json?.error ? `${json.error}${json.kind ? ` (${json.kind})` : ""}` : `draft failed: ${res.status}`);
+  return { markdown: json.markdown, dropped: json.dropped ?? [] };
+}
