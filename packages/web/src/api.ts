@@ -1573,6 +1573,70 @@ export interface MeetingMeta {
   endedAt: string;
   tracks: MeetingTrack[];
   bytes: number;
+  /** TASK-1993 — when transcript.json was last written; null/absent until transcribed. */
+  transcribedAt?: string | null;
+}
+
+/** Mirror of choda-deck TASK-1991's transcript.json segment. */
+export interface TranscriptSegment {
+  track: MeetingTrack;
+  speaker: "Me" | "Them";
+  startMs: number;
+  endMs: number;
+  text: string;
+  locale: string | null;
+}
+
+export interface MeetingTranscript {
+  meetingId: string;
+  createdAt: string;
+  segments: TranscriptSegment[];
+}
+
+/**
+ * Why a transcription did not happen. Three different facts, kept apart because
+ * each tells the reader to do something different — and none of them means
+ * "there is no transcript yet":
+ *
+ *   * `unconfigured`  (501) — the adapter has no Azure Speech key. Nothing is
+ *                     broken; one capability is off.
+ *   * `route-missing` (404) — this adapter predates the route (a vendored copy).
+ *   * `failed`        (anything else, typically 502) — Azure or the adapter
+ *                     failed this time; the recording is untouched and a retry
+ *                     is reasonable.
+ */
+export class TranscribeError extends Error {
+  constructor(
+    readonly kind: "unconfigured" | "route-missing" | "failed",
+    message: string,
+  ) {
+    super(message);
+    this.name = "TranscribeError";
+  }
+}
+
+export async function transcribeMeeting(id: string): Promise<MeetingTranscript> {
+  const res = await fetch(`${API_BASE}/meetings/${encodeURIComponent(id)}/transcribe`, { method: "POST" });
+  if (res.status === 501) throw new TranscribeError("unconfigured", "speech not configured");
+  if (res.status === 404) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    // The route answering "meeting not found" is a different fact from the route
+    // not existing at all, and only the second means a stale adapter.
+    if (body?.error === "meeting not found") throw new TranscribeError("failed", "meeting not found");
+    throw new TranscribeError("route-missing", "transcribe route not present on this adapter");
+  }
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string; detail?: string } | null;
+    throw new TranscribeError("failed", body?.detail ?? body?.error ?? `transcribe failed: ${res.status}`);
+  }
+  return (await res.json()) as MeetingTranscript;
+}
+
+/** A transcript already on disk, read back through the artifacts byte route. */
+export async function fetchTranscript(id: string, signal?: AbortSignal): Promise<MeetingTranscript> {
+  const res = await fetch(`${API_BASE}/artifacts/meetings/${encodeURIComponent(id)}/transcript.json`, { signal });
+  if (!res.ok) throw new Error(`transcript read failed: ${res.status}`);
+  return (await res.json()) as MeetingTranscript;
 }
 
 /**
