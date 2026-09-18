@@ -69,14 +69,26 @@ function formatSize(bytes: number): string {
 
 export function MeetingRow({ meeting }: { meeting: MeetingMeta }): React.JSX.Element {
   const players = useRef<Partial<Record<MeetingTrack, HTMLAudioElement | null>>>({});
+  // TASK-2005 — a row is one line until it is opened.
+  //
+  // `everOpened` is separate from `open` on purpose. Once a row has been opened
+  // its body stays MOUNTED and is merely hidden, because the body holds the note
+  // draft: an edited draft is minutes of the user's reading and correcting, and
+  // unmounting it on collapse would throw that away silently and re-charge a
+  // model call to get a worse version back. A row that was never opened mounts
+  // nothing at all, which is the whole point of the change.
+  const [open, setOpen] = useState(false);
+  const [everOpened, setEverOpened] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptState>(
     meeting.transcribedAt ? { kind: "loading" } : { kind: "none" },
   );
 
   // An existing transcript is READ, never re-created: reading it costs nothing
   // and sends nothing to Azure.
+  // Gated on the row being opened: a list of a dozen transcribed meetings used
+  // to fire a dozen transcript reads nobody asked to see.
   useEffect(() => {
-    if (!meeting.transcribedAt) return;
+    if (!meeting.transcribedAt || !everOpened) return;
     const ctrl = new AbortController();
     fetchTranscript(meeting.id, ctrl.signal)
       .then((t) => setTranscript({ kind: "ready", segments: t.segments }))
@@ -84,7 +96,17 @@ export function MeetingRow({ meeting }: { meeting: MeetingMeta }): React.JSX.Ele
         if (!ctrl.signal.aborted) setTranscript({ kind: "failed", message: (err as Error).message });
       });
     return () => ctrl.abort();
-  }, [meeting.id, meeting.transcribedAt]);
+  }, [meeting.id, meeting.transcribedAt, everOpened]);
+
+  function toggle(): void {
+    setOpen((was) => {
+      // Collapsing must silence the row: a hidden player that keeps playing is
+      // a voice with no visible source anywhere on the page.
+      if (was) for (const el of Object.values(players.current)) el?.pause?.();
+      else setEverOpened(true);
+      return !was;
+    });
+  }
 
   async function transcribe(): Promise<void> {
     setTranscript({ kind: "transcribing" });
@@ -107,24 +129,36 @@ export function MeetingRow({ meeting }: { meeting: MeetingMeta }): React.JSX.Ele
     }
   }
 
-  const transcribed = transcript.kind === "ready";
   const canTranscribe = transcript.kind === "none" || transcript.kind === "failed";
 
   return (
     <li className="rounded-md border border-zinc-200 dark:border-zinc-800 px-3.5 py-3" data-testid={`meeting-${meeting.id}`}>
-      <div className="flex items-baseline gap-2 mb-2 text-sm">
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        className="w-full flex items-baseline gap-2 text-sm text-left"
+      >
+        <i
+          className={`ti ${open ? "ti-chevron-down" : "ti-chevron-right"} self-center text-zinc-400`}
+          aria-hidden="true"
+        />
         <span className="font-medium text-zinc-900 dark:text-zinc-100">{formatWhen(meeting.startedAt)}</span>
         <span className="text-zinc-500">{formatDuration(meeting.startedAt, meeting.endedAt)}</span>
+        {/* Read from the meeting, not from the loaded transcript: a collapsed row
+            has loaded nothing, and must still be triageable from the list. */}
         <span
           className="text-xs text-zinc-500 rounded bg-zinc-100 dark:bg-zinc-800 px-1.5"
           data-testid="meeting-status"
         >
-          {transcribed ? "Transcribed" : "Recorded"}
+          {meeting.transcribedAt ? "Transcribed" : "Recorded"}
         </span>
         <span className="ml-auto text-xs tabular-nums text-zinc-400">{formatSize(meeting.bytes)}</span>
-      </div>
+      </button>
 
-      <div className="flex flex-col gap-1.5">
+      {everOpened && (
+      <div hidden={!open} data-testid="meeting-body">
+      <div className="flex flex-col gap-1.5 mt-2">
         {meeting.tracks.map((track) => (
           <div key={track} className="flex items-center gap-3">
             <span className="w-20 flex-none text-xs text-zinc-500">{TRACK_LABEL[track]}</span>
@@ -209,6 +243,8 @@ export function MeetingRow({ meeting }: { meeting: MeetingMeta }): React.JSX.Ele
           />
         )}
       </div>
+      </div>
+      )}
     </li>
   );
 }

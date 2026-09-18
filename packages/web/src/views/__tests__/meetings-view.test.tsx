@@ -7,7 +7,7 @@
 // the same thing for both would fail one of them.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, cleanup, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, Link } from "react-router-dom";
 import { MeetingsView } from "../MeetingsView";
 import { CaptureView } from "../CaptureView";
@@ -101,6 +101,9 @@ describe("TASK-1966 AC-4 — a stale adapter is a capability gap, not an empty l
     renderView();
 
     const list = await screen.findByTestId("meetings-list");
+    // TASK-2005 — players mount on expand, so open both rows first. Newest-first
+    // ordering is still read off the list, which is what this criterion is about.
+    for (const row of list.querySelectorAll("li")) fireEvent.click(row.querySelector("button") as HTMLElement);
     const audio = list.querySelectorAll("audio");
     expect(audio.length).toBe(3);
     expect(audio[0].getAttribute("src")).toBe("/api/artifacts/meetings/m-new/loopback.webm");
