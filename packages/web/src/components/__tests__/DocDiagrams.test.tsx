@@ -6,8 +6,8 @@
 // stops it passing vacuously on a build where mermaid was never wired at all.
 // A zero-call assertion alone is satisfied by doing nothing.
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 // Counts every call that actually reaches the mermaid module. This is the
 // property under test — an earlier version counted MermaidBlock RENDERS, which
@@ -57,6 +57,36 @@ const WITH_TABLE = `| Pillar | Status |
 | P1 | Decided |
 | P5 | Shipped |
 `;
+
+// TASK-2006 — let each test's own async work land before the next one starts.
+//
+// Four tests in "editing a diagram from the document" are synchronous: they
+// render two fences, assert on the edit bar (which draws synchronously) and
+// end. Each mounted MermaidBlock has already started an async import + render
+// that nobody awaits, so that work settles DURING a later test — and the fifth
+// test, which waits for a DOM change of its own, gets in line behind all of it.
+//
+// Measured, three runs each, time from the mock throwing to the error node:
+//
+//   as written          : 883 ms, 924 ms, and one run of 38,876 ms
+//   with this tick      :  15 ms,  19 ms,  11 ms
+//
+// The 38.8 s run is the suite flake, reproduced in a single-file run. Against
+// the 5 s default budget, 900 ms leaves ~1.5x headroom that any scheduling
+// hiccup spends; 15 ms leaves 300x.
+//
+// afterEach(cleanup) was tried first and measured: 907/879/891 ms — no effect,
+// because unmounting does not cancel work already scheduled. The fix has to
+// give that work a turn, not remove the tree it was going to touch.
+afterEach(async () => {
+  // Inside act(), so the state updates that land here are processed the way
+  // React expects. Without the wrapper this same tick produces eight
+  // "not wrapped in act" warnings — the updates were always happening, the
+  // tick only made them visible.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  });
+});
 
 beforeEach(() => {
   renderCalls.length = 0;
