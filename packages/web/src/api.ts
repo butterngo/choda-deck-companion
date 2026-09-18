@@ -95,6 +95,21 @@ export function sendImageToConversation(
   });
 }
 
+// TASK-1995 — send one meeting action item to the inbox (POST /capture,
+// kind:text, destination:inbox). Nothing is sent automatically: the dispatcher
+// is the same bridge the extension uses, and the row it writes is a raw inbox
+// item, so an accidental send is real work someone has to triage away.
+//
+// projectId is required by the dispatcher's parseTarget, not optional here.
+export function sendTextToInbox(args: { text: string; projectId: string }): Promise<CaptureResult> {
+  return postJson<CaptureResult>("/capture", {
+    kind: "text",
+    destination: "inbox",
+    payload: { text: args.text, projectId: args.projectId },
+    sourceUrl: COMPANION_CAPTURE_SOURCE,
+  });
+}
+
 export function fetchLedger(signal?: AbortSignal): Promise<{ ledger: LedgerRow[] }> {
   return getJson<{ ledger: LedgerRow[] }>("/sync/ledger", signal);
 }
@@ -1759,9 +1774,23 @@ export interface DroppedNoteItem {
   reason: "no-timestamp" | "outside-segments" | "internal-part";
 }
 
+/**
+ * One row of the note's "Việc cần làm" table. The draft route keeps these
+ * structured beside the rendered markdown (TASK-1992), so TASK-1995's inbox
+ * send reads `atMs` from the row rather than parsing `▶ mm:ss` back out of the
+ * markdown — a parse that would break the moment the heading is translated.
+ */
+export interface NoteAction {
+  text: string;
+  atMs: number;
+  owner: string;
+  due: string | null;
+}
+
 export interface DraftNoteResponse {
   markdown: string;
   dropped: DroppedNoteItem[];
+  note?: { actions?: NoteAction[] };
 }
 
 export async function draftMeetingNote(id: string, body: DraftNoteRequest): Promise<DraftNoteResponse> {
@@ -1773,5 +1802,5 @@ export async function draftMeetingNote(id: string, body: DraftNoteRequest): Prom
   const json = (await res.json().catch(() => null)) as (DraftNoteResponse & { error?: string; kind?: string }) | null;
   if (res.status === 501) throw new Error("No AI model is configured on this adapter, so it cannot draft a note.");
   if (!res.ok || !json) throw new Error(json?.error ? `${json.error}${json.kind ? ` (${json.kind})` : ""}` : `draft failed: ${res.status}`);
-  return { markdown: json.markdown, dropped: json.dropped ?? [] };
+  return { markdown: json.markdown, dropped: json.dropped ?? [], note: json.note ?? {} };
 }
