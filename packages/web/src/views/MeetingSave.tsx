@@ -27,10 +27,21 @@ import type {
   TranscriptSegment,
   Workspace,
 } from "../api";
-import { draftMeetingNote, fetchProjects, fetchWorkspaces, saveMeetingFiles, sendTextToInbox } from "../api";
+import {
+  draftMeetingNote,
+  fetchProjects,
+  fetchReviewModels,
+  fetchWorkspaces,
+  saveMeetingFiles,
+  sendTextToInbox,
+} from "../api";
 import { ErrorState } from "../components/state/ErrorState";
 
 const GLOSSARY_KEY = (projectId: string): string => `choda.meeting-glossary.${projectId}`;
+// TASK-2004 — the model is remembered per project for the same reason the
+// glossary is: which deployment reads a client's meetings well is a property of
+// that client's vocabulary, not of this laptop.
+const MODEL_KEY = (projectId: string): string => `choda.meeting-model.${projectId}`;
 
 /**
  * `mm:ss`, or `h:mm:ss` from one hour on — the format the note's own ▶ links
@@ -79,6 +90,24 @@ function localDate(iso: string): string {
   if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
   const pad = (n: number): string => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function readStored(key: (p: string) => string, projectId: string | null): string {
+  if (!projectId) return "";
+  try {
+    return localStorage.getItem(key(projectId)) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeStored(key: (p: string) => string, projectId: string | null, value: string): void {
+  if (!projectId) return;
+  try {
+    localStorage.setItem(key(projectId), value);
+  } catch {
+    /* storage unavailable — the choice still applies to this draft */
+  }
 }
 
 function readGlossary(projectId: string | null): string {
@@ -144,6 +173,8 @@ export function MeetingSave({
   const [splits, setSplits] = useState<Array<{ atMs: number; internalAfter: boolean }>>([]);
   const [includeInternal, setIncludeInternal] = useState(false);
   const [glossary, setGlossary] = useState("");
+  const [models, setModels] = useState<string[]>([]);
+  const [model, setModel] = useState("");
   const [draft, setDraft] = useState<DraftNoteResponse | null>(null);
   // TASK-1995 — which action rows have already been sent, by index. An action
   // sent twice is two inbox rows for one piece of work, and nothing downstream
@@ -173,7 +204,19 @@ export function MeetingSave({
   // The glossary belongs to the project: typed once, reused for every meeting in it.
   useEffect(() => {
     setGlossary(readGlossary(projectId));
+    setModel(readStored(MODEL_KEY, projectId));
   }, [projectId]);
+
+  // The same list AI review offers. It reaches no provider, so it is safe on mount.
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchReviewModels(ctrl.signal)
+      .then((r) => setModels(r.models.map((m) => m.id)))
+      .catch(() => {
+        /* no catalog — the select then offers the configured default only */
+      });
+    return () => ctrl.abort();
+  }, []);
 
   const options = useMemo(
     () =>
@@ -230,6 +273,7 @@ export function MeetingSave({
     setMessage(null);
     setBusy("draft");
     writeGlossary(projectId, glossary);
+    writeStored(MODEL_KEY, projectId, model);
     try {
       const entries = parseGlossary(glossary);
       const result = await draftMeetingNote(meeting.id, {
@@ -240,6 +284,7 @@ export function MeetingSave({
         ...(parts() ? { parts: parts() } : {}),
         includeInternal,
         ...(entries.length ? { glossary: entries } : {}),
+        ...(model ? { model } : {}),
       });
       setDraft(result);
       setSent({});
@@ -372,7 +417,20 @@ export function MeetingSave({
         <textarea aria-label="Glossary" rows={2} value={glossary} onChange={(e) => setGlossary(e.target.value)} className={input} />
       </label>
 
-      <div>
+      <div className="flex items-center gap-2">
+        <select
+          aria-label="Model"
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          className={input}
+        >
+          <option value="">Configured default</option>
+          {models.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
         <button type="button" className={button} disabled={!canSave} onClick={() => void makeDraft()}>
           <i className="ti ti-sparkles" aria-hidden="true" />
           {busy === "draft" ? "Drafting…" : "Draft note"}
