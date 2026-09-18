@@ -110,6 +110,20 @@ export function sendTextToInbox(args: { text: string; projectId: string }): Prom
   });
 }
 
+/**
+ * TASK-2003 — delete a meeting's audio and keep its transcript. Destructive and
+ * irreversible, so the caller is expected to have confirmed with the user first;
+ * this function does not ask.
+ */
+export async function deleteMeetingAudio(id: string): Promise<{ freedBytes: number }> {
+  const res = await fetch(`${API_BASE}/meetings/${encodeURIComponent(id)}/audio`, {
+    method: "DELETE",
+  });
+  const body = (await res.json().catch(() => ({}))) as { freedBytes?: number; error?: string };
+  if (!res.ok) throw new Error(body.error ?? `deleting audio failed: ${res.status}`);
+  return { freedBytes: body.freedBytes ?? 0 };
+}
+
 export function fetchLedger(signal?: AbortSignal): Promise<{ ledger: LedgerRow[] }> {
   return getJson<{ ledger: LedgerRow[] }>("/sync/ledger", signal);
 }
@@ -1590,6 +1604,14 @@ export interface MeetingMeta {
   bytes: number;
   /** TASK-1993 — when transcript.json was last written; null/absent until transcribed. */
   transcribedAt?: string | null;
+  /**
+   * TASK-2003 — when the audio was deliberately deleted to reclaim disk. The
+   * meeting survives it: `tracks` still says what was recorded, and the
+   * transcript is still readable. Absent on an adapter that predates the route,
+   * which reads the same as "audio still there" — the safe default, since that
+   * adapter cannot have deleted any.
+   */
+  audioDeletedAt?: string | null;
 }
 
 /** Mirror of choda-deck TASK-1991's transcript.json segment. */
