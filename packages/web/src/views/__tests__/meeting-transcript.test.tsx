@@ -84,6 +84,10 @@ function renderRow(meeting: MeetingMeta = MEETING): void {
       <MeetingRow meeting={meeting} />
     </ul>,
   );
+  // TASK-2005 made rows collapsed by default. These criteria are about what an
+  // OPEN row does, so the row is opened here rather than weakening them: the
+  // header is the only button present while collapsed.
+  fireEvent.click(screen.getAllByRole("button")[0]);
 }
 
 const transcribeCalls = (): number => calls.filter((c) => c.url.endsWith("/meetings/m1/transcribe")).length;
