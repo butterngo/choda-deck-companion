@@ -20,7 +20,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { MeetingMeta, MeetingTrack, TranscriptSegment } from "../api";
-import { fetchTranscript, meetingAudioUrl, transcribeMeeting, TranscribeError } from "../api";
+import { deleteMeetingAudio, fetchTranscript, meetingAudioUrl, transcribeMeeting, TranscribeError } from "../api";
 import { CapabilityNote } from "../components/state/CapabilityNote";
 import { MeetingSave } from "./MeetingSave";
 import { ErrorState } from "../components/state/ErrorState";
@@ -79,6 +79,15 @@ export function MeetingRow({ meeting }: { meeting: MeetingMeta }): React.JSX.Ele
   // nothing at all, which is the whole point of the change.
   const [open, setOpen] = useState(false);
   const [everOpened, setEverOpened] = useState(false);
+  // TASK-2003 — a recording is the largest thing this app writes (49 MB for 25
+  // minutes). Its audio can be dropped to reclaim that while the transcript,
+  // which is the part worth keeping, stays. Irreversible, so it asks first —
+  // and the question names both halves, because "delete" on its own reads as
+  // deleting the meeting.
+  const [audioGone, setAudioGone] = useState(Boolean(meeting.audioDeletedAt));
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<TranscriptState>(
     meeting.transcribedAt ? { kind: "loading" } : { kind: "none" },
   );
@@ -106,6 +115,20 @@ export function MeetingRow({ meeting }: { meeting: MeetingMeta }): React.JSX.Ele
       else setEverOpened(true);
       return !was;
     });
+  }
+
+  async function removeAudio(): Promise<void> {
+    setDeleteError(null);
+    setDeleting(true);
+    try {
+      await deleteMeetingAudio(meeting.id);
+      setAudioGone(true);
+      setConfirming(false);
+    } catch (err) {
+      setDeleteError((err as Error).message);
+    } finally {
+      setDeleting(false);
+    }
   }
 
   async function transcribe(): Promise<void> {
@@ -158,6 +181,11 @@ export function MeetingRow({ meeting }: { meeting: MeetingMeta }): React.JSX.Ele
 
       {everOpened && (
       <div hidden={!open} data-testid="meeting-body">
+      {audioGone ? (
+        <p className="mt-2 text-xs text-zinc-500" data-testid="audio-deleted">
+          Audio deleted to free space. The transcript below is unaffected.
+        </p>
+      ) : (
       <div className="flex flex-col gap-1.5 mt-2">
         {meeting.tracks.map((track) => (
           <div key={track} className="flex items-center gap-3">
@@ -175,6 +203,38 @@ export function MeetingRow({ meeting }: { meeting: MeetingMeta }): React.JSX.Ele
           </div>
         ))}
       </div>
+      )}
+
+      {!audioGone && (
+        <div className="mt-2">
+          {confirming ? (
+            <span className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300" data-testid="delete-confirm">
+              Delete this meeting&apos;s audio? The transcript is kept; the recording cannot be recovered.
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => void removeAudio()}
+                className="px-2 py-0.5 rounded-md border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50"
+              >
+                {deleting ? "Deleting…" : "Delete audio"}
+              </button>
+              <button type="button" onClick={() => setConfirming(false)} className="text-zinc-400 hover:text-zinc-700">
+                Keep
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirming(true)}
+              className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+            >
+              <i className="ti ti-trash" aria-hidden="true" />
+              Delete audio, keep transcript
+            </button>
+          )}
+        </div>
+      )}
+      {deleteError && <ErrorState variant="failed" subject="Deleting audio" description={deleteError} />}
 
       <div className="mt-3">
         {transcript.kind === "none" && (
@@ -217,14 +277,20 @@ export function MeetingRow({ meeting }: { meeting: MeetingMeta }): React.JSX.Ele
           <ol className="mt-1 max-h-80 overflow-y-auto flex flex-col gap-1 text-sm" data-testid="transcript">
             {transcript.segments.map((s, i) => (
               <li key={`${s.track}-${s.startMs}-${i}`} className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => seek(s.startMs)}
-                  className="flex-none text-xs tabular-nums text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
-                  aria-label={`Play from ${formatAt(s.startMs)}`}
-                >
-                  ▶ {formatAt(s.startMs)}
-                </button>
+                {/* With the audio gone there is nothing to seek, so the control
+                    is absent rather than present and dead. */}
+                {audioGone ? (
+                  <span className="flex-none text-xs tabular-nums text-zinc-400">{formatAt(s.startMs)}</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => seek(s.startMs)}
+                    className="flex-none text-xs tabular-nums text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+                    aria-label={`Play from ${formatAt(s.startMs)}`}
+                  >
+                    ▶ {formatAt(s.startMs)}
+                  </button>
+                )}
                 <span className="flex-none w-10 text-xs text-zinc-500">{s.speaker}</span>
                 <span className="text-zinc-800 dark:text-zinc-200">{s.text}</span>
               </li>
