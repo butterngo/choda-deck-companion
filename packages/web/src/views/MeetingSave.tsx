@@ -17,11 +17,35 @@
 // and internal parts stay out of the note unless asked for.
 
 import { useEffect, useMemo, useState } from "react";
-import type { GlossaryEntry, MeetingMeta, NotePart, Project, TranscriptSegment, Workspace } from "../api";
-import { draftMeetingNote, fetchProjects, fetchWorkspaces, saveMeetingFiles } from "../api";
+import type {
+  DraftNoteResponse,
+  NoteAction,
+  GlossaryEntry,
+  MeetingMeta,
+  NotePart,
+  Project,
+  TranscriptSegment,
+  Workspace,
+} from "../api";
+import { draftMeetingNote, fetchProjects, fetchWorkspaces, saveMeetingFiles, sendTextToInbox } from "../api";
 import { ErrorState } from "../components/state/ErrorState";
 
 const GLOSSARY_KEY = (projectId: string): string => `choda.meeting-glossary.${projectId}`;
+
+/**
+ * `mm:ss`, or `h:mm:ss` from one hour on — the format the note's own ▶ links
+ * use. Deliberately a copy of MeetingRow's `formatAt` rather than an import:
+ * MeetingRow already imports this module, and importing back would close a
+ * cycle for four lines of arithmetic.
+ */
+function clock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  const h = Math.floor(total / 3600);
+  return h > 0
+    ? `${h}:${pad(Math.floor((total % 3600) / 60))}:${pad(total % 60)}`
+    : `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
+}
 
 /** `hh:mm:ss`, the transcript file's own timestamp format. */
 function stamp(ms: number): string {
@@ -120,7 +144,13 @@ export function MeetingSave({
   const [splits, setSplits] = useState<Array<{ atMs: number; internalAfter: boolean }>>([]);
   const [includeInternal, setIncludeInternal] = useState(false);
   const [glossary, setGlossary] = useState("");
-  const [draft, setDraft] = useState<{ markdown: string; dropped: Array<{ text: string; reason: string }> } | null>(null);
+  const [draft, setDraft] = useState<DraftNoteResponse | null>(null);
+  // TASK-1995 — which action rows have already been sent, by index. An action
+  // sent twice is two inbox rows for one piece of work, and nothing downstream
+  // can tell them apart, so a sent row's button is disabled rather than merely
+  // discouraged.
+  const [sent, setSent] = useState<Record<number, true>>({});
+  const [sending, setSending] = useState<number | null>(null);
   const [busy, setBusy] = useState<null | "transcript" | "draft" | "note">(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -212,6 +242,7 @@ export function MeetingSave({
         ...(entries.length ? { glossary: entries } : {}),
       });
       setDraft(result);
+      setSent({});
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -219,6 +250,26 @@ export function MeetingSave({
     }
   }
 
+  // The inbox row must lead back to the evidence, so it carries the meeting and
+  // the moment the action was said — the same ▶ stamp the note itself prints.
+  async function sendAction(index: number, action: NoteAction): Promise<void> {
+    if (sent[index] || !projectId) return;
+    setError(null);
+    setSending(index);
+    try {
+      await sendTextToInbox({
+        text: `${action.text} — from meeting ${meeting.id} ▶ ${clock(action.atMs)}`,
+        projectId,
+      });
+      setSent((all) => ({ ...all, [index]: true }));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSending(null);
+    }
+  }
+
+  const actions = draft?.note?.actions ?? [];
   const canSave = client.trim().length > 0 && busy === null;
 
   return (
@@ -349,6 +400,32 @@ export function MeetingSave({
                 </li>
               ))}
             </ul>
+            {actions.length > 0 && (
+              <>
+                <p className="mt-2 text-xs font-medium text-zinc-600 dark:text-zinc-300">Việc cần làm</p>
+                <ul className="text-xs text-zinc-500 flex flex-col gap-1.5" data-testid="note-actions">
+                  {actions.map((a, i) => (
+                    <li key={`${a.atMs}-${i}`} className="flex flex-col gap-0.5">
+                      <span className="text-zinc-700 dark:text-zinc-200">{a.text}</span>
+                      <span className="flex items-center gap-2">
+                        <span className="tabular-nums text-zinc-400">▶ {clock(a.atMs)}</span>
+                        <button
+                          type="button"
+                          className={button}
+                          disabled={sent[i] === true || sending !== null || !projectId}
+                          title={projectId ? undefined : "Pick a project first — the inbox row needs one"}
+                          onClick={() => void sendAction(i, a)}
+                        >
+                          <i className="ti ti-inbox" aria-hidden="true" />
+                          {sent[i] ? "Sent" : sending === i ? "Sending…" : "Send to inbox"}
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+
             <button type="button" className={`${button} mt-2`} disabled={!canSave} onClick={() => void save("note.md", draft.markdown)}>
               <i className="ti ti-device-floppy" aria-hidden="true" />
               Save note
