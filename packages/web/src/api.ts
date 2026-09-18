@@ -1765,6 +1765,8 @@ export interface DraftNoteRequest {
   parts?: NotePart[];
   includeInternal: boolean;
   glossary?: GlossaryEntry[];
+  /** TASK-2004 — which deployment drafts it. Absent means the configured one. */
+  model?: string;
 }
 
 export interface DroppedNoteItem {
@@ -1791,6 +1793,8 @@ export interface DraftNoteResponse {
   markdown: string;
   dropped: DroppedNoteItem[];
   note?: { actions?: NoteAction[] };
+  /** The deployment that actually answered — the picked one, or the fallback. */
+  usedModel?: string;
 }
 
 export async function draftMeetingNote(id: string, body: DraftNoteRequest): Promise<DraftNoteResponse> {
@@ -1802,5 +1806,10 @@ export async function draftMeetingNote(id: string, body: DraftNoteRequest): Prom
   const json = (await res.json().catch(() => null)) as (DraftNoteResponse & { error?: string; kind?: string }) | null;
   if (res.status === 501) throw new Error("No AI model is configured on this adapter, so it cannot draft a note.");
   if (!res.ok || !json) throw new Error(json?.error ? `${json.error}${json.kind ? ` (${json.kind})` : ""}` : `draft failed: ${res.status}`);
-  return { markdown: json.markdown, dropped: json.dropped ?? [], note: json.note ?? {} };
+  return {
+    markdown: json.markdown,
+    dropped: json.dropped ?? [],
+    note: json.note ?? {},
+    ...(json.usedModel ? { usedModel: json.usedModel } : {}),
+  };
 }
