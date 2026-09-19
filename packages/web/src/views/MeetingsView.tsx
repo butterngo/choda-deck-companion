@@ -105,7 +105,23 @@ export function MeetingsView(): React.JSX.Element {
         {list.kind === "ready" && list.meetings.length > 0 && (
           <ul className="flex flex-col gap-2" data-testid="meetings-list">
             {list.meetings.map((m) => (
-              <MeetingRow key={m.id} meeting={m} />
+              <MeetingRow
+                key={m.id}
+                meeting={m}
+                // Held in the list, not only in the row: a refetch (a new
+                // recording finalizing) rebuilds every row from this state, and
+                // a rename kept only in the row would silently revert.
+                onRenamed={(id, title) =>
+                  setList((prev) =>
+                    prev.kind === "ready"
+                      ? {
+                          ...prev,
+                          meetings: prev.meetings.map((x) => (x.id === id ? { ...x, title } : x)),
+                        }
+                      : prev,
+                  )
+                }
+              />
             ))}
           </ul>
         )}

@@ -20,7 +20,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { MeetingMeta, MeetingTrack, TranscriptSegment } from "../api";
-import { deleteMeetingAudio, fetchTranscript, meetingAudioUrl, transcribeMeeting, TranscribeError } from "../api";
+import {
+  deleteMeetingAudio,
+  fetchTranscript,
+  meetingAudioUrl,
+  renameMeeting,
+  transcribeMeeting,
+  MEETING_TITLE_MAX_CHARS,
+  MeetingsRouteMissingError,
+  TranscribeError,
+} from "../api";
 import { CapabilityNote } from "../components/state/CapabilityNote";
 import { MeetingSave } from "./MeetingSave";
 import { ErrorState } from "../components/state/ErrorState";
@@ -67,7 +76,14 @@ function formatSize(bytes: number): string {
   return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function MeetingRow({ meeting }: { meeting: MeetingMeta }): React.JSX.Element {
+export function MeetingRow({
+  meeting,
+  onRenamed,
+}: {
+  meeting: MeetingMeta;
+  /** TASK-2043 — lift the new title so the list keeps it across a re-render. */
+  onRenamed?: (id: string, title: string | null) => void;
+}): React.JSX.Element {
   const players = useRef<Partial<Record<MeetingTrack, HTMLAudioElement | null>>>({});
   // TASK-2005 — a row is one line until it is opened.
   //
@@ -88,6 +104,17 @@ export function MeetingRow({ meeting }: { meeting: MeetingMeta }): React.JSX.Ele
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // TASK-2043 — the generated title is a guess made from the opening minutes of
+  // a transcript. The person who sat in the meeting outranks it, so the row is
+  // renameable in place. `renameGone` is the stale-adapter case: the shipped app
+  // vendors the adapter, so PATCH may simply not be there yet, and that must
+  // read as "rename unavailable" rather than as a broken row.
+  const [title, setTitle] = useState<string | null>(meeting.title ?? null);
+  const [renaming, setRenaming] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renameSaving, setRenameSaving] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [renameGone, setRenameGone] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptState>(
     meeting.transcribedAt ? { kind: "loading" } : { kind: "none" },
   );
@@ -152,10 +179,49 @@ export function MeetingRow({ meeting }: { meeting: MeetingMeta }): React.JSX.Ele
     }
   }
 
+  async function saveRename(): Promise<void> {
+    const next = renameDraft.trim();
+    // An unchanged value is not a save: it would spend a request and a write to
+    // reach the state the row is already in.
+    if (next === (title ?? "")) {
+      setRenaming(false);
+      return;
+    }
+    setRenameSaving(true);
+    setRenameError(null);
+    try {
+      // Empty means "clear it" — the row goes back to being named by its
+      // timestamp, which is a state the adapter models explicitly as null.
+      const saved = await renameMeeting(meeting.id, next.length === 0 ? null : next);
+      setTitle(saved);
+      onRenamed?.(meeting.id, saved);
+      setRenaming(false);
+    } catch (err) {
+      if (err instanceof MeetingsRouteMissingError) {
+        setRenameGone(true);
+        setRenaming(false);
+      } else {
+        setRenameError(err instanceof Error ? err.message : "rename failed");
+      }
+    } finally {
+      setRenameSaving(false);
+    }
+  }
+
+  function startRename(): void {
+    setRenameDraft(title ?? "");
+    setRenameError(null);
+    setRenaming(true);
+  }
+
   const canTranscribe = transcript.kind === "none" || transcript.kind === "failed";
 
   return (
     <li className="rounded-md border border-zinc-200 dark:border-zinc-800 px-3.5 py-3" data-testid={`meeting-${meeting.id}`}>
+      {/* The toggle is a button spanning the whole header, so the rename control
+          has to be its SIBLING — nesting a button inside a button is invalid and
+          swallows the inner click. */}
+      <div className="flex items-baseline gap-2">
       <button
         type="button"
         onClick={toggle}
@@ -166,7 +232,24 @@ export function MeetingRow({ meeting }: { meeting: MeetingMeta }): React.JSX.Ele
           className={`ti ${open ? "ti-chevron-down" : "ti-chevron-right"} self-center text-zinc-400`}
           aria-hidden="true"
         />
-        <span className="font-medium text-zinc-900 dark:text-zinc-100">{formatWhen(meeting.startedAt)}</span>
+        {/* TASK-2043 — the title leads when there is one, and the timestamp drops
+            to secondary text rather than disappearing: it is what distinguishes
+            two meetings the model named the same thing. With no title the
+            timestamp leads exactly as it always did. */}
+        {title ? (
+          <>
+            <span className="font-medium text-zinc-900 dark:text-zinc-100" data-testid="meeting-title">
+              {title}
+            </span>
+            <span className="text-xs text-zinc-500" data-testid="meeting-when">
+              {formatWhen(meeting.startedAt)}
+            </span>
+          </>
+        ) : (
+          <span className="font-medium text-zinc-900 dark:text-zinc-100" data-testid="meeting-when">
+            {formatWhen(meeting.startedAt)}
+          </span>
+        )}
         <span className="text-zinc-500">{formatDuration(meeting.startedAt, meeting.endedAt)}</span>
         {/* Read from the meeting, not from the loaded transcript: a collapsed row
             has loaded nothing, and must still be triageable from the list. */}
@@ -178,6 +261,62 @@ export function MeetingRow({ meeting }: { meeting: MeetingMeta }): React.JSX.Ele
         </span>
         <span className="ml-auto text-xs tabular-nums text-zinc-400">{formatSize(meeting.bytes)}</span>
       </button>
+      {!renameGone && !renaming && (
+        <button
+          type="button"
+          onClick={startRename}
+          aria-label={title ? `Rename ${title}` : "Name this meeting"}
+          className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+          data-testid="rename-start"
+        >
+          <i className="ti ti-pencil text-sm" aria-hidden="true" />
+        </button>
+      )}
+      </div>
+
+      {renaming && (
+        <div className="mt-2 flex items-center gap-2" data-testid="rename-editor">
+          <input
+            aria-label="Meeting title"
+            value={renameDraft}
+            autoFocus
+            maxLength={MEETING_TITLE_MAX_CHARS}
+            onChange={(e) => setRenameDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void saveRename();
+              if (e.key === "Escape") setRenaming(false);
+            }}
+            placeholder={formatWhen(meeting.startedAt)}
+            className="flex-1 rounded border border-zinc-300 dark:border-zinc-700 bg-transparent px-2 py-1 text-sm"
+          />
+          <button
+            type="button"
+            onClick={() => void saveRename()}
+            disabled={renameSaving}
+            className="text-xs text-zinc-600 dark:text-zinc-300 hover:underline disabled:opacity-50"
+          >
+            {renameSaving ? "Saving…" : "Save"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setRenaming(false)}
+            className="text-xs text-zinc-500 hover:underline"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      {renameError && (
+        <p className="mt-1 text-xs text-red-600 dark:text-red-400" data-testid="rename-error">
+          {renameError}
+        </p>
+      )}
+      {renameGone && (
+        <p className="mt-1 text-xs text-zinc-500" data-testid="rename-unavailable">
+          Rename needs a newer adapter than this build carries. Everything else on this
+          recording still works.
+        </p>
+      )}
 
       {everOpened && (
       <div hidden={!open} data-testid="meeting-body">

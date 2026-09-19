@@ -124,6 +124,52 @@ export async function deleteMeetingAudio(id: string): Promise<{ freedBytes: numb
   return { freedBytes: body.freedBytes ?? 0 };
 }
 
+/**
+ * TASK-2043 — rename a meeting. `title: null` clears it and the row falls back
+ * to its timestamp.
+ *
+ * Telling "this adapter has no rename" from "this meeting is gone" takes care,
+ * because the two adapters answer DIFFERENTLY and neither answer is obviously
+ * one or the other:
+ *
+ *   - An adapter predating the route has no one-segment branch, so PATCH
+ *     /meetings/:id falls through to its catch-all and answers **400** with
+ *     `expected /meetings/<id>/chunk or /meetings/<id>/finalize`.
+ *   - An adapter that HAS the route answers 404 only when the directory is
+ *     really absent, and 400 only when it rejected the title.
+ *
+ * So 404 means the meeting is gone — never a stale build — and the old adapter
+ * is recognised by its own sentence. Matching on an error string is brittle, and
+ * it is used here rather than in reverse (assuming any 400 means "stale") so the
+ * brittleness fails SAFE: an unrecognised 400 surfaces as a real error instead of
+ * silently hiding the rename control.
+ */
+const LEGACY_MEETINGS_400 = "expected /meetings/";
+
+/**
+ * Mirror of the adapter's TITLE_MAX_CHARS (choda-deck meeting-title.ts). Used to
+ * cap the input so the person sees the limit while typing rather than losing the
+ * save to a 400 after it.
+ */
+export const MEETING_TITLE_MAX_CHARS = 120;
+
+export async function renameMeeting(id: string, title: string | null): Promise<string | null> {
+  const res = await fetch(`${API_BASE}/meetings/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  const body = (await res.json().catch(() => ({}))) as { title?: string | null; error?: string };
+  if (res.status === 400 && (body.error ?? "").startsWith(LEGACY_MEETINGS_400)) {
+    throw new MeetingsRouteMissingError();
+  }
+  // 405 is the same story told by an adapter that grew some other one-segment
+  // route later: the path is known, this verb is not.
+  if (res.status === 405) throw new MeetingsRouteMissingError();
+  if (!res.ok) throw new Error(body.error ?? `rename failed: ${res.status}`);
+  return body.title ?? null;
+}
+
 export function fetchLedger(signal?: AbortSignal): Promise<{ ledger: LedgerRow[] }> {
   return getJson<{ ledger: LedgerRow[] }>("/sync/ledger", signal);
 }
@@ -1602,6 +1648,13 @@ export interface MeetingMeta {
   endedAt: string;
   tracks: MeetingTrack[];
   bytes: number;
+  /**
+   * TASK-2043 — a human-readable subject line, generated from the transcript and
+   * editable by hand. Absent on every meeting recorded before the field existed
+   * and null whenever generation was skipped or declined; both read the same to
+   * the UI, which falls back to the start timestamp.
+   */
+  title?: string | null;
   /** TASK-1993 — when transcript.json was last written; null/absent until transcribed. */
   transcribedAt?: string | null;
   /**
