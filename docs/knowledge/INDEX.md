@@ -2,6 +2,7 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
+| [cleanup-does-not-cancel-work-already-scheduled-give-it-a-turn-instead](./cleanup-does-not-cancel-work-already-scheduled-give-it-a-turn-instead.md) | learning | cleanup() does not cancel work already scheduled — give it a turn instead | 2026-09-19 |  |
 | [a-security-control-expressed-as-an-attribute-needs-its-value-asserted-not-its-el](./a-security-control-expressed-as-an-attribute-needs-its-value-asserted-not-its-el.md) | learning | A security control expressed as an attribute needs its VALUE asserted, not its element found | 2026-09-14 |  |
 | [one-list-or-the-workspace-tab-strip-drifts-it-has-now-drifted-twice](./one-list-or-the-workspace-tab-strip-drifts-it-has-now-drifted-twice.md) | gotcha | One list, or the workspace tab strip drifts — it has now drifted twice | 2026-09-07 |  |
 | [three-obligations-when-touching-the-terminal-pane-keys-size-and-identity](./three-obligations-when-touching-the-terminal-pane-keys-size-and-identity.md) | gotcha | Three obligations when touching the terminal pane — keys, size, and identity | 2026-09-07 |  |
