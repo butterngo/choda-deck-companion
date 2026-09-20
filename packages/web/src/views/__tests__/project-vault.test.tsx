@@ -77,11 +77,21 @@ const EMPTY_FOLDER: ProjectVault = {
   meetings: [],
 };
 
+const FILE_MD = ["# Chi Kate", "", "## Quyet dinh", "", "| # | Noi dung |", "| --- | --- |", "| D1 | Chot UI |"].join("\n");
+
 let reply: { status: number; body: unknown } = { status: 200, body: WITH_MEETINGS };
+let fileReply: { status: number; body: unknown } = {
+  status: 200,
+  body: { projectId: "juvenis-maxime", folder: "2026-09-20-kate", file: "note.md", bytes: 120, markdown: FILE_MD },
+};
 let copiedText: string | null = null;
 
 beforeEach(() => {
   reply = { status: 200, body: WITH_MEETINGS };
+  fileReply = {
+    status: 200,
+    body: { projectId: "juvenis-maxime", folder: "2026-09-20-kate", file: "note.md", bytes: 120, markdown: FILE_MD },
+  };
   copiedText = null;
   vi.stubGlobal("navigator", {
     ...navigator,
@@ -93,6 +103,12 @@ beforeEach(() => {
   });
   vi.stubGlobal("fetch", async (input: RequestInfo) => {
     const url = String(input);
+    if (url.includes("/meetings/") && url.endsWith(".md")) {
+      return new Response(JSON.stringify(fileReply.body), {
+        status: fileReply.status,
+        headers: { "content-type": "application/json" },
+      });
+    }
     if (url.includes("/api/vault/projects/")) {
       return new Response(JSON.stringify(reply.body), {
         status: reply.status,
@@ -239,6 +255,46 @@ describe("collapse and expand", () => {
     expect(again.hidden).toBe(false);
     expect(again).toBe(first);
     expect(again.getAttribute("data-marked")).toBe("yes");
+  });
+
+  // The bug this exists to catch: `hidden` is an ATTRIBUTE, and Tailwind's
+  // preflight implements it as `[hidden]:where(...){display:none}` — specificity
+  // (0,1,0), because :where() contributes nothing. A display utility like
+  // `.flex` has the SAME specificity and is emitted later, in utilities, so
+  // source order hands it the win and the "hidden" element stays on screen.
+  //
+  // `element.hidden` is the IDL property reflecting the attribute, so it reads
+  // true either way — which is how the first version of these tests passed
+  // against a Vault block whose rows would not visually collapse. jsdom loads no
+  // stylesheet, so computed style cannot see it either. This asserts the
+  // structural rule instead: nothing carrying `hidden` may carry a display
+  // utility.
+  const DISPLAY_UTILITIES = [
+    "flex", "grid", "block", "inline", "inline-block", "inline-flex",
+    "inline-grid", "table", "contents", "flow-root", "list-item",
+  ];
+
+  it("never puts a display utility on an element that relies on the hidden attribute", async () => {
+    await mount();
+    fireEvent.click(screen.getByTestId("vault-expand-all"));
+    await waitFor(() =>
+      expect(screen.getByTestId("vault-meeting-body-2026-09-20-kate").hidden).toBe(false),
+    );
+
+    const collapsible = Array.from(document.querySelectorAll<HTMLElement>("[data-testid]")).filter(
+      (el) => el.hasAttribute("hidden") || el.dataset.testid?.includes("body"),
+    );
+    expect(collapsible.length).toBeGreaterThan(0);
+
+    for (const el of collapsible) {
+      const classes = Array.from(el.classList);
+      const offender = classes.find((c) => DISPLAY_UTILITIES.includes(c));
+      // Named in the failure so the fix is obvious: move it to an inner wrapper.
+      expect({ testid: el.dataset.testid, offender }).toEqual({
+        testid: el.dataset.testid,
+        offender: undefined,
+      });
+    }
   });
 
   // AC-7
@@ -413,5 +469,82 @@ describe("degraded adapters", () => {
     // and its own sr-only label.
     expect(sk).toHaveAttribute("aria-busy", "true");
     expect(sk.textContent).toContain("Loading vault folder");
+  });
+});
+
+// TASK-2051 — reading a saved file without leaving the app.
+describe("viewing a saved file", () => {
+  async function openNote(): Promise<HTMLElement> {
+    await mount();
+    fireEvent.click(screen.getByTestId("vault-meeting-2026-09-20-kate"));
+    const body = screen.getByTestId("vault-meeting-body-2026-09-20-kate");
+    fireEvent.click(within(body).getByLabelText("View note.md"));
+    return await screen.findByTestId("vault-file-view-2026-09-20-kate-note.md");
+  }
+
+  it("renders the file as markdown, not as its syntax", async () => {
+    const view = await openNote();
+    await waitFor(() => expect(within(view).getByRole("table")).toBeInTheDocument());
+    expect(within(view).getByRole("heading", { level: 2, name: "Quyet dinh" })).toBeInTheDocument();
+    expect(view.textContent).not.toContain("| --- |");
+    expect(view.textContent).not.toContain("## Quyet dinh");
+  });
+
+  it("is read-only", async () => {
+    const view = await openNote();
+    await waitFor(() => expect(within(view).getByRole("table")).toBeInTheDocument());
+    expect(within(view).queryByRole("textbox")).toBeNull();
+    expect(view.querySelector("textarea")).toBeNull();
+    expect(view.querySelector("[contenteditable='true']")).toBeNull();
+  });
+
+  it("closes on Escape and leaves the block working", async () => {
+    await openNote();
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByTestId("vault-file-view-2026-09-20-kate-note.md")).toBeNull(),
+    );
+    expect(screen.getByTestId("vault-path")).toBeInTheDocument();
+  });
+
+  it("offers no View control for a file that is not there", async () => {
+    reply = { status: 200, body: MISSING_NOTE };
+    await mount("headless-cms");
+    fireEvent.click(screen.getByTestId("vault-meeting-2026-09-19-lex"));
+
+    const body = screen.getByTestId("vault-meeting-body-2026-09-19-lex");
+    expect(within(body).queryByLabelText("View note.md")).toBeNull();
+    expect(within(body).getByLabelText("View transcript.md")).toBeInTheDocument();
+  });
+
+  it("explains a file that is over the display ceiling", async () => {
+    fileReply = { status: 413, body: { bytes: 3 * 1024 * 1024, maxBytes: 2 * 1024 * 1024 } };
+    const view = await openNote();
+
+    await waitFor(() => expect(within(view).getByTestId("vault-file-error")).toBeInTheDocument());
+    const msg = within(view).getByTestId("vault-file-error").textContent ?? "";
+    expect(msg).toMatch(/3072 KB/);
+    expect(msg).toMatch(/2 MB/);
+    // It says what to do instead rather than only that it failed.
+    expect(msg).toMatch(/file manager/i);
+  });
+
+  it("reports a stale adapter rather than a broken file", async () => {
+    fileReply = { status: 400, body: { error: "expected /vault/projects/<id>" } };
+    const view = await openNote();
+    await waitFor(() =>
+      expect(within(view).getByTestId("vault-file-error")).toHaveTextContent(/newer adapter/i),
+    );
+  });
+
+  it("surfaces a read failure and keeps the block usable", async () => {
+    fileReply = { status: 500, body: { error: "disk went away" } };
+    const view = await openNote();
+
+    await waitFor(() =>
+      expect(within(view).getByTestId("vault-file-error")).toHaveTextContent("disk went away"),
+    );
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.getByTestId("vault-path")).toBeInTheDocument());
   });
 });
