@@ -244,6 +244,56 @@ export async function fetchProjectVault(
   return (await res.json()) as ProjectVault;
 }
 
+export interface VaultFile {
+  projectId: string;
+  folder: string;
+  file: VaultMeetingFileName;
+  bytes: number;
+  markdown: string;
+}
+
+/** Thrown for a 413 — the file exists but is over the adapter's display ceiling. */
+export class VaultFileTooLargeError extends Error {
+  constructor(
+    readonly bytes: number,
+    readonly maxBytes: number,
+  ) {
+    super("file too large to display");
+    this.name = "VaultFileTooLargeError";
+  }
+}
+
+/**
+ * TASK-2051 — read one saved meeting file.
+ *
+ * A 404 here means the project, the meeting folder or the file is absent — all
+ * three are normal states, and the adapter distinguishes them in the message.
+ * A 400 means this build's adapter predates the route: the file route answers
+ * 400 only for inputs this client does not construct, so an unexpected one is
+ * the stale-adapter tell, the same shape `renameMeeting` uses.
+ */
+export async function fetchProjectVaultFile(
+  projectId: string,
+  folder: string,
+  file: VaultMeetingFileName,
+  signal?: AbortSignal,
+): Promise<VaultFile> {
+  const url =
+    `${API_BASE}/vault/projects/${encodeURIComponent(projectId)}` +
+    `/meetings/${encodeURIComponent(folder)}/${encodeURIComponent(file)}`;
+  const res = await fetch(url, { signal });
+  const body = (await res.json().catch(() => ({}))) as Partial<VaultFile> & {
+    error?: string;
+    maxBytes?: number;
+  };
+  if (res.status === 413) {
+    throw new VaultFileTooLargeError(body.bytes ?? 0, body.maxBytes ?? 0);
+  }
+  if (res.status === 400) throw new ProjectVaultRouteMissingError();
+  if (!res.ok) throw new Error(body.error ?? `reading the file failed: ${res.status}`);
+  return body as VaultFile;
+}
+
 export function fetchLedger(signal?: AbortSignal): Promise<{ ledger: LedgerRow[] }> {
   return getJson<{ ledger: LedgerRow[] }>("/sync/ledger", signal);
 }

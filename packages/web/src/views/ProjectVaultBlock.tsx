@@ -16,8 +16,15 @@
 // Collapse follows the TASK-2005 rule from MeetingRow — a body that has been
 // opened stays MOUNTED and is merely hidden, so nothing it holds is discarded.
 import { useEffect, useState } from "react";
-import type { ProjectVault, VaultMeeting } from "../api";
-import { fetchProjectVault, ProjectVaultRouteMissingError } from "../api";
+import type { ProjectVault, VaultMeeting, VaultMeetingFileName } from "../api";
+import {
+  fetchProjectVault,
+  fetchProjectVaultFile,
+  ProjectVaultRouteMissingError,
+  VaultFileTooLargeError,
+} from "../api";
+import { FullscreenOverlay } from "../components/FullscreenOverlay";
+import { CaptureMarkdown } from "../components/CaptureMarkdown";
 import { ErrorState } from "../components/state/ErrorState";
 import { Skeleton } from "../components/state/Skeleton";
 import { CapabilityNote } from "../components/state/CapabilityNote";
@@ -113,14 +120,91 @@ function CopyPath({ path, label }: { path: string; label: string }): React.JSX.E
   );
 }
 
+/**
+ * TASK-2051 — read a saved file without leaving the app.
+ *
+ * Reuses the overlay and the markdown renderer rather than growing new ones:
+ * FullscreenOverlay already handles Esc, the focus trap and focus restore, and
+ * CaptureMarkdown is what every other markdown surface here uses.
+ *
+ * Read-only by construction — it renders markdown and offers no editor. A file
+ * is composed in MeetingSave and nowhere else.
+ */
+function ViewFile({
+  projectId,
+  folder,
+  file,
+}: {
+  projectId: string;
+  folder: string;
+  file: VaultMeetingFileName;
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const [state, setState] = useState<
+    { kind: "idle" } | { kind: "loading" } | { kind: "ready"; markdown: string } | { kind: "failed"; message: string }
+  >({ kind: "idle" });
+
+  useEffect(() => {
+    if (!open) return;
+    const ctrl = new AbortController();
+    setState({ kind: "loading" });
+    fetchProjectVaultFile(projectId, folder, file, ctrl.signal)
+      .then((f) => setState({ kind: "ready", markdown: f.markdown }))
+      .catch((err: unknown) => {
+        if (ctrl.signal.aborted) return;
+        if (err instanceof VaultFileTooLargeError) {
+          setState({
+            kind: "failed",
+            message: `This file is ${Math.round(err.bytes / 1024)} KB, over the ${Math.round(err.maxBytes / (1024 * 1024))} MB display limit. Open it in the file manager instead.`,
+          });
+        } else if (err instanceof ProjectVaultRouteMissingError) {
+          setState({ kind: "failed", message: "Reading files needs a newer adapter than this build carries." });
+        } else {
+          setState({ kind: "failed", message: err instanceof Error ? err.message : "could not read the file" });
+        }
+      });
+    return () => ctrl.abort();
+  }, [open, projectId, folder, file]);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={`View ${file}`}
+        className="flex-none text-[11.5px] text-blue-600 dark:text-blue-400 hover:underline"
+      >
+        View
+      </button>
+      {open && (
+        <FullscreenOverlay
+          title={`${folder} · ${file}`}
+          onClose={() => setOpen(false)}
+          testId={`vault-file-view-${folder}-${file}`}
+        >
+          {state.kind === "loading" && <Skeleton shape="text" label="Loading file…" />}
+          {state.kind === "failed" && (
+            <p className="text-sm text-amber-700 dark:text-amber-400" data-testid="vault-file-error">
+              {state.message}
+            </p>
+          )}
+          {state.kind === "ready" && <CaptureMarkdown>{state.markdown}</CaptureMarkdown>}
+        </FullscreenOverlay>
+      )}
+    </>
+  );
+}
+
 function MeetingRow({
   meeting,
   folderPath,
+  projectId,
   open,
   onToggle,
 }: {
   meeting: VaultMeeting;
   folderPath: string;
+  projectId: string;
   /** Owned by the parent so Expand all can drive every row WITHOUT remounting. */
   open: boolean;
   onToggle: () => void;
@@ -192,7 +276,10 @@ function MeetingRow({
                 {f.present && f.bytes !== null ? formatBytes(f.bytes) : "never saved"}
               </span>
               {f.present && (
-                <span className="ml-auto">
+                <span className="ml-auto flex items-center gap-2">
+                  {/* Only for a file that is there — a control that cannot work
+                      is worse than no control. */}
+                  <ViewFile projectId={projectId} folder={meeting.folder} file={f.name} />
                   <CopyPath path={`${folderPath}/${meeting.folder}/${f.name}`} label={f.name} />
                 </span>
               )}
@@ -341,6 +428,7 @@ export function ProjectVaultBlock({ projectId }: { projectId: string }): React.J
                     key={m.folder}
                     meeting={m}
                     folderPath={`${vault.relativePath}/meetings`}
+                    projectId={projectId}
                     open={openFolders.has(m.folder)}
                     onToggle={() => toggleFolder(m.folder)}
                   />
