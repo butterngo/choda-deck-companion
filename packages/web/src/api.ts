@@ -170,6 +170,27 @@ export async function renameMeeting(id: string, title: string | null): Promise<s
   return body.title ?? null;
 }
 
+/**
+ * TASK-2044 — delete a meeting entirely: audio, transcript, note and all.
+ *
+ * Distinct from `deleteMeetingAudio`, which keeps the meeting and drops only its
+ * expensive half. This one is irreversible and leaves nothing behind, so the
+ * caller is expected to have confirmed with the user first; this function does
+ * not ask.
+ *
+ * Route-missing is detected the same way `renameMeeting` does it and for the
+ * same reason — see the comment there.
+ */
+export async function deleteMeeting(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/meetings/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const body = (await res.json().catch(() => ({}))) as { error?: string };
+  if (res.status === 400 && (body.error ?? "").startsWith(LEGACY_MEETINGS_400)) {
+    throw new MeetingsRouteMissingError();
+  }
+  if (res.status === 405) throw new MeetingsRouteMissingError();
+  if (!res.ok) throw new Error(body.error ?? `deleting meeting failed: ${res.status}`);
+}
+
 export function fetchLedger(signal?: AbortSignal): Promise<{ ledger: LedgerRow[] }> {
   return getJson<{ ledger: LedgerRow[] }>("/sync/ledger", signal);
 }

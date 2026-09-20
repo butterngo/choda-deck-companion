@@ -121,6 +121,16 @@ export function MeetingsView(): React.JSX.Element {
                       : prev,
                   )
                 }
+                // The row cannot unmount itself; the list drops it. Done here
+                // rather than by refetching so a delete stays instant and does
+                // not depend on the adapter answering a second request.
+                onDeleted={(id) =>
+                  setList((prev) =>
+                    prev.kind === "ready"
+                      ? { ...prev, meetings: prev.meetings.filter((x) => x.id !== id) }
+                      : prev,
+                  )
+                }
               />
             ))}
           </ul>

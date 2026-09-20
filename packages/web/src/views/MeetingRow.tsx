@@ -25,6 +25,7 @@ import {
   fetchTranscript,
   meetingAudioUrl,
   renameMeeting,
+  deleteMeeting,
   transcribeMeeting,
   MEETING_TITLE_MAX_CHARS,
   MeetingsRouteMissingError,
@@ -79,10 +80,13 @@ function formatSize(bytes: number): string {
 export function MeetingRow({
   meeting,
   onRenamed,
+  onDeleted,
 }: {
   meeting: MeetingMeta;
   /** TASK-2043 — lift the new title so the list keeps it across a re-render. */
   onRenamed?: (id: string, title: string | null) => void;
+  /** TASK-2044 — the row cannot remove itself from a list it does not own. */
+  onDeleted?: (id: string) => void;
 }): React.JSX.Element {
   const players = useRef<Partial<Record<MeetingTrack, HTMLAudioElement | null>>>({});
   // TASK-2005 — a row is one line until it is opened.
@@ -115,6 +119,14 @@ export function MeetingRow({
   const [renameSaving, setRenameSaving] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
   const [renameGone, setRenameGone] = useState(false);
+  // TASK-2044 — the row's own removal. Separate from `confirming`/`deleting`
+  // above, which belong to "drop the audio, keep the meeting": the two are one
+  // path segment apart in the adapter and opposite in consequence, and sharing
+  // state between them would let one confirmation arm the other.
+  const [purgeConfirming, setPurgeConfirming] = useState(false);
+  const [purging, setPurging] = useState(false);
+  const [purgeError, setPurgeError] = useState<string | null>(null);
+  const [purgeGone, setPurgeGone] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptState>(
     meeting.transcribedAt ? { kind: "loading" } : { kind: "none" },
   );
@@ -208,6 +220,26 @@ export function MeetingRow({
     }
   }
 
+  async function purge(): Promise<void> {
+    setPurging(true);
+    setPurgeError(null);
+    try {
+      await deleteMeeting(meeting.id);
+      // The row is removed by the list, not by itself: this component is about
+      // to be unmounted, and setting state on it here would be setting state on
+      // something that no longer exists.
+      onDeleted?.(meeting.id);
+    } catch (err) {
+      if (err instanceof MeetingsRouteMissingError) {
+        setPurgeGone(true);
+        setPurgeConfirming(false);
+      } else {
+        setPurgeError(err instanceof Error ? err.message : "delete failed");
+      }
+      setPurging(false);
+    }
+  }
+
   function startRename(): void {
     setRenameDraft(title ?? "");
     setRenameError(null);
@@ -261,6 +293,20 @@ export function MeetingRow({
         </span>
         <span className="ml-auto text-xs tabular-nums text-zinc-400">{formatSize(meeting.bytes)}</span>
       </button>
+      {!purgeGone && !renaming && !purgeConfirming && (
+        <button
+          type="button"
+          onClick={() => {
+            setPurgeError(null);
+            setPurgeConfirming(true);
+          }}
+          aria-label={title ? `Delete ${title}` : "Delete this recording"}
+          className="text-zinc-400 hover:text-red-600 dark:hover:text-red-400"
+          data-testid="purge-start"
+        >
+          <i className="ti ti-trash text-sm" aria-hidden="true" />
+        </button>
+      )}
       {!renameGone && !renaming && (
         <button
           type="button"
@@ -309,6 +355,42 @@ export function MeetingRow({
       {renameError && (
         <p className="mt-1 text-xs text-red-600 dark:text-red-400" data-testid="rename-error">
           {renameError}
+        </p>
+      )}
+      {purgeConfirming && (
+        <div className="mt-2 flex items-center gap-2 text-xs" data-testid="purge-confirm">
+          {/* The question names what goes, because "delete" on its own reads as
+              the audio-only delete that sits a few lines below inside the body. */}
+          <span className="text-zinc-600 dark:text-zinc-300">
+            Delete this recording, its transcript and its note? This cannot be undone.
+          </span>
+          <button
+            type="button"
+            onClick={() => void purge()}
+            disabled={purging}
+            className="text-red-600 dark:text-red-400 hover:underline disabled:opacity-50"
+            data-testid="purge-confirmed"
+          >
+            {purging ? "Deleting…" : "Delete"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setPurgeConfirming(false)}
+            className="text-zinc-500 hover:underline"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      {purgeError && (
+        <p className="mt-1 text-xs text-red-600 dark:text-red-400" data-testid="purge-error">
+          {purgeError}
+        </p>
+      )}
+      {purgeGone && (
+        <p className="mt-1 text-xs text-zinc-500" data-testid="purge-unavailable">
+          Deleting a whole recording needs a newer adapter than this build carries. You can
+          still delete its audio from inside the row.
         </p>
       )}
       {renameGone && (
