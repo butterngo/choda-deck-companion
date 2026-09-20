@@ -324,6 +324,67 @@ describe("copy path", () => {
   });
 });
 
+// TASK-2050 — the Open folder control, gated on the packaged app's bridge.
+describe("open folder", () => {
+  it("is absent in the browser shell, where there is no bridge", async () => {
+    // window.choda is simply not there — the default in these tests.
+    await mount();
+    expect(screen.queryByLabelText("Open folder vault/10-Projects/juvenis-maxime")).toBeNull();
+    // ...and the rest of the block is unaffected.
+    expect(screen.getByTestId("vault-path")).toBeInTheDocument();
+    expect(screen.getByLabelText("Copy path vault/10-Projects/juvenis-maxime")).toBeInTheDocument();
+  });
+
+  it("sends the vault-relative path when the bridge is present", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("choda", {
+      openFolder: async (p: string) => {
+        calls.push(p);
+        return { ok: true };
+      },
+    });
+    await mount();
+
+    fireEvent.click(screen.getByLabelText("Open folder vault/10-Projects/juvenis-maxime"));
+    await waitFor(() => expect(calls).toEqual(["vault/10-Projects/juvenis-maxime"]));
+  });
+
+  it("shows the main process's refusal instead of swallowing it", async () => {
+    vi.stubGlobal("choda", {
+      openFolder: async () => ({ ok: false, reason: "not found" }),
+    });
+    await mount();
+
+    fireEvent.click(screen.getByLabelText("Open folder vault/10-Projects/juvenis-maxime"));
+    await waitFor(() =>
+      expect(screen.getByTestId("open-folder-error")).toHaveTextContent("not found"),
+    );
+    // The page keeps working.
+    expect(screen.getByTestId("vault-path")).toBeInTheDocument();
+  });
+
+  it("survives a bridge that throws", async () => {
+    vi.stubGlobal("choda", {
+      openFolder: async () => {
+        throw new Error("ipc gone");
+      },
+    });
+    await mount();
+
+    fireEvent.click(screen.getByLabelText("Open folder vault/10-Projects/juvenis-maxime"));
+    await waitFor(() => expect(screen.getByTestId("open-folder-error")).toBeInTheDocument());
+  });
+
+  it("offers the control on an expanded meeting too", async () => {
+    vi.stubGlobal("choda", { openFolder: async () => ({ ok: true }) });
+    await mount();
+    fireEvent.click(screen.getByTestId("vault-meeting-2026-09-20-kate"));
+
+    const body = screen.getByTestId("vault-meeting-body-2026-09-20-kate");
+    expect(within(body).getByLabelText("Open folder 2026-09-20-kate")).toBeInTheDocument();
+  });
+});
+
 // AC-9 / AC-10
 describe("degraded adapters", () => {
   it("reports itself unavailable on a 404, without claiming the project is empty", async () => {

@@ -43,6 +43,52 @@ function Chevron({ open }: { open: boolean }): React.JSX.Element {
   );
 }
 
+/**
+ * TASK-2050 — the packaged app's one bridge to the main process (preload.cjs).
+ * Absent in the browser shell, which has no IPC at all: the control is then not
+ * rendered rather than rendered and dead.
+ */
+interface ChodaBridge {
+  openFolder: (folderPath: string) => Promise<{ ok: boolean; reason?: string }>;
+}
+
+function bridge(): ChodaBridge | null {
+  const w = window as unknown as { choda?: Partial<ChodaBridge> };
+  return typeof w.choda?.openFolder === "function" ? (w.choda as ChodaBridge) : null;
+}
+
+function OpenFolder({ path, label }: { path: string; label: string }): React.JSX.Element | null {
+  const [error, setError] = useState<string | null>(null);
+  const b = bridge();
+  // No bridge, no button. A control that cannot work is worse than no control.
+  if (!b) return null;
+  return (
+    <>
+      <button
+        type="button"
+        aria-label={`Open folder ${label}`}
+        onClick={() => {
+          setError(null);
+          void b
+            .openFolder(path)
+            // The main process decides; a refusal comes back as a result, not a
+            // throw, and is shown rather than swallowed.
+            .then((r) => setError(r.ok ? null : (r.reason ?? "could not open")))
+            .catch(() => setError("could not open"));
+        }}
+        className="flex-none text-[11.5px] text-blue-600 dark:text-blue-400 hover:underline"
+      >
+        Open folder
+      </button>
+      {error && (
+        <span className="text-[11px] text-amber-700 dark:text-amber-400" data-testid="open-folder-error">
+          {error}
+        </span>
+      )}
+    </>
+  );
+}
+
 function CopyPath({ path, label }: { path: string; label: string }): React.JSX.Element {
   const [done, setDone] = useState(false);
   return (
@@ -125,6 +171,7 @@ function MeetingRow({
             <span className="font-mono text-[11px] text-zinc-500 truncate" title={`${folderPath}/${meeting.folder}`}>
               {folderPath}/{meeting.folder}
             </span>
+            <OpenFolder path={`${folderPath}/${meeting.folder}`} label={meeting.folder} />
             <CopyPath path={`${folderPath}/${meeting.folder}`} label={meeting.folder} />
           </div>
           {meeting.files.map((f) => (
@@ -226,7 +273,8 @@ export function ProjectVaultBlock({ projectId }: { projectId: string }): React.J
           >
             {vault.relativePath}
           </span>
-          <span className="ml-auto flex-none">
+          <span className="ml-auto flex-none flex items-center gap-2">
+            <OpenFolder path={vault.relativePath} label={vault.relativePath} />
             <CopyPath path={vault.relativePath} label={vault.relativePath} />
           </span>
         </div>
