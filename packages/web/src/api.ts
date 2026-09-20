@@ -191,6 +191,59 @@ export async function deleteMeeting(id: string): Promise<void> {
   if (!res.ok) throw new Error(body.error ?? `deleting meeting failed: ${res.status}`);
 }
 
+/** Mirror of the adapter's vault-projects.ts shapes (TASK-2048). */
+export type VaultMeetingFileName = "note.md" | "transcript.md";
+
+export interface VaultMeetingFile {
+  name: VaultMeetingFileName;
+  present: boolean;
+  /** Null when absent — distinct from a real zero-byte file. */
+  bytes: number | null;
+}
+
+export interface VaultMeeting {
+  folder: string;
+  /** Null when the folder name carries no date; the folder still lists. */
+  date: string | null;
+  slug: string | null;
+  files: VaultMeetingFile[];
+}
+
+export interface ProjectVault {
+  projectId: string;
+  /** False when nothing has ever been saved for this project. */
+  exists: boolean;
+  /** Reported either way — existing or not, this is the path that would be used. */
+  relativePath: string;
+  contextFile: boolean;
+  meetings: VaultMeeting[];
+}
+
+/**
+ * `GET /vault/projects/:id` answered 404 — the route is missing from a vendored
+ * adapter. Modelled like MeetingsRouteMissingError: "this build cannot read the
+ * vault" and "this project has nothing saved" must never look the same, because
+ * the second is a normal state five of twelve projects are in.
+ */
+export class ProjectVaultRouteMissingError extends Error {
+  constructor() {
+    super("vault projects route not present on this adapter");
+    this.name = "ProjectVaultRouteMissingError";
+  }
+}
+
+export async function fetchProjectVault(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<ProjectVault> {
+  const res = await fetch(`${API_BASE}/vault/projects/${encodeURIComponent(projectId)}`, { signal });
+  // The adapter answers 200 with exists:false for an unknown project, so a 404
+  // here can only mean the route itself is absent.
+  if (res.status === 404) throw new ProjectVaultRouteMissingError();
+  if (!res.ok) throw new Error(`project vault lookup failed: ${res.status}`);
+  return (await res.json()) as ProjectVault;
+}
+
 export function fetchLedger(signal?: AbortSignal): Promise<{ ledger: LedgerRow[] }> {
   return getJson<{ ledger: LedgerRow[] }>("/sync/ledger", signal);
 }
