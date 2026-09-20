@@ -36,6 +36,8 @@ import {
   sendTextToInbox,
 } from "../api";
 import { ErrorState } from "../components/state/ErrorState";
+import { FullscreenOverlay } from "../components/FullscreenOverlay";
+import { CaptureMarkdown } from "../components/CaptureMarkdown";
 
 const GLOSSARY_KEY = (projectId: string): string => `choda.meeting-glossary.${projectId}`;
 // TASK-2004 — the model is remembered per project for the same reason the
@@ -176,6 +178,8 @@ export function MeetingSave({
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState("");
   const [draft, setDraft] = useState<DraftNoteResponse | null>(null);
+  // TASK-2045 — the note draft, rendered as markdown at full window size.
+  const [previewing, setPreviewing] = useState(false);
   // TASK-1995 — which action rows have already been sent, by index. An action
   // sent twice is two inbox rows for one piece of work, and nothing downstream
   // can tell them apart, so a sent row's button is disabled rather than merely
@@ -442,13 +446,38 @@ export function MeetingSave({
 
       {draft && (
         <div className="flex flex-col gap-2 md:flex-row" data-testid="note-draft">
-          <textarea
-            aria-label="Note draft"
-            value={draft.markdown}
-            onChange={(e) => setDraft({ ...draft, markdown: e.target.value })}
-            rows={16}
-            className={`${input} flex-1 font-mono`}
-          />
+          <div className="flex-1 flex flex-col gap-1">
+            {/* TASK-2045 — the note is markdown and had never been rendered as
+                any. The textarea stays the ONLY editor; this is a reading view
+                of what is in it right now. */}
+            <button
+              type="button"
+              onClick={() => setPreviewing(true)}
+              className="self-start text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+              data-testid="note-preview-open"
+            >
+              <i className="ti ti-arrows-maximize mr-1" aria-hidden="true" />
+              Preview full screen
+            </button>
+            <textarea
+              aria-label="Note draft"
+              value={draft.markdown}
+              onChange={(e) => setDraft({ ...draft, markdown: e.target.value })}
+              rows={16}
+              className={`${input} flex-1 font-mono`}
+            />
+          </div>
+          {previewing && (
+            <FullscreenOverlay
+              title="Note preview"
+              onClose={() => setPreviewing(false)}
+              testId="note-preview"
+            >
+              {/* Read from `draft.markdown`, the same state the textarea binds
+                  to, so the preview cannot show a stale copy of the note. */}
+              <CaptureMarkdown>{draft.markdown}</CaptureMarkdown>
+            </FullscreenOverlay>
+          )}
           <div className="md:w-64 flex flex-col gap-1">
             <p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">Không có trong bản ghi — không đưa vào note</p>
             <ul className="text-xs text-zinc-500 flex flex-col gap-1" data-testid="note-dropped">

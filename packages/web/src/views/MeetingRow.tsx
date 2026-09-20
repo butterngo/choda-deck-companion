@@ -33,6 +33,7 @@ import {
 } from "../api";
 import { CapabilityNote } from "../components/state/CapabilityNote";
 import { MeetingSave } from "./MeetingSave";
+import { FullscreenOverlay } from "../components/FullscreenOverlay";
 import { ErrorState } from "../components/state/ErrorState";
 
 const TRACK_LABEL: Record<MeetingTrack, string> = {
@@ -75,6 +76,56 @@ function formatDuration(startIso: string, endIso: string): string {
 
 function formatSize(bytes: number): string {
   return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * TASK-2045 — the transcript, rendered identically in the row's own pane and in
+ * the fullscreen overlay.
+ *
+ * `seek` is passed in rather than rebuilt so BOTH copies drive the same <audio>
+ * elements: those live in the row body, which the overlay does not unmount, and
+ * a ▶ inside the overlay has to move the very same playback the row is doing.
+ */
+export function TranscriptList({
+  segments,
+  audioGone,
+  seek,
+  className,
+  testId,
+}: {
+  segments: TranscriptSegment[];
+  audioGone: boolean;
+  seek: (ms: number) => void;
+  className?: string;
+  testId?: string;
+}): React.JSX.Element {
+  return (
+    <ol
+      className={`flex flex-col gap-1 text-sm ${className ?? ""}`}
+      data-testid={testId ?? "transcript"}
+    >
+      {segments.map((s, i) => (
+        <li key={`${s.track}-${s.startMs}-${i}`} className="flex gap-2">
+          {/* With the audio gone there is nothing to seek, so the control
+              is absent rather than present and dead. */}
+          {audioGone ? (
+            <span className="flex-none text-xs tabular-nums text-zinc-400">{formatAt(s.startMs)}</span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => seek(s.startMs)}
+              className="flex-none text-xs tabular-nums text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+              aria-label={`Play from ${formatAt(s.startMs)}`}
+            >
+              ▶ {formatAt(s.startMs)}
+            </button>
+          )}
+          <span className="flex-none w-10 text-xs text-zinc-500">{s.speaker}</span>
+          <span className="text-zinc-800 dark:text-zinc-200">{s.text}</span>
+        </li>
+      ))}
+    </ol>
+  );
 }
 
 export function MeetingRow({
@@ -123,6 +174,8 @@ export function MeetingRow({
   // above, which belong to "drop the audio, keep the meeting": the two are one
   // path segment apart in the adapter and opposite in consequence, and sharing
   // state between them would let one confirmation arm the other.
+  // TASK-2045 — the transcript pane, full window.
+  const [transcriptFull, setTranscriptFull] = useState(false);
   const [purgeConfirming, setPurgeConfirming] = useState(false);
   const [purging, setPurging] = useState(false);
   const [purgeError, setPurgeError] = useState<string | null>(null);
@@ -495,28 +548,39 @@ export function MeetingRow({
         )}
 
         {transcript.kind === "ready" && (
-          <ol className="mt-1 max-h-80 overflow-y-auto flex flex-col gap-1 text-sm" data-testid="transcript">
-            {transcript.segments.map((s, i) => (
-              <li key={`${s.track}-${s.startMs}-${i}`} className="flex gap-2">
-                {/* With the audio gone there is nothing to seek, so the control
-                    is absent rather than present and dead. */}
-                {audioGone ? (
-                  <span className="flex-none text-xs tabular-nums text-zinc-400">{formatAt(s.startMs)}</span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => seek(s.startMs)}
-                    className="flex-none text-xs tabular-nums text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
-                    aria-label={`Play from ${formatAt(s.startMs)}`}
-                  >
-                    ▶ {formatAt(s.startMs)}
-                  </button>
-                )}
-                <span className="flex-none w-10 text-xs text-zinc-500">{s.speaker}</span>
-                <span className="text-zinc-800 dark:text-zinc-200">{s.text}</span>
-              </li>
-            ))}
-          </ol>
+          <>
+          <button
+            type="button"
+            onClick={() => setTranscriptFull(true)}
+            className="mt-1 text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+            data-testid="transcript-fullscreen"
+          >
+            <i className="ti ti-arrows-maximize mr-1" aria-hidden="true" />
+            Read full screen
+          </button>
+          <TranscriptList
+            segments={transcript.segments}
+            audioGone={audioGone}
+            seek={seek}
+            className="mt-1 max-h-80 overflow-y-auto"
+          />
+          {transcriptFull && (
+            <FullscreenOverlay
+              title={title ?? formatWhen(meeting.startedAt)}
+              onClose={() => setTranscriptFull(false)}
+              testId="transcript-overlay"
+            >
+              {/* Same seek, same players. The row below is still mounted and
+                  still playing; this is a second view of it, not a copy. */}
+              <TranscriptList
+                segments={transcript.segments}
+                audioGone={audioGone}
+                seek={seek}
+                testId="transcript-full"
+              />
+            </FullscreenOverlay>
+          )}
+          </>
         )}
 
         {transcript.kind === "ready" && (
