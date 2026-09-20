@@ -124,6 +124,126 @@ export async function deleteMeetingAudio(id: string): Promise<{ freedBytes: numb
   return { freedBytes: body.freedBytes ?? 0 };
 }
 
+/**
+ * TASK-2043 — rename a meeting. `title: null` clears it and the row falls back
+ * to its timestamp.
+ *
+ * Telling "this adapter has no rename" from "this meeting is gone" takes care,
+ * because the two adapters answer DIFFERENTLY and neither answer is obviously
+ * one or the other:
+ *
+ *   - An adapter predating the route has no one-segment branch, so PATCH
+ *     /meetings/:id falls through to its catch-all and answers **400** with
+ *     `expected /meetings/<id>/chunk or /meetings/<id>/finalize`.
+ *   - An adapter that HAS the route answers 404 only when the directory is
+ *     really absent, and 400 only when it rejected the title.
+ *
+ * So 404 means the meeting is gone — never a stale build — and the old adapter
+ * is recognised by its own sentence. Matching on an error string is brittle, and
+ * it is used here rather than in reverse (assuming any 400 means "stale") so the
+ * brittleness fails SAFE: an unrecognised 400 surfaces as a real error instead of
+ * silently hiding the rename control.
+ */
+const LEGACY_MEETINGS_400 = "expected /meetings/";
+
+/**
+ * Mirror of the adapter's TITLE_MAX_CHARS (choda-deck meeting-title.ts). Used to
+ * cap the input so the person sees the limit while typing rather than losing the
+ * save to a 400 after it.
+ */
+export const MEETING_TITLE_MAX_CHARS = 120;
+
+export async function renameMeeting(id: string, title: string | null): Promise<string | null> {
+  const res = await fetch(`${API_BASE}/meetings/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  const body = (await res.json().catch(() => ({}))) as { title?: string | null; error?: string };
+  if (res.status === 400 && (body.error ?? "").startsWith(LEGACY_MEETINGS_400)) {
+    throw new MeetingsRouteMissingError();
+  }
+  // 405 is the same story told by an adapter that grew some other one-segment
+  // route later: the path is known, this verb is not.
+  if (res.status === 405) throw new MeetingsRouteMissingError();
+  if (!res.ok) throw new Error(body.error ?? `rename failed: ${res.status}`);
+  return body.title ?? null;
+}
+
+/**
+ * TASK-2044 — delete a meeting entirely: audio, transcript, note and all.
+ *
+ * Distinct from `deleteMeetingAudio`, which keeps the meeting and drops only its
+ * expensive half. This one is irreversible and leaves nothing behind, so the
+ * caller is expected to have confirmed with the user first; this function does
+ * not ask.
+ *
+ * Route-missing is detected the same way `renameMeeting` does it and for the
+ * same reason — see the comment there.
+ */
+export async function deleteMeeting(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/meetings/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const body = (await res.json().catch(() => ({}))) as { error?: string };
+  if (res.status === 400 && (body.error ?? "").startsWith(LEGACY_MEETINGS_400)) {
+    throw new MeetingsRouteMissingError();
+  }
+  if (res.status === 405) throw new MeetingsRouteMissingError();
+  if (!res.ok) throw new Error(body.error ?? `deleting meeting failed: ${res.status}`);
+}
+
+/** Mirror of the adapter's vault-projects.ts shapes (TASK-2048). */
+export type VaultMeetingFileName = "note.md" | "transcript.md";
+
+export interface VaultMeetingFile {
+  name: VaultMeetingFileName;
+  present: boolean;
+  /** Null when absent — distinct from a real zero-byte file. */
+  bytes: number | null;
+}
+
+export interface VaultMeeting {
+  folder: string;
+  /** Null when the folder name carries no date; the folder still lists. */
+  date: string | null;
+  slug: string | null;
+  files: VaultMeetingFile[];
+}
+
+export interface ProjectVault {
+  projectId: string;
+  /** False when nothing has ever been saved for this project. */
+  exists: boolean;
+  /** Reported either way — existing or not, this is the path that would be used. */
+  relativePath: string;
+  contextFile: boolean;
+  meetings: VaultMeeting[];
+}
+
+/**
+ * `GET /vault/projects/:id` answered 404 — the route is missing from a vendored
+ * adapter. Modelled like MeetingsRouteMissingError: "this build cannot read the
+ * vault" and "this project has nothing saved" must never look the same, because
+ * the second is a normal state five of twelve projects are in.
+ */
+export class ProjectVaultRouteMissingError extends Error {
+  constructor() {
+    super("vault projects route not present on this adapter");
+    this.name = "ProjectVaultRouteMissingError";
+  }
+}
+
+export async function fetchProjectVault(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<ProjectVault> {
+  const res = await fetch(`${API_BASE}/vault/projects/${encodeURIComponent(projectId)}`, { signal });
+  // The adapter answers 200 with exists:false for an unknown project, so a 404
+  // here can only mean the route itself is absent.
+  if (res.status === 404) throw new ProjectVaultRouteMissingError();
+  if (!res.ok) throw new Error(`project vault lookup failed: ${res.status}`);
+  return (await res.json()) as ProjectVault;
+}
+
 export function fetchLedger(signal?: AbortSignal): Promise<{ ledger: LedgerRow[] }> {
   return getJson<{ ledger: LedgerRow[] }>("/sync/ledger", signal);
 }
@@ -1602,6 +1722,13 @@ export interface MeetingMeta {
   endedAt: string;
   tracks: MeetingTrack[];
   bytes: number;
+  /**
+   * TASK-2043 — a human-readable subject line, generated from the transcript and
+   * editable by hand. Absent on every meeting recorded before the field existed
+   * and null whenever generation was skipped or declined; both read the same to
+   * the UI, which falls back to the start timestamp.
+   */
+  title?: string | null;
   /** TASK-1993 — when transcript.json was last written; null/absent until transcribed. */
   transcribedAt?: string | null;
   /**

@@ -3,13 +3,14 @@
 // server (see static-proxy-server.cjs for why), and opens one window. No
 // changes to the adapter (choda-deck repo) or packages/web's own source.
 
-const { app, BrowserWindow, dialog, Menu, Tray, Notification, nativeImage, session, desktopCapturer } = require("electron");
+const { app, BrowserWindow, dialog, Menu, Tray, Notification, nativeImage, session, desktopCapturer, ipcMain, shell } = require("electron");
 const path = require("node:path");
 const { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveModelDir, resolveBridgeToken, spawnAdapter, writePortFile, clearPortFile, watchAdapter } = require("./adapter-launcher.cjs");
 const { createStaticProxyServer } = require("./static-proxy-server.cjs");
 const { configureLoginItem } = require("./login-item.cjs");
 const { initUpdater } = require("./updater.cjs");
 const { createDisplayMediaHandler } = require("./display-media.cjs");
+const { createOpenFolderHandler } = require("./open-folder.cjs");
 
 // PNG works for the window + tray; packaged builds also bake the .ico into the
 // exe via electron-builder. Same asset english-companion uses for its tray.
@@ -175,6 +176,9 @@ if (!app.requestSingleInstanceLock()) {
           devTools: !app.isPackaged,
           contextIsolation: true,
           nodeIntegration: false,
+          // TASK-2050 — the renderer's only bridge to main. It exposes one
+          // function; see preload.cjs for why it is not a generic invoke.
+          preload: path.join(__dirname, "preload.cjs"),
         },
       });
       // Open filling the screen (maximized, title bar kept) — the shell is
@@ -183,6 +187,24 @@ if (!app.requestSingleInstanceLock()) {
         win.maximize();
         win.show();
       });
+      // TASK-2050 — the allowed roots are decided HERE, from this process's own
+      // configuration, and closed over by the handler. A request can never name
+      // one. CHODA_VAULT_DIR is the same source the adapter reads (see
+      // service-factory.ts); unset means no vault root, and with no roots at
+      // all nothing opens.
+      ipcMain.handle(
+        "choda:open-folder",
+        (() => {
+          // CHODA_VAULT_DIR is the same source the adapter reads (see
+          // service-factory.ts). Unset means no vault, and then nothing opens.
+          const openFolder = createOpenFolderHandler({
+            shell,
+            vaultDir: process.env.CHODA_VAULT_DIR?.trim(),
+          });
+          return (_event, requestedPath) => openFolder(requestedPath);
+        })()
+      );
+
       win.loadURL(`http://127.0.0.1:${uiPort}/`);
       createTray();
     });

@@ -14,6 +14,7 @@ import { useProjects } from "../hooks/use-projects";
 import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { Skeleton } from "../components/state/Skeleton";
+import { ProjectVaultBlock } from "./ProjectVaultBlock";
 
 export function ProjectsView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
@@ -139,6 +140,17 @@ export function ProjectsView(): React.JSX.Element {
               <h2 className="text-[17px] leading-snug font-medium">{selected.name}</h2>
               <p className="mt-1 text-[11.5px] text-zinc-500 font-mono">{selected.cwd}</p>
             </header>
+          )}
+          {/* TASK-2049 — the vault folder comes FIRST. "Where did that note go?"
+              is the question this view now answers, and the workspaces list is
+              the thing that was already here. */}
+          {selected !== null && (
+            <div className="mb-5">
+              <ProjectVaultBlock projectId={selected.id} />
+            </div>
+          )}
+          {selected !== null && (
+            <h3 className="mb-2 text-[11px] uppercase tracking-wide text-zinc-400">Workspaces</h3>
           )}
           {workspacePane()}
         </div>
