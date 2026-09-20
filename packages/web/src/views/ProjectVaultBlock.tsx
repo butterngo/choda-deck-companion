@@ -166,7 +166,14 @@ function MeetingRow({
       </button>
 
       {everOpened && (
-        <div hidden={!open} data-testid={`vault-meeting-body-${meeting.folder}`} className="mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800 flex flex-col gap-1.5">
+        // The `hidden` ATTRIBUTE and a Tailwind display utility must never sit on
+        // the same element. Preflight emits `[hidden]:where(...){display:none}`
+        // with specificity (0,1,0) — `:where()` contributes nothing — and `.flex`
+        // has the same specificity but is emitted LATER, in utilities. Source
+        // order decides, so `.flex` wins and the "hidden" element stays on
+        // screen. The layout classes therefore live on an inner wrapper.
+        <div hidden={!open} data-testid={`vault-meeting-body-${meeting.folder}`}>
+          <div className="mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800 flex flex-col gap-1.5">
           <div className="flex items-center gap-2 min-w-0">
             <span className="font-mono text-[11px] text-zinc-500 truncate" title={`${folderPath}/${meeting.folder}`}>
               {folderPath}/{meeting.folder}
@@ -191,6 +198,7 @@ function MeetingRow({
               )}
             </div>
           ))}
+          </div>
         </div>
       )}
     </li>

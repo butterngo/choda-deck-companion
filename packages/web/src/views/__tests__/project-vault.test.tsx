@@ -241,6 +241,46 @@ describe("collapse and expand", () => {
     expect(again.getAttribute("data-marked")).toBe("yes");
   });
 
+  // The bug this exists to catch: `hidden` is an ATTRIBUTE, and Tailwind's
+  // preflight implements it as `[hidden]:where(...){display:none}` — specificity
+  // (0,1,0), because :where() contributes nothing. A display utility like
+  // `.flex` has the SAME specificity and is emitted later, in utilities, so
+  // source order hands it the win and the "hidden" element stays on screen.
+  //
+  // `element.hidden` is the IDL property reflecting the attribute, so it reads
+  // true either way — which is how the first version of these tests passed
+  // against a Vault block whose rows would not visually collapse. jsdom loads no
+  // stylesheet, so computed style cannot see it either. This asserts the
+  // structural rule instead: nothing carrying `hidden` may carry a display
+  // utility.
+  const DISPLAY_UTILITIES = [
+    "flex", "grid", "block", "inline", "inline-block", "inline-flex",
+    "inline-grid", "table", "contents", "flow-root", "list-item",
+  ];
+
+  it("never puts a display utility on an element that relies on the hidden attribute", async () => {
+    await mount();
+    fireEvent.click(screen.getByTestId("vault-expand-all"));
+    await waitFor(() =>
+      expect(screen.getByTestId("vault-meeting-body-2026-09-20-kate").hidden).toBe(false),
+    );
+
+    const collapsible = Array.from(document.querySelectorAll<HTMLElement>("[data-testid]")).filter(
+      (el) => el.hasAttribute("hidden") || el.dataset.testid?.includes("body"),
+    );
+    expect(collapsible.length).toBeGreaterThan(0);
+
+    for (const el of collapsible) {
+      const classes = Array.from(el.classList);
+      const offender = classes.find((c) => DISPLAY_UTILITIES.includes(c));
+      // Named in the failure so the fix is obvious: move it to an inner wrapper.
+      expect({ testid: el.dataset.testid, offender }).toEqual({
+        testid: el.dataset.testid,
+        offender: undefined,
+      });
+    }
+  });
+
   // AC-7
   it("Expand all opens every meeting, and the label follows the state it produced", async () => {
     await mount();
