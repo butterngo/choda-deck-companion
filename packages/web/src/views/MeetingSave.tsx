@@ -74,6 +74,54 @@ export function renderTranscriptMarkdown(meeting: MeetingMeta, client: string, s
 }
 
 /** Lower-case ASCII slug; Vietnamese diacritics folded ("Chị Kate" → "chi-kate"). */
+/**
+ * TASK-2047 — where a save will land, said BEFORE the save rather than after it.
+ *
+ * This mirrors the adapter's rule (`meeting-files.ts:154-157`) rather than asking
+ * for it, because the rule is fixed and a round trip to learn it would be a route
+ * that exists only to restate a constant.
+ *
+ * The vault half is VAULT-RELATIVE on purpose. `vaultDir` reaches the adapter's
+ * route handlers and is never put in a response body, so the client genuinely does
+ * not know the absolute root; showing one would mean hard-coding a path that is
+ * correct on exactly one machine. The absolute paths arrive the moment they are
+ * real — `PUT /meetings/:id/files` answers with them — and the UI switches to
+ * those after a save. The repo copy is the exception: its root is the workspace
+ * cwd, which the client already has, so it is absolute in both phases.
+ */
+export const VAULT_PROJECTS_DIR = "10-Projects";
+/** The adapter's own fallback when no project is chosen (meeting-files.ts:157). */
+export const NO_PROJECT_FOLDER = "_meetings";
+
+export interface SaveDestination {
+  /** "vault" is relative to the vault root; "repo" is absolute. */
+  kind: "vault" | "repo";
+  path: string;
+}
+
+export function saveDestinations(opts: {
+  projectId: string | null;
+  date: string;
+  slug: string;
+  alsoRepo: boolean;
+  workspaceCwd: string | null;
+}): SaveDestination[] {
+  const folder = `${opts.date}-${opts.slug}`;
+  const out: SaveDestination[] = [
+    {
+      kind: "vault",
+      path: ["vault", VAULT_PROJECTS_DIR, opts.projectId ?? NO_PROJECT_FOLDER, "meetings", folder].join("/")
+    }
+  ];
+  // Only when a workspace is actually known. `alsoRepo` is disabled without one,
+  // but a destination list that quietly showed "null/docs/meetings" on the way
+  // there would be worse than showing one destination.
+  if (opts.alsoRepo && opts.workspaceCwd) {
+    out.push({ kind: "repo", path: `${opts.workspaceCwd.replace(/[\/]+$/, "")}/docs/meetings/${folder}` });
+  }
+  return out;
+}
+
 export function slugify(text: string): string {
   const s = text
     .normalize("NFD")
@@ -180,6 +228,11 @@ export function MeetingSave({
   const [draft, setDraft] = useState<DraftNoteResponse | null>(null);
   // TASK-2045 — the note draft, rendered as markdown at full window size.
   const [previewing, setPreviewing] = useState(false);
+  // TASK-2047 — the absolute paths the adapter reported. Kept apart from
+  // `message` because a status line is cleared by the next action, while where
+  // the files went stays true until different files are written.
+  const [written, setWritten] = useState<string[]>([]);
+  const [copied, setCopied] = useState<string | null>(null);
   // TASK-1995 — which action rows have already been sent, by index. An action
   // sent twice is two inbox rows for one piece of work, and nothing downstream
   // can tell them apart, so a sent row's button is disabled rather than merely
@@ -204,6 +257,16 @@ export function MeetingSave({
   }, []);
 
   const { projectId, workspaceId } = splitChoice(choice);
+
+  // TASK-2047 — built from the same inputs the save will send, so the preview
+  // cannot name a destination the request would not use.
+  const destinations = saveDestinations({
+    projectId,
+    date: localDate(meeting.startedAt),
+    slug: slugify(client || topic || meeting.id),
+    alsoRepo,
+    workspaceCwd: workspaces.find((w) => w.id === workspaceId)?.cwd ?? null
+  });
 
   // The glossary belongs to the project: typed once, reused for every meeting in it.
   useEffect(() => {
@@ -250,6 +313,18 @@ export function MeetingSave({
     return out;
   }
 
+  async function copyPath(text: string, key: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(key);
+      window.setTimeout(() => setCopied((c) => (c === key ? null : c)), 1500);
+    } catch {
+      // A denied clipboard must not look like a successful copy. The path is
+      // selectable text either way, so the user can still take it by hand.
+      setCopied(null);
+    }
+  }
+
   async function save(name: "transcript.md" | "note.md", markdown: string): Promise<void> {
     setError(null);
     setMessage(null);
@@ -264,7 +339,8 @@ export function MeetingSave({
         alsoRepo,
         keepOutOfGit,
       });
-      setMessage(`Saved ${written.length} file${written.length === 1 ? "" : "s"}: ${written.join(", ")}`);
+      setWritten(written);
+      setMessage(`Saved ${written.length} file${written.length === 1 ? "" : "s"}`);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -443,6 +519,39 @@ export function MeetingSave({
 
       {error && <ErrorState variant="failed" subject="Meeting files" description={error} />}
       {message && <p className="text-xs text-zinc-500" data-testid="save-message">{message}</p>}
+
+      {/* TASK-2047 — where this will go, said before the button is pressed. Once
+          files exist, their real absolute paths replace the prediction. */}
+      <div className="flex flex-col gap-1" data-testid="destinations">
+        <p className="text-[11px] uppercase tracking-wide text-zinc-400">
+          {written.length > 0 ? "Saved to" : "Will be saved to"}
+        </p>
+        {(written.length > 0
+          ? written.map((path) => ({ kind: "saved" as const, path }))
+          : destinations
+        ).map((d) => (
+          <div key={`${d.kind}-${d.path}`} className="flex items-center gap-2 min-w-0">
+            <span className="text-[11px] text-zinc-400 flex-none w-11">
+              {d.kind === "repo" ? "repo" : d.kind === "saved" ? "" : "vault"}
+            </span>
+            <span
+              className="font-mono text-[11.5px] text-zinc-500 truncate"
+              title={d.path}
+              data-testid={`destination-${d.kind}`}
+            >
+              {d.path}
+            </span>
+            <button
+              type="button"
+              onClick={() => void copyPath(d.path, d.path)}
+              className="flex-none text-[11.5px] text-blue-600 dark:text-blue-400 hover:underline"
+              aria-label={`Copy path ${d.path}`}
+            >
+              {copied === d.path ? "Copied" : "Copy path"}
+            </button>
+          </div>
+        ))}
+      </div>
 
       {draft && (
         <div className="flex flex-col gap-2 md:flex-row" data-testid="note-draft">
