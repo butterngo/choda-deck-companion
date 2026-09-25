@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { HtmlDocView } from "../HtmlDocView";
 import { resolveReportImage } from "../../lib/report-images";
+import { withSrcdocBase } from "../../lib/srcdoc-base";
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -62,7 +63,7 @@ describe("TASK-2142 — relative images are inlined", () => {
     // Give any stray request the chance to be made before asserting none was.
     await new Promise((r) => setTimeout(r, 20));
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(frameDoc()).toBe(html);
+    expect(frameDoc()).toBe(withSrcdocBase(html));
   });
 
   it("AC-7 — a 415 (older adapter) or 404 leaves the src as it was and the document rendered", async () => {
@@ -73,7 +74,7 @@ describe("TASK-2142 — relative images are inlined", () => {
     render(<HtmlDocView html={html} path="report.html" workspaceId="main" />);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     await new Promise((r) => setTimeout(r, 20));
-    expect(frameDoc()).toBe(html);
+    expect(frameDoc()).toBe(withSrcdocBase(html));
   });
 
   it("AC-7 — a 200 that is not labelled image/* is not inlined", async () => {
@@ -82,7 +83,7 @@ describe("TASK-2142 — relative images are inlined", () => {
     render(<HtmlDocView html={html} path="report.html" workspaceId="main" />);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     await new Promise((r) => setTimeout(r, 20));
-    expect(frameDoc()).toBe(html);
+    expect(frameDoc()).toBe(withSrcdocBase(html));
   });
 
   it("AC-8 — the sandbox attribute stays present and empty after inlining", async () => {

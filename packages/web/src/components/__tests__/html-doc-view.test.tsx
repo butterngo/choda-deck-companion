@@ -9,6 +9,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { HtmlDocView } from "../HtmlDocView";
 import { isHtmlDoc, isMarkdown } from "../../views/WorkspaceDocsView";
+import { withSrcdocBase } from "../../lib/srcdoc-base";
 
 const DOC = "<!doctype html><title>t</title><h1>Rendered</h1><p>body</p>";
 
@@ -17,8 +18,9 @@ describe("TASK-1956 — HtmlDocView isolates what it renders", () => {
     render(<HtmlDocView html={DOC} path="docs/report.html" />);
     const frame = screen.getByTestId("html-doc-frame") as HTMLIFrameElement;
     expect(frame.tagName).toBe("IFRAME");
-    // The bytes go to srcdoc — never into the parent document.
-    expect(frame.getAttribute("srcdoc")).toBe(DOC);
+    // The bytes go to srcdoc — never into the parent document. The only
+    // addition is TASK-2143's <base href="about:srcdoc">.
+    expect(frame.getAttribute("srcdoc")).toBe(withSrcdocBase(DOC));
     // And they are NOT in the page itself. If someone swapped the frame for a
     // dangerouslySetInnerHTML, the heading would be findable here.
     expect(screen.queryByRole("heading", { name: "Rendered" })).toBeNull();

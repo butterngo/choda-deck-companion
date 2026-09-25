@@ -33,10 +33,15 @@
 // document. The frame shows the file as-is first and swaps in the inlined copy
 // when it is ready; a failed image leaves its src untouched. None of this
 // touches the sandbox attribute.
+//
+// TASK-2143 — and because srcdoc inherits the PARENT's base URL, an in-page
+// `#anchor` link would navigate the frame to the app itself. withSrcdocBase
+// pins the base to about:srcdoc so those links stay inside the document.
 
 import React, { useEffect, useState } from "react";
 import { fetchWorkspaceImageDataUri } from "../api";
 import { inlineReportImages } from "../lib/report-images";
+import { withSrcdocBase } from "../lib/srcdoc-base";
 
 export function HtmlDocView({
   html,
@@ -63,7 +68,7 @@ export function HtmlDocView({
 
   // Keyed on the source it was built from, so a stale result never outlives the
   // document it belongs to.
-  const srcDoc = inlined !== null && inlined.from === html ? inlined.html : html;
+  const srcDoc = withSrcdocBase(inlined !== null && inlined.from === html ? inlined.html : html);
 
   return (
     <div className="not-prose flex flex-col gap-2">
