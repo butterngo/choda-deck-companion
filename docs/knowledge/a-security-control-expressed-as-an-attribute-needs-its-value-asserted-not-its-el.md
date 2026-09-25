@@ -6,11 +6,11 @@ workspaceId: choda-deck-companion
 scope: project
 refs:
   - path: packages/web/src/components/HtmlDocView.tsx
-    commitSha: 52189b5bbb3624dab3e6e6f1d76d4951b0d9bf94
+    commitSha: 3c6b0daa2c6f8452322806c9afabc7212190c91d
   - path: packages/web/src/components/__tests__/html-doc-view.test.tsx
-    commitSha: 52189b5bbb3624dab3e6e6f1d76d4951b0d9bf94
+    commitSha: 3c6b0daa2c6f8452322806c9afabc7212190c91d
 createdAt: 2026-09-14
-lastVerifiedAt: 2026-09-14
+lastVerifiedAt: 2026-09-21
 ---
 
 **Trigger:** you are testing something whose protection lives in an HTML attribute — `sandbox`, `rel="noopener"`, `integrity`, `SameSite`, `Content-Security-Policy`, `referrerpolicy` — and you write a test that finds the element.

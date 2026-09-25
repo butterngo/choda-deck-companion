@@ -6,9 +6,9 @@ workspaceId: choda-deck-companion
 scope: project
 refs:
   - path: packages/web/src/lib/line-diff.ts
-    commitSha: 21f9c9611f14d3e7093019c91316266cfb49d64a
+    commitSha: 3c6b0daa2c6f8452322806c9afabc7212190c91d
 createdAt: 2026-09-05
-lastVerifiedAt: 2026-09-05
+lastVerifiedAt: 2026-09-21
 affectedFeatureId: feature-companion-ui
 ---
 
