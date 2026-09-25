@@ -26,15 +26,45 @@
 // request the frame cannot authenticate — the adapter route is header-gated, and
 // a sandboxed frame has no way to send that header.
 
-import React from "react";
+//
+// TASK-2142 — srcdoc has no base URL either, so a report's relative <img src>
+// resolves to nothing. With a workspaceId, the images are fetched here (where
+// the token can be sent) and inlined as data: URIs before the frame sees the
+// document. The frame shows the file as-is first and swaps in the inlined copy
+// when it is ready; a failed image leaves its src untouched. None of this
+// touches the sandbox attribute.
+
+import React, { useEffect, useState } from "react";
+import { fetchWorkspaceImageDataUri } from "../api";
+import { inlineReportImages } from "../lib/report-images";
 
 export function HtmlDocView({
   html,
   path,
+  workspaceId,
 }: {
   html: string;
   path: string;
+  /** Needed to fetch the report's relative images. Absent: rendered as-is. */
+  workspaceId?: string | null;
 }): React.JSX.Element {
+  const [inlined, setInlined] = useState<{ from: string; html: string } | null>(null);
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    const ctrl = new AbortController();
+    void inlineReportImages(html, path, (p) =>
+      fetchWorkspaceImageDataUri(workspaceId, p, ctrl.signal)
+    ).then((out) => {
+      if (!ctrl.signal.aborted && out !== html) setInlined({ from: html, html: out });
+    });
+    return () => ctrl.abort();
+  }, [html, path, workspaceId]);
+
+  // Keyed on the source it was built from, so a stale result never outlives the
+  // document it belongs to.
+  const srcDoc = inlined !== null && inlined.from === html ? inlined.html : html;
+
   return (
     <div className="not-prose flex flex-col gap-2">
       <div className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
@@ -50,7 +80,7 @@ export function HtmlDocView({
         // Empty on purpose. See the note above: any allow-* token here would
         // undo the isolation this whole component is for.
         sandbox=""
-        srcDoc={html}
+        srcDoc={srcDoc}
         title={`Rendered document: ${path}`}
         data-testid="html-doc-frame"
         className="min-h-[70vh] w-full rounded-md border border-zinc-200 bg-white dark:border-zinc-800"

@@ -700,6 +700,37 @@ export async function fetchWorkspaceDoc(
   };
 }
 
+/**
+ * TASK-2142 — one workspace image as a data: URI, for inlining into a report the
+ * Docs pane renders in a sandboxed srcdoc frame (which can neither resolve the
+ * relative path nor send the bridge token itself).
+ *
+ * Null rather than a throw on any refusal: an adapter older than TASK-2142
+ * answers 415 for every image, and that must degrade to "no picture", not to
+ * "the report failed to load". Anything that is not labelled image/* is refused
+ * here too, so a text response can never be smuggled in as a data: URI.
+ */
+export async function fetchWorkspaceImageDataUri(
+  workspaceId: string,
+  path: string,
+  signal?: AbortSignal
+): Promise<string | null> {
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
+  const res = await fetch(
+    `${API_BASE}/workspace-docs/${encodeURIComponent(workspaceId)}/${encoded}`,
+    { signal }
+  );
+  if (!res.ok) return null;
+  const type = res.headers.get("content-type") ?? "";
+  if (!type.startsWith("image/")) return null;
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return `data:${type.split(";")[0]};base64,${btoa(binary)}`;
+}
+
 /** Why a save was refused, so the pane can say which limit was hit. */
 export type SaveDocFailure =
   | "changed-on-disk"
