@@ -11,6 +11,7 @@ const { configureLoginItem } = require("./login-item.cjs");
 const { initUpdater } = require("./updater.cjs");
 const { createDisplayMediaHandler } = require("./display-media.cjs");
 const { createOpenFolderHandler } = require("./open-folder.cjs");
+const { createOpenHtmlHandler, workspaceCwdResolver } = require("./open-html.cjs");
 
 // PNG works for the window + tray; packaged builds also bake the .ico into the
 // exe via electron-builder. Same asset english-companion uses for its tray.
@@ -202,6 +203,20 @@ if (!app.requestSingleInstanceLock()) {
             vaultDir: process.env.CHODA_VAULT_DIR?.trim(),
           });
           return (_event, requestedPath) => openFolder(requestedPath);
+        })()
+      );
+      // TASK-2145 — open a workspace .html report in the default browser. Built
+      // like open-folder: the workspace root is looked up HERE, on the adapter,
+      // with the bridge token this process holds; the renderer sends only an id
+      // and a relative path, and anything but an .html/.htm file is refused.
+      ipcMain.handle(
+        "choda:open-html",
+        (() => {
+          const openHtml = createOpenHtmlHandler({
+            shell,
+            resolveWorkspaceCwd: workspaceCwdResolver({ apiPort, bridgeToken }),
+          });
+          return (_event, workspaceId, relPath) => openHtml(workspaceId, relPath);
         })()
       );
 

@@ -43,6 +43,52 @@ import { fetchWorkspaceImageDataUri } from "../api";
 import { inlineReportImages } from "../lib/report-images";
 import { withSrcdocBase } from "../lib/srcdoc-base";
 
+/**
+ * TASK-2145 — the packaged app's bridge (preload.cjs). Absent in the browser
+ * shell, which has no IPC: the button is then not rendered rather than dead.
+ */
+type OpenHtml = (workspaceId: string, path: string) => Promise<{ ok: boolean; reason?: string }>;
+
+function openHtmlBridge(): OpenHtml | null {
+  const w = window as unknown as { choda?: { openHtml?: unknown } };
+  return typeof w.choda?.openHtml === "function" ? (w.choda.openHtml as OpenHtml) : null;
+}
+
+/**
+ * Open the report as itself, in the default browser, where its own scripts run
+ * and its relative paths resolve — neither of which the sandboxed frame allows.
+ * The main process decides whether it may; a refusal is shown, not swallowed.
+ */
+function OpenInBrowser({ workspaceId, path }: { workspaceId: string; path: string }): React.JSX.Element | null {
+  const [error, setError] = useState<string | null>(null);
+  const open = openHtmlBridge();
+  if (!open) return null;
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="html-doc-open-browser"
+        title="Open this file in the default browser, with its scripts"
+        onClick={() => {
+          setError(null);
+          void open(workspaceId, path)
+            .then((r) => setError(r.ok ? null : (r.reason ?? "could not open")))
+            .catch(() => setError("could not open"));
+        }}
+        className="ml-auto flex flex-none items-center gap-1.5 rounded-md border border-zinc-200 dark:border-zinc-800 px-1.5 py-1 text-[11px] text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+      >
+        <i className="ti ti-external-link" aria-hidden="true" />
+        Open in browser
+      </button>
+      {error && (
+        <span className="text-[11px] text-amber-700 dark:text-amber-400" data-testid="html-doc-open-browser-error">
+          {error}
+        </span>
+      )}
+    </>
+  );
+}
+
 export function HtmlDocView({
   html,
   path,
@@ -79,6 +125,7 @@ export function HtmlDocView({
         {/* Said on screen, not only in a comment. A reader who wonders why an
             interactive page looks inert deserves the answer in front of them. */}
         <span>sandboxed, isolated from the app</span>
+        {workspaceId && <OpenInBrowser workspaceId={workspaceId} path={path} />}
       </div>
 
       <iframe
