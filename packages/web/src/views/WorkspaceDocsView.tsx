@@ -405,7 +405,7 @@ export function WorkspaceDocsView({ workspaceId: fixedId }: { workspaceId?: stri
                    isolation lives in HtmlDocView's sandbox attribute; the
                    branch order matters only in that .md is decided first, and
                    no file is both. */
-                <HtmlDocView html={docText} path={selectedPath} />
+                <HtmlDocView html={docText} path={selectedPath} workspaceId={workspaceId} />
               ) : (
                 /* Source is shown verbatim. Running it through the markdown
                    renderer would eat leading hashes, asterisks and underscores
