@@ -1,0 +1,8 @@
+  • publishing      publisher=Github (owner: butterngo, project: choda-deck-companion, version: 9.9.9)
+  • publishing      publisher=Github (owner: butterngo, project: choda-deck-companion, version: 9.9.9)
+  • creating GitHub release  reason=release doesn't exist tag=v9.9.9 version=9.9.9
+  • creating GitHub release  reason=release doesn't exist tag=v9.9.9 version=9.9.9
+no draft beforehand (today)   : publishers=2 releasesCreated=2 blockmap->id=1001 exe->id=1002
+  • publishing      publisher=Github (owner: butterngo, project: choda-deck-companion, version: 9.9.9)
+  • publishing      publisher=Github (owner: butterngo, project: choda-deck-companion, version: 9.9.9)
+draft created first (--prepare): publishers=2 releasesCreated=0 blockmap->id=777 exe->id=777

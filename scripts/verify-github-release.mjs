@@ -12,6 +12,8 @@
 // published and latest, then check it again as published. electron-builder uploads
 // into a draft (build.publish.releaseType), so this is the one step that reaches
 // the feed. See docs/knowledge/publish-as-a-draft-then-flip-it-only-after-github-confirms-the-release.md
+// --prepare: run before electron-builder. It creates the tag's draft so that both
+// of electron-builder's publishers upload into it (see planPrepare below).
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -50,6 +52,26 @@ export function checkTagReleases({ releases, tag, expectedAssets, allowDraft = f
     else if (asset.state !== 'uploaded') problems.push(`asset ${name} on ${tag} is in state "${asset.state}", not "uploaded"`);
   }
   return { ok: problems.length === 0, problems, release };
+}
+
+// --prepare runs before electron-builder. electron-builder 26 creates one publisher
+// per artifact event that misses its cache, and the blockmap and exe events both
+// miss: getOrCreatePublisher awaits between reading and writing the cache. Each
+// publisher then creates its own release on the tag. When a draft already exists,
+// both publishers upload into that draft instead. So the fix is to create the draft
+// first. Proof: scripts/proof-publisher-race.cjs (the race) and
+// scripts/proof-publisher-race-fix.cjs (the fix), outputs in docs/reports/task-2052/.
+export function planPrepare({ releases, tag }) {
+  const onTag = releases.filter((r) => r.tag_name === tag);
+  if (onTag.length === 0) return { action: 'create' };
+  if (onTag.length > 1) {
+    return { action: 'refuse', problem: `${onTag.length} releases already on tag ${tag} — delete the extras before publishing into it` };
+  }
+  const [release] = onTag;
+  if (!release.draft) {
+    return { action: 'refuse', problem: `tag ${tag} is already published (id=${release.id}) — bump package.json version instead of publishing over it` };
+  }
+  return { action: 'reuse', release };
 }
 
 // GitHub paginates with a Link header; the release list is past one page already.
@@ -103,12 +125,23 @@ async function publishRelease({ owner, repo, token, id }) {
   });
 }
 
+async function createDraftRelease({ owner, repo, token, tag }) {
+  const res = await github(`https://api.github.com/repos/${owner}/${repo}/releases`, token, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    // name matches what electron-builder would give it: the bare version.
+    body: JSON.stringify({ tag_name: tag, name: tag.replace(/^v/, ''), draft: true, prerelease: false }),
+  });
+  return res.json();
+}
+
 function parseArgs(argv) {
-  const args = { extraAssets: [], promote: false };
+  const args = { extraAssets: [], promote: false, prepare: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--tag') args.tag = argv[++i];
     else if (argv[i] === '--asset') args.extraAssets.push(argv[++i]);
     else if (argv[i] === '--promote') args.promote = true;
+    else if (argv[i] === '--prepare') args.prepare = true;
     else throw new Error(`unknown argument: ${argv[i]}`);
   }
   return args;
@@ -131,6 +164,14 @@ if (process.argv[1]?.endsWith('verify-github-release.mjs')) {
   const token = resolveToken();
   if (!token) {
     fail(['no GitHub token (GH_TOKEN, GITHUB_TOKEN or `gh auth token`) — drafts are invisible without one, so the release count cannot be trusted']);
+  }
+
+  if (args.prepare) {
+    const plan = planPrepare({ releases: await listReleases({ owner, repo, token }), tag });
+    if (plan.action === 'refuse') fail([plan.problem]);
+    const release = plan.action === 'create' ? await createDraftRelease({ owner, repo, token, tag }) : plan.release;
+    console.log(`[verify-github-release] ${tag}: ${plan.action === 'create' ? 'created' : 'reusing'} draft release id=${release.id} for electron-builder to upload into.`);
+    process.exit(0);
   }
 
   let result = checkTagReleases({ releases: await listReleases({ owner, repo, token }), tag, expectedAssets, allowDraft: args.promote });

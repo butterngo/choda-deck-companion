@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import { checkPublishEnv } from "./preflight-publish.mjs";
 import { parseManifest, compareManifest, sha512Base64 } from "./verify-release-manifest.mjs";
-import { checkTagReleases, expectedAssetsFor, nextPageUrl } from "./verify-github-release.mjs";
+import { checkTagReleases, expectedAssetsFor, nextPageUrl, planPrepare } from "./verify-github-release.mjs";
 
 // TASK-1763 — these guards exist to stop a well-formed, uploadable, WRONG manifest
 // from shipping. Each test below is paired with a control so it is capable of failing.
@@ -181,6 +181,35 @@ describe("checkTagReleases (TASK-2052 AC-2/AC-3/AC-4)", () => {
     expect(expectedAssetsFor("1.2.3")).toEqual([
       "choda-companion-setup-1.2.3.exe", "choda-companion-setup-1.2.3.exe.blockmap", "latest.yml",
     ]);
+  });
+});
+
+// TASK-2052 AC-5 fix — create the draft before electron-builder so both of its
+// publishers find it. scripts/proof-publisher-race-fix.cjs shows that with
+// a draft already on the tag, the two publishers create 0 releases instead of 2.
+describe("planPrepare (TASK-2052 AC-5)", () => {
+  const draft = { id: 1, tag_name: "v1.0.0", draft: true };
+
+  it("creates a draft when the tag has no release", () => {
+    expect(planPrepare({ releases: [], tag: "v1.0.0" })).toEqual({ action: "create" });
+  });
+
+  it("reuses a lone draft — a rerun after a failed build", () => {
+    expect(planPrepare({ releases: [draft], tag: "v1.0.0" })).toEqual({ action: "reuse", release: draft });
+  });
+
+  it("refuses a tag that is already published — the forgotten version bump", () => {
+    const r = planPrepare({ releases: [{ ...draft, draft: false }], tag: "v1.0.0" });
+    expect(r.action).toBe("refuse");
+    expect(r.problem).toContain("bump package.json version");
+  });
+
+  it("refuses a tag that is already split — uploading into it would pick one half at random", () => {
+    expect(planPrepare({ releases: [draft, { ...draft, id: 2 }], tag: "v1.0.0" }).action).toBe("refuse");
+  });
+
+  it("ignores releases on other tags", () => {
+    expect(planPrepare({ releases: [{ ...draft, tag_name: "v0.9.0", draft: false }], tag: "v1.0.0" }).action).toBe("create");
   });
 });
 
