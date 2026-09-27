@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import { checkPublishEnv } from "./preflight-publish.mjs";
 import { parseManifest, compareManifest, sha512Base64 } from "./verify-release-manifest.mjs";
@@ -95,6 +96,18 @@ describe("compareManifest (TASK-1763 AC-2/AC-3)", () => {
   it("reports EVERY problem at once, so one fix does not just reveal the next", () => {
     const r = compareManifest({ ...good, pkgVersion: "0.8.0", actualSha512: "BBB==", actualSize: 99 });
     expect(r.problems).toHaveLength(3);
+  });
+});
+
+// TASK-2052 AC-1 — the release type is declared, not inherited. electron-builder's
+// default is also "draft", so deleting the key would change no behaviour and no
+// other check would notice; this test is what makes the declaration load-bearing.
+// Why draft and not release: docs/knowledge/publish-as-a-draft-then-flip-it-only-after-github-confirms-the-release.md
+describe("build.publish.releaseType (TASK-2052 AC-1)", () => {
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+
+  it("names releaseType explicitly as draft", () => {
+    expect(pkg.build.publish).toHaveProperty("releaseType", "draft");
   });
 });
 

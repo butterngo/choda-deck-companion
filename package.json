@@ -67,7 +67,8 @@
     "publish": {
       "provider": "github",
       "owner": "butterngo",
-      "repo": "choda-deck-companion"
+      "repo": "choda-deck-companion",
+      "releaseType": "draft"
     }
   },
   "devDependencies": {
