@@ -1,7 +1,7 @@
 // TASK-1159 — hash routing over the shell. Index redirects to the Sync pillar
 // (the v1 payoff). Tabs deep-link so a screen survives a refresh.
 
-import { createHashRouter, Navigate } from "react-router-dom";
+import { createHashRouter, Navigate, type RouteObject } from "react-router-dom";
 import { Shell } from "./layouts/Shell";
 import { SyncView } from "./views/SyncView";
 import { KnowledgeView } from "./views/KnowledgeView";
@@ -14,8 +14,11 @@ import { TaskDetailView } from "./views/TaskDetailView";
 import { WorkspaceDocsView } from "./views/WorkspaceDocsView";
 import { ProjectsView } from "./views/ProjectsView";
 import { WorkspaceView } from "./views/WorkspaceView";
+import { ActivityView } from "./views/ActivityView";
 
-export const router = createHashRouter([
+// Exported so a test can mount the REAL route table in a memory router — the
+// only way to prove a path is not swallowed by the catch-all below.
+export const routes: RouteObject[] = [
   {
     path: "/",
     element: <Shell />,
@@ -39,7 +42,11 @@ export const router = createHashRouter([
       { path: "tasks/:id", element: <TaskDetailView /> },
       // TASK-1749 — a workspace's own .md docs.
       { path: "workspace-docs", element: <WorkspaceDocsView /> },
+      // TASK-2153 — daily activity digests: the four success metrics as trends.
+      { path: "activity", element: <ActivityView /> },
       { path: "*", element: <Navigate to="/sync" replace /> },
     ],
   },
-]);
+];
+
+export const router = createHashRouter(routes);

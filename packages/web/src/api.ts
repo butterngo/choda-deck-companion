@@ -2043,3 +2043,26 @@ export async function draftMeetingNote(id: string, body: DraftNoteRequest): Prom
     ...(json.usedModel ? { usedModel: json.usedModel } : {}),
   };
 }
+
+// TASK-2153 — daily activity digests, written by `choda-deck activity digest`
+// (TASK-2151) and served by GET /activity/digests (TASK-2152). Only the fields
+// the Activity view reads are typed; the adapter sends the full digest.
+export interface ActivityDigest {
+  date: string;
+  metrics: {
+    prompts: number;
+    confirmationRate: number;
+    waitMinutes: number;
+    activeMinutes: number;
+    projectSwitches: number;
+    switchesPerActiveHour: number;
+    unresolvedPrompts: number;
+    sessionsCompleted: number;
+    mergesToDefault: number;
+  };
+}
+
+/** Defaults to the adapter's window: the 30 days ending today, ascending. */
+export function fetchActivityDigests(signal?: AbortSignal): Promise<ActivityDigest[]> {
+  return getJson<ActivityDigest[]>("/activity/digests", signal);
+}
