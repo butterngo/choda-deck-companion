@@ -8,7 +8,7 @@
 // is exactly the conflation ADR-028 forbids: "can't reach the laptop" and "the
 // ledger query failed" call for different reactions.
 
-import { useOutletContext } from "react-router-dom";
+import { Link, useOutletContext } from "react-router-dom";
 import type { HealthView } from "../hooks/use-health";
 import { useLedger } from "../hooks/use-ledger";
 import { useSyncLog } from "../hooks/use-sync-log";
@@ -76,7 +76,19 @@ export function SyncView(): React.JSX.Element {
     <section aria-label="sync observatory" className="flex-1 min-h-0 overflow-y-auto">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-lg font-medium">Sync Observatory</h1>
-        <SyncActions onDone={refetchAll} />
+        <div className="flex items-center gap-3">
+          {/* TASK-2153 — Activity's only entry point. Butter's TASK-1830 rule is
+              "no more menu", so it lives here, not in the sidebar. */}
+          <Link
+            to="/activity"
+            data-testid="activity-link"
+            className="inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+          >
+            <i className="ti ti-activity" aria-hidden="true" />
+            Activity
+          </Link>
+          <SyncActions onDone={refetchAll} />
+        </div>
       </div>
       {body()}
     </section>
