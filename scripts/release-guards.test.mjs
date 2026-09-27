@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import { checkPublishEnv } from "./preflight-publish.mjs";
 import { parseManifest, compareManifest, sha512Base64 } from "./verify-release-manifest.mjs";
+import { checkTagReleases, expectedAssetsFor, nextPageUrl } from "./verify-github-release.mjs";
 
 // TASK-1763 — these guards exist to stop a well-formed, uploadable, WRONG manifest
 // from shipping. Each test below is paired with a control so it is capable of failing.
@@ -108,6 +109,87 @@ describe("build.publish.releaseType (TASK-2052 AC-1)", () => {
 
   it("names releaseType explicitly as draft", () => {
     expect(pkg.build.publish).toHaveProperty("releaseType", "draft");
+  });
+});
+
+// TASK-2052 AC-2/3/4 — the GitHub-side check. Fixtures copy the real shapes seen in
+// `gh api repos/butterngo/choda-deck-companion/releases` on 2026-09-27.
+describe("checkTagReleases (TASK-2052 AC-2/AC-3/AC-4)", () => {
+  const asset = (name, state = "uploaded") => ({ name, state });
+  const release = (id, tag, { draft = false, prerelease = false, assets }) => ({
+    id, tag_name: tag, draft, prerelease, assets: assets.map((a) => (typeof a === "string" ? asset(a) : a)),
+  });
+  const expected = expectedAssetsFor("0.18.1");
+  const good = release(397071557, "v0.18.1", { assets: expected });
+
+  // CONTROL — a guard that always rejects would pass every red test below.
+  it("passes one published release that carries all three assets", () => {
+    const r = checkTagReleases({ releases: [good], tag: "v0.18.1", expectedAssets: expected });
+    expect(r).toMatchObject({ ok: true, problems: [] });
+  });
+
+  it("fails the 2+1 split: two releases on one tag (the v0.15.0 shape)", () => {
+    const releases = [
+      release(391452079, "v0.15.0", { draft: true, assets: ["choda-companion-setup-0.15.0.exe.blockmap"] }),
+      release(391452056, "v0.15.0", { draft: true, assets: ["choda-companion-setup-0.15.0.exe", "latest.yml"] }),
+    ];
+    const r = checkTagReleases({ releases, tag: "v0.15.0", expectedAssets: expectedAssetsFor("0.15.0"), allowDraft: true });
+    expect(r.ok).toBe(false);
+    expect(r.problems.join(" ")).toContain("2 releases on tag v0.15.0");
+  });
+
+  it("fails a split even when one half is published (the v0.6.1 shape)", () => {
+    const releases = [good, release(1, "v0.18.1", { draft: true, assets: ["latest.yml"] })];
+    expect(checkTagReleases({ releases, tag: "v0.18.1", expectedAssets: expected }).ok).toBe(false);
+  });
+
+  it("fails a draft by default, and names why the feed cannot see it", () => {
+    const r = checkTagReleases({ releases: [{ ...good, draft: true }], tag: "v0.18.1", expectedAssets: expected });
+    expect(r.ok).toBe(false);
+    expect(r.problems.join(" ")).toContain("is a draft");
+  });
+
+  it("accepts a complete draft in --promote mode — the state it is allowed to flip", () => {
+    const r = checkTagReleases({ releases: [{ ...good, draft: true }], tag: "v0.18.1", expectedAssets: expected, allowDraft: true });
+    expect(r.ok).toBe(true);
+  });
+
+  it("fails a prerelease — electron-updater skips it", () => {
+    const r = checkTagReleases({ releases: [{ ...good, prerelease: true }], tag: "v0.18.1", expectedAssets: expected });
+    expect(r.problems.join(" ")).toContain("prerelease");
+  });
+
+  it("fails when an expected asset is missing, naming the asset", () => {
+    const r = checkTagReleases({ releases: [good], tag: "v0.18.1", expectedAssets: [...expected, "extra.txt"] });
+    expect(r.ok).toBe(false);
+    expect(r.problems).toEqual(["asset missing from v0.18.1: extra.txt"]);
+  });
+
+  it("fails an asset whose upload did not finish — the dropped-installer shape", () => {
+    const partial = release(2, "v0.18.1", { assets: [asset(expected[0], "starter"), expected[1], expected[2]] });
+    const r = checkTagReleases({ releases: [partial], tag: "v0.18.1", expectedAssets: expected });
+    expect(r.problems.join(" ")).toContain('state "starter"');
+  });
+
+  it("fails a tag with no release at all", () => {
+    expect(checkTagReleases({ releases: [good], tag: "v9.9.9", expectedAssets: expected }).ok).toBe(false);
+  });
+
+  it("derives the three asset names from nsis.artifactName", () => {
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+    expect(pkg.build.nsis.artifactName).toBe("choda-companion-setup-${version}.${ext}");
+    expect(expectedAssetsFor("1.2.3")).toEqual([
+      "choda-companion-setup-1.2.3.exe", "choda-companion-setup-1.2.3.exe.blockmap", "latest.yml",
+    ]);
+  });
+});
+
+describe("nextPageUrl", () => {
+  it("follows rel=next and stops when there is none", () => {
+    const link = '<https://api.github.com/x?page=2>; rel="next", <https://api.github.com/x?page=3>; rel="last"';
+    expect(nextPageUrl(link)).toBe("https://api.github.com/x?page=2");
+    expect(nextPageUrl('<https://api.github.com/x?page=1>; rel="prev"')).toBeUndefined();
+    expect(nextPageUrl(null)).toBeUndefined();
   });
 });
 

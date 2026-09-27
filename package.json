@@ -15,13 +15,15 @@
     "electron:dev": "pnpm run build && electron .",
     "vendor:adapter": "node scripts/vendor-adapter.mjs",
     "dist": "pnpm run build && pnpm run vendor:adapter && electron-builder --win && pnpm run verify:signature && pnpm run verify:manifest",
-    "dist:publish": "pnpm run preflight:publish && pnpm run build && pnpm run vendor:adapter && electron-builder --win --publish always && pnpm run verify:signature && pnpm run verify:manifest",
+    "dist:publish": "pnpm run preflight:publish && pnpm run build && pnpm run vendor:adapter && electron-builder --win --publish always && pnpm run verify:signature && pnpm run verify:manifest && pnpm run release:promote",
     "test": "pnpm -r --filter=./packages/* run test && vitest run -c electron/vitest.config.cjs",
     "typecheck": "pnpm -r --filter=./packages/* run typecheck",
     "lint": "eslint .",
     "verify:signature": "node scripts/verify-signature.mjs",
     "preflight:publish": "node scripts/preflight-publish.mjs",
-    "verify:manifest": "node scripts/verify-release-manifest.mjs"
+    "verify:manifest": "node scripts/verify-release-manifest.mjs",
+    "verify:github": "node scripts/verify-github-release.mjs",
+    "release:promote": "node scripts/verify-github-release.mjs --promote"
   },
   "build": {
     "appId": "com.butter.choda-companion",
