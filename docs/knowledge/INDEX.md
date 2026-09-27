@@ -2,6 +2,7 @@
 
 | Slug | Type | Title | Last verified | Stale |
 |------|------|-------|---------------|-------|
+| [publish-as-a-draft-then-flip-it-only-after-github-confirms-the-release](./publish-as-a-draft-then-flip-it-only-after-github-confirms-the-release.md) | decision | Publish companion releases as a draft, then flip them only after GitHub confirms the release | 2026-09-27 |  |
 | [a-renderer-to-os-bridge-takes-an-id-plus-a-relative-path-never-a-root-and-allowl](./a-renderer-to-os-bridge-takes-an-id-plus-a-relative-path-never-a-root-and-allowl.md) | gotcha | A renderer-to-OS bridge takes an id plus a relative path, never a root, and allowlists what it opens | 2026-09-26 |  |
 | [electron-builder-publish-always-can-create-two-draft-releases-for-one-version-an](./electron-builder-publish-always-can-create-two-draft-releases-for-one-version-an.md) | learning | electron-builder --publish always can create two draft releases for one version and split the assets | 2026-09-26 |  |
 | [a-srcdoc-frame-inherits-its-parent-s-base-url-so-anchors-and-relative-urls-resol](./a-srcdoc-frame-inherits-its-parent-s-base-url-so-anchors-and-relative-urls-resol.md) | learning | A srcdoc frame inherits its parent's base URL, so #anchors and relative URLs resolve against the app | 2026-09-25 |  |

@@ -1,0 +1,6 @@
+  • publishing      publisher=Github (owner: butterngo, project: choda-deck-companion, version: 9.9.9)
+  • publishing      publisher=Github (owner: butterngo, project: choda-deck-companion, version: 9.9.9)
+concurrent: same publisher instance? false | cache size 1
+latest.yml joins the exe publisher (last set)? true | joins blockmap publisher? false
+  • publishing      publisher=Github (owner: butterngo, project: choda-deck-companion, version: 9.9.9)
+sequential control: same publisher instance? true
