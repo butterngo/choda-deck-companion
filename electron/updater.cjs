@@ -1,4 +1,4 @@
-// TASK-1440 — electron-updater against a private GitHub Releases feed.
+// TASK-1440 — electron-updater against the GitHub Releases feed.
 // Near-verbatim port of english-companion's electron/updater.cjs (that repo's
 // own proven mechanism) — same env var precedence, same silent-disable
 // contract, same test-only feed override, adapted to this repo/token name.
@@ -9,10 +9,12 @@ const path = require("node:path");
 const GITHUB_OWNER = "butterngo";
 const GITHUB_REPO = "choda-deck-companion";
 
-// The repo is private, so update checks need a GitHub token with repo read
-// access at runtime. It lives OUTSIDE the app package, in the user's profile
-// (%APPDATA%/choda-companion/gh-token.txt), or in the GH_TOKEN env var.
-// No token → updater stays off; the app works exactly as before.
+// TASK-2164 — the repo is public, so the updater needs no token: without one it
+// reads the public GitHub feed. A token (in %APPDATA%/choda-deck-companion/
+// gh-token.txt, outside the app package, or in GH_TOKEN) still switches it to
+// the private feed, so a repo that goes private again only needs the file back.
+// This replaces TASK-1440's "no token → updater off", which left every install
+// without the file unable to update and said so only to an invisible console.
 function readToken(userDataDir) {
   try {
     const fileToken = fs.readFileSync(path.join(userDataDir, "gh-token.txt"), "utf8").trim();
@@ -33,17 +35,9 @@ function initUpdater({ autoUpdater, userDataDir, onUpdateReady, intervalMs = 4 *
     autoUpdater.setFeedURL({ provider: "generic", url: feedOverride });
   } else {
     const token = readToken(userDataDir);
-    if (!token) {
-      log.log("[updater] no gh-token.txt and no GH_TOKEN — auto-update disabled");
-      return { enabled: false, reason: "no_token" };
-    }
-    autoUpdater.setFeedURL({
-      provider: "github",
-      owner: GITHUB_OWNER,
-      repo: GITHUB_REPO,
-      private: true,
-      token,
-    });
+    const feed = { provider: "github", owner: GITHUB_OWNER, repo: GITHUB_REPO };
+    autoUpdater.setFeedURL(token ? { ...feed, private: true, token } : { ...feed, private: false });
+    log.log(`[updater] feed: github ${GITHUB_OWNER}/${GITHUB_REPO} (${token ? "private, token" : "public"})`);
   }
   autoUpdater.autoDownload = true;
   // Fallback: even if the user never explicitly restarts, the staged version

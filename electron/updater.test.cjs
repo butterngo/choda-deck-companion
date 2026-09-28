@@ -47,23 +47,37 @@ describe("initUpdater", () => {
     }
   });
 
-  it("is a no-op without a token — disables silently, never crashes", () => {
+  // TASK-2164 AC-1 — the repo is public, so no token means the public feed, not
+  // "updater off". The old contract (silent no_token disable) left every install
+  // without gh-token.txt unable to update, and nothing on screen said so.
+  it("uses the public GitHub feed without a token, and checks immediately", () => {
     const au = fakeAutoUpdater();
     const u = initUpdater({ autoUpdater: au, userDataDir: userData, onUpdateReady: vi.fn(), log: silentLog });
-    expect(u.enabled).toBe(false);
-    expect(u.reason).toBe("no_token");
-    expect(au.setFeedURL).not.toHaveBeenCalled();
-    expect(au.checkForUpdates).not.toHaveBeenCalled();
+    expect(u.enabled).toBe(true);
+    expect(au.setFeedURL).toHaveBeenCalledWith({
+      provider: "github",
+      owner: "butterngo",
+      repo: "choda-deck-companion",
+      private: false,
+    });
+    expect(au.checkForUpdates).toHaveBeenCalledTimes(1);
+    u.stop();
   });
 
-  it("configures the private GitHub feed and checks immediately", () => {
+  // TASK-2164 AC-2 — a token still selects the private feed, so a repo that goes
+  // private again only needs gh-token.txt back.
+  it("configures the private GitHub feed when a token is present, and checks immediately", () => {
     fs.writeFileSync(path.join(userData, "gh-token.txt"), "ghp_abc");
     const au = fakeAutoUpdater();
     const u = initUpdater({ autoUpdater: au, userDataDir: userData, onUpdateReady: vi.fn(), log: silentLog });
     expect(u.enabled).toBe(true);
-    expect(au.setFeedURL).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: "github", owner: "butterngo", repo: "choda-deck-companion", private: true, token: "ghp_abc" }),
-    );
+    expect(au.setFeedURL).toHaveBeenCalledWith({
+      provider: "github",
+      owner: "butterngo",
+      repo: "choda-deck-companion",
+      private: true,
+      token: "ghp_abc",
+    });
     expect(au.autoDownload).toBe(true);
     expect(au.autoInstallOnAppQuit).toBe(true);
     expect(au.checkForUpdates).toHaveBeenCalledTimes(1);

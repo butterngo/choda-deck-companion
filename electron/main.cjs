@@ -232,9 +232,9 @@ if (!app.requestSingleInstanceLock()) {
       adapterChild?.kill();
     });
 
-    // Auto-update (private GitHub Releases). Packaged builds only — dev runs
-    // have no app-update.yml and would just error immediately. Silent no-op
-    // without a token (see updater.cjs) or in dev.
+    // Auto-update (GitHub Releases: public feed, or private with a token — see
+    // updater.cjs). Packaged builds only — dev runs have no app-update.yml and
+    // would just error immediately.
     if (app.isPackaged) {
       const { autoUpdater } = require("electron-updater");
       updater = initUpdater({
