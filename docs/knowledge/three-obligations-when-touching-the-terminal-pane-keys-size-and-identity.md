@@ -6,9 +6,9 @@ workspaceId: choda-deck-companion
 scope: project
 refs:
   - path: packages/web/src/components/WorkspaceTerminal.tsx
-    commitSha: 3c6b0daa2c6f8452322806c9afabc7212190c91d
+    commitSha: fd8ce2f3ca8a1586bde9df2598beb8038e780667
 createdAt: 2026-09-07
-lastVerifiedAt: 2026-09-21
+lastVerifiedAt: 2026-09-28
 affectedFeatureId: feature-companion-ui
 ---
 

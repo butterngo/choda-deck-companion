@@ -6,9 +6,9 @@ workspaceId: choda-deck-companion
 scope: project
 refs:
   - path: electron/adapter-launcher.cjs
-    commitSha: 4ce2b89fdb5ebf1dc70daa44d05224651a7735c5
+    commitSha: fd8ce2f3ca8a1586bde9df2598beb8038e780667
 createdAt: 2026-08-24
-lastVerifiedAt: 2026-08-24
+lastVerifiedAt: 2026-09-28
 ---
 
 ## Trigger
