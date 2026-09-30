@@ -10,11 +10,18 @@
 import { useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import type { HealthView } from "../hooks/use-health";
-import { useProjects } from "../hooks/use-projects";
+import { groupProjectsByOrg, useProjects } from "../hooks/use-projects";
+import type { Project } from "../api";
 import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { Skeleton } from "../components/state/Skeleton";
 import { ProjectVaultBlock } from "./ProjectVaultBlock";
+
+// A group's key for state and test ids. "none" cannot collide with an org id
+// in practice, and it keeps the null group addressable.
+function groupKey(org: string | null): string {
+  return org ?? "none";
+}
 
 export function ProjectsView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
@@ -22,6 +29,47 @@ export function ProjectsView(): React.JSX.Element {
   const list = useProjects();
 
   const selected = list.projects.find((p) => p.id === selectedId) ?? null;
+
+  // TASK-2200 — projects grouped under their organisation. Every group starts
+  // open; collapsing one only hides its rows, so a selection inside it survives.
+  const groups = groupProjectsByOrg(list.projects);
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  function toggleGroup(key: string): void {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function projectRow(p: Project): React.JSX.Element {
+    const active = p.id === selectedId;
+    return (
+      <li key={p.id}>
+        <button
+          type="button"
+          onClick={() => setSelectedId(p.id)}
+          data-testid={`project-row-${p.id}`}
+          aria-current={active ? "true" : undefined}
+          className={[
+            "w-full text-left rounded-md px-3 py-2",
+            active
+              ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
+              : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50",
+          ].join(" ")}
+        >
+          <div className="flex items-baseline gap-2">
+            <span className="text-sm font-medium">{p.name}</span>
+            <span className="ml-auto text-[11.5px] tabular-nums text-zinc-400">
+              {list.liveCountOf(p.id)}
+            </span>
+          </div>
+          <p className="mt-0.5 text-[11.5px] text-zinc-500 font-mono truncate">{p.cwd}</p>
+        </button>
+      </li>
+    );
+  }
 
   function workspacePane(): React.JSX.Element {
     if (selected === null) {
@@ -104,35 +152,43 @@ export function ProjectsView(): React.JSX.Element {
 
     return (
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,340px)_1fr] gap-6 flex-1 min-h-0 lg:grid-rows-[minmax(0,1fr)]">
-        <ul data-testid="project-list" className="min-h-0 overflow-y-auto space-y-1">
-          {list.projects.map((p) => {
-            const active = p.id === selectedId;
-            return (
-              <li key={p.id}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedId(p.id)}
-                  data-testid={`project-row-${p.id}`}
-                  aria-current={active ? "true" : undefined}
-                  className={[
-                    "w-full text-left rounded-md px-3 py-2",
-                    active
-                      ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
-                      : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50",
-                  ].join(" ")}
-                >
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-sm font-medium">{p.name}</span>
-                    <span className="ml-auto text-[11.5px] tabular-nums text-zinc-400">
-                      {list.liveCountOf(p.id)}
+        {groups.length === 0 ? (
+          <ul data-testid="project-list" className="min-h-0 overflow-y-auto space-y-1">
+            {list.projects.map(projectRow)}
+          </ul>
+        ) : (
+          <ul data-testid="project-list" className="min-h-0 overflow-y-auto space-y-3">
+            {groups.map((g) => {
+              const key = groupKey(g.org);
+              const open = !collapsed.has(key);
+              return (
+                <li key={key} data-testid={`project-group-${key}`}>
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    onClick={() => toggleGroup(key)}
+                    data-testid={`project-group-toggle-${key}`}
+                    className="w-full flex items-baseline gap-2 px-3 py-1 text-left"
+                  >
+                    <i
+                      className={`ti ti-chevron-down text-zinc-400 transition-transform ${open ? "" : "-rotate-90"}`}
+                      aria-hidden="true"
+                    />
+                    <span className="text-[11px] uppercase tracking-wide text-zinc-500">
+                      {g.org ?? "No organisation"}
                     </span>
-                  </div>
-                  <p className="mt-0.5 text-[11.5px] text-zinc-500 font-mono truncate">{p.cwd}</p>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+                    <span className="ml-auto text-[11.5px] tabular-nums text-zinc-400">
+                      {g.projects.length}
+                    </span>
+                  </button>
+                  <ul hidden={!open} className="mt-1 space-y-1">
+                    {g.projects.map(projectRow)}
+                  </ul>
+                </li>
+              );
+            })}
+          </ul>
+        )}
 
         <div data-testid="project-detail-pane" className="min-w-0 min-h-0 overflow-y-auto">
           {selected !== null && (

@@ -35,6 +35,36 @@ export function liveWorkspaceCount(all: Workspace[], projectId: string): number 
   return workspacesForProject(all, projectId).filter((w) => w.archivedAt === null).length;
 }
 
+// TASK-2200 — projects grouped by organisation. Named orgs come first in
+// alphabetical order and projects keep the API's order inside each group;
+// projects with no org form one trailing group (org: null). When no project has
+// an org at all (an adapter older than the column) there is nothing to group
+// by, and the result is empty so the view renders its plain list.
+export interface ProjectGroup {
+  org: string | null;
+  projects: Project[];
+}
+
+export function groupProjectsByOrg(projects: Project[]): ProjectGroup[] {
+  if (!projects.some((p) => p.org)) return [];
+  const byOrg = new Map<string, Project[]>();
+  const none: Project[] = [];
+  for (const p of projects) {
+    if (!p.org) {
+      none.push(p);
+      continue;
+    }
+    const group = byOrg.get(p.org);
+    if (group) group.push(p);
+    else byOrg.set(p.org, [p]);
+  }
+  const groups: ProjectGroup[] = [...byOrg.keys()]
+    .sort((a, b) => a.localeCompare(b))
+    .map((org) => ({ org, projects: byOrg.get(org) ?? [] }));
+  if (none.length > 0) groups.push({ org: null, projects: none });
+  return groups;
+}
+
 export function useProjects(): ProjectsView {
   const q = useQuery({
     queryKey: ["projects"],

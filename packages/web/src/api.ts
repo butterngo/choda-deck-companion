@@ -467,6 +467,9 @@ export interface Project {
   id: string;
   name: string;
   cwd: string;
+  // TASK-2200 — the organisation the project belongs to. Optional because an
+  // adapter older than the org column omits the field entirely.
+  org?: string | null;
 }
 
 export function fetchProjects(signal?: AbortSignal): Promise<{ projects: Project[] }> {
