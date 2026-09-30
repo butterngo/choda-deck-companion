@@ -7,8 +7,8 @@
 // were completely uncovered while looking thoroughly tested.
 
 import { describe, it, expect } from "vitest";
-import { workspacesForProject, liveWorkspaceCount } from "../use-projects";
-import type { Workspace } from "../../api";
+import { workspacesForProject, liveWorkspaceCount, groupProjectsByOrg } from "../use-projects";
+import type { Project, Workspace } from "../../api";
 
 const ws = (id: string, projectId: string, archivedAt: string | null = null): Workspace => ({
   id,
@@ -69,5 +69,28 @@ describe("liveWorkspaceCount", () => {
   it("is 0 when every workspace is archived — not the total", () => {
     const allArchived = [ws("a", "p", "2026-01-01"), ws("b", "p", "2026-01-02")];
     expect(liveWorkspaceCount(allArchived, "p")).toBe(0);
+  });
+});
+
+// TASK-2200 — the org grouping rule, tested directly for the same reason as above.
+describe("groupProjectsByOrg", () => {
+  const p = (id: string, org?: string | null): Project => ({ id, name: id, cwd: `C:\\${id}`, org });
+
+  it("groups by org, alphabetical, with org-less projects in one trailing group", () => {
+    const groups = groupProjectsByOrg([p("cd", "personal"), p("hc", "ichiba"), p("x", null), p("pim", "ichiba")]);
+    expect(groups.map((g) => [g.org, g.projects.map((q) => q.id)])).toEqual([
+      ["ichiba", ["hc", "pim"]],
+      ["personal", ["cd"]],
+      [null, ["x"]],
+    ]);
+  });
+
+  it("treats a missing org field (older adapter) like null", () => {
+    const groups = groupProjectsByOrg([p("a", "ichiba"), p("b")]);
+    expect(groups.at(-1)).toEqual({ org: null, projects: [p("b")] });
+  });
+
+  it("returns no groups when no project has an org, so the view stays a plain list", () => {
+    expect(groupProjectsByOrg([p("a"), p("b", null)])).toEqual([]);
   });
 });
