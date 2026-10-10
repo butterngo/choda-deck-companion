@@ -17,6 +17,7 @@
     "dist": "pnpm run build && pnpm run vendor:adapter && electron-builder --win && pnpm run verify:signature && pnpm run verify:manifest",
     "dist:publish": "pnpm run preflight:publish && pnpm run release:prepare && pnpm run build && pnpm run vendor:adapter && electron-builder --win --publish always && pnpm run verify:signature && pnpm run verify:manifest && pnpm run release:promote",
     "test": "pnpm -r --filter=./packages/* run test && vitest run -c electron/vitest.config.cjs",
+    "e2e": "pnpm --filter web e2e",
     "typecheck": "pnpm -r --filter=./packages/* run typecheck",
     "lint": "eslint .",
     "verify:signature": "node scripts/verify-signature.mjs",

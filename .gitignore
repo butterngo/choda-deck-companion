@@ -32,3 +32,7 @@ graphify-out/cost.json
 graphify-out/manifest.json
 .graphify_*
 launch-with-sync.cmd
+
+# TASK-2355 — Playwright output
+packages/web/e2e-results/
+packages/web/test-results/
