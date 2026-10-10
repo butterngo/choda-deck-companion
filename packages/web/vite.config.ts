@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { configDefaults } from "vitest/config";
 
 // TASK-1159 — the companion talks to exactly ONE API: the laptop REST adapter
 // (TASK-1158), default 127.0.0.1:7338. In dev we proxy `/api` to it so the
@@ -60,5 +61,7 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/setup-tests.ts"],
+    // TASK-2355 — Playwright specs live in e2e/ and run under `pnpm e2e`, never here.
+    exclude: [...configDefaults.exclude, "e2e/**"],
   },
 });
