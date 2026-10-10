@@ -29,6 +29,7 @@ import { WorkspaceSetupView } from "./WorkspaceSetupView";
 import { WorkspaceDockerView } from "./WorkspaceDockerView";
 import { WorkspaceTerminal } from "../components/WorkspaceTerminal";
 import { WorkspaceDocsView } from "./WorkspaceDocsView";
+import { ImproveModeDot, ImproveTab } from "./ImproveTab";
 import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { Skeleton } from "../components/state/Skeleton";
@@ -37,7 +38,7 @@ import { Skeleton } from "../components/state/Skeleton";
 // They were two lists before, and adding a tab to the strip while forgetting
 // the parse produced a tab you could click and could not link to. Deriving
 // the type from the array means the next tab cannot drift the same way.
-const TABS = ["files", "tasks", "history", "setup", "docker", "terminal"] as const;
+const TABS = ["files", "tasks", "history", "setup", "docker", "terminal", "improve"] as const;
 type Tab = (typeof TABS)[number];
 
 // One entry per tab, and the Record type makes that a compile error rather
@@ -50,7 +51,8 @@ const TAB_LABELS: Record<Tab, string> = {
   history: "History",
   setup: "Setup",
   docker: "Docker",
-  terminal: "Terminal"
+  terminal: "Terminal",
+  improve: "Improve"
 };
 
 const isTab = (v: string | null): v is Tab =>
@@ -328,6 +330,8 @@ export function WorkspaceView(): React.JSX.Element {
               ].join(" ")}
             >
               {TAB_LABELS[t]}
+              {/* TASK-2359 — the loop's mode at a glance, without opening the tab. */}
+              {t === "improve" && <ImproveModeDot workspaceId={workspace.id} />}
             </button>
           ))}
         </div>
@@ -365,6 +369,13 @@ export function WorkspaceView(): React.JSX.Element {
           // workspace already is rather than in a global sidebar.
           <div data-testid="workspace-terminal-pane" className="flex min-h-0 flex-1 flex-col">
             <WorkspaceTerminal cwd={workspace.cwd} label={workspace.label} />
+          </div>
+        )}
+        {tab === "improve" && (
+          // TASK-2359 — the improve loop (TASK-2352) is per workspace: its
+          // config lives in this workspace's .choda/improve.json.
+          <div data-testid="workspace-improve-pane" className="flex min-h-0 flex-1 flex-col">
+            <ImproveTab workspaceId={workspace.id} />
           </div>
         )}
         {tab === "history" && (

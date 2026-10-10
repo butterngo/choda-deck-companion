@@ -2,12 +2,9 @@
 // trend each, over GET /activity/digests (TASK-2152). The digests are written by
 // `choda-deck activity digest` (TASK-2151); this view never computes a metric.
 //
-// Charts follow the dataviz method: one series per chart, one axis, one hue,
-// 2px line, 8px markers with a surface ring, a hover readout per point, and the
-// per-day table below as the table view. Single series, so the title names it
-// and there is no legend.
+// Charts are the shared Trend (components/Trend.tsx); the per-day table below
+// is the table view.
 
-import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import type { ActivityDigest } from "../api";
 import type { HealthView } from "../hooks/use-health";
@@ -15,6 +12,7 @@ import { useActivity } from "../hooks/use-activity";
 import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { Skeleton } from "../components/state/Skeleton";
+import { Trend } from "../components/Trend";
 
 interface Metric {
   key: string;
@@ -54,80 +52,6 @@ const METRICS: Metric[] = [
     format: (v) => `${v.toFixed(1)}/h`,
   },
 ];
-
-const W = 320;
-const H = 96;
-const PAD_X = 10;
-const PAD_TOP = 10;
-const PAD_BOTTOM = 8;
-
-function Trend({ metric, digests }: { metric: Metric; digests: ActivityDigest[] }): React.JSX.Element {
-  const [hover, setHover] = useState<number | null>(null);
-  const values = digests.map(metric.value);
-  const max = Math.max(...values, 0) || 1;
-  const x = (i: number): number =>
-    digests.length === 1 ? W / 2 : PAD_X + (i * (W - 2 * PAD_X)) / (digests.length - 1);
-  const y = (v: number): number => PAD_TOP + (1 - v / max) * (H - PAD_TOP - PAD_BOTTOM);
-  const latest = digests[digests.length - 1];
-  const shown = hover ?? digests.length - 1;
-  const shownDigest = digests[shown];
-
-  return (
-    <figure
-      data-testid={`trend-${metric.key}`}
-      className="rounded-md border border-zinc-200 dark:border-zinc-800 px-3.5 py-3"
-    >
-      <figcaption className="flex items-baseline gap-2">
-        <span className="text-sm font-medium">{metric.title}</span>
-        {latest !== undefined && (
-          <span className="ml-auto text-sm tabular-nums text-zinc-900 dark:text-zinc-100">
-            {metric.format(metric.value(latest), latest)}
-          </span>
-        )}
-      </figcaption>
-      <p className="mt-0.5 text-[11.5px] text-zinc-500">{metric.hint}</p>
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        className="mt-2 w-full h-24 overflow-visible"
-        role="img"
-        aria-label={`${metric.title} per day`}
-        onMouseLeave={() => setHover(null)}
-      >
-        <line x1={PAD_X} x2={W - PAD_X} y1={y(0)} y2={y(0)} className="stroke-zinc-200 dark:stroke-zinc-800" strokeWidth={1} />
-        {hover !== null && (
-          <line x1={x(hover)} x2={x(hover)} y1={PAD_TOP} y2={y(0)} className="stroke-zinc-300 dark:stroke-zinc-700" strokeWidth={1} />
-        )}
-        {digests.length > 1 && (
-          <polyline
-            points={values.map((v, i) => `${x(i)},${y(v)}`).join(" ")}
-            fill="none"
-            strokeWidth={2}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-            className="stroke-blue-600 dark:stroke-blue-400"
-          />
-        )}
-        {values.map((v, i) => (
-          <g key={digests[i]?.date ?? i} data-testid="trend-point" onMouseEnter={() => setHover(i)}>
-            <circle cx={x(i)} cy={y(v)} r={4} strokeWidth={2} className="fill-blue-600 dark:fill-blue-400 stroke-white dark:stroke-zinc-950" />
-            <circle cx={x(i)} cy={y(v)} r={12} fill="transparent">
-              <title>{`${digests[i]?.date}: ${digests[i] ? metric.format(v, digests[i]) : v}`}</title>
-            </circle>
-          </g>
-        ))}
-      </svg>
-      <div className="mt-1 flex text-[11px] tabular-nums text-zinc-400">
-        <span>{digests[0]?.date}</span>
-        {shownDigest !== undefined && hover !== null && (
-          <span className="mx-auto text-zinc-600 dark:text-zinc-300">
-            {shownDigest.date} · {metric.format(metric.value(shownDigest), shownDigest)}
-          </span>
-        )}
-        {digests.length > 1 && <span className="ml-auto">{latest?.date}</span>}
-      </div>
-    </figure>
-  );
-}
 
 function DayTable({ digests }: { digests: ActivityDigest[] }): React.JSX.Element {
   const th = "px-2.5 py-1.5 text-left font-medium text-zinc-500";
@@ -184,7 +108,13 @@ export function ActivityView(): React.JSX.Element {
       <div className="flex-1 min-h-0 overflow-y-auto space-y-5">
         <div data-testid="activity-trends" className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {METRICS.map((m) => (
-            <Trend key={m.key} metric={m} digests={ordered} />
+            <Trend
+              key={m.key}
+              testId={`trend-${m.key}`}
+              title={m.title}
+              hint={m.hint}
+              points={ordered.map((d) => ({ date: d.date, value: m.value(d), label: m.format(m.value(d), d) }))}
+            />
           ))}
         </div>
         <div>
