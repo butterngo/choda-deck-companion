@@ -148,6 +148,14 @@ vi.mock("../../components/WorkspaceTerminal", () => ({
     <div data-testid="terminal-view-stub">{cwd}</div>
   ),
 }));
+// TASK-2359 — the Improve tab owns a react-query hook (and so does the mode dot
+// in its label). Its own file drives the real behaviour.
+vi.mock("../ImproveTab", () => ({
+  ImproveTab: ({ workspaceId }: { workspaceId?: string }) => (
+    <div data-testid="improve-view-stub">{workspaceId}</div>
+  ),
+  ImproveModeDot: () => null,
+}));
 vi.mock("../WorkspaceDocsView", () => ({
   WorkspaceDocsView: ({ workspaceId }: { workspaceId?: string }) => (
     <div data-testid="docs-view-stub">{workspaceId}</div>
@@ -418,6 +426,14 @@ describe("WorkspaceView (TASK-1766)", () => {
     expect(screen.getByTestId("workspace-history-pane")).toBeTruthy();
   });
 
+  it("TASK-2359: ?tab=improve lands directly on the Improve tab, for this workspace", () => {
+    mount("choda-deck-companion", "?tab=improve");
+    expect(screen.getByTestId("workspace-improve-pane")).toBeTruthy();
+    expect(screen.getByTestId("improve-view-stub").textContent).toBe("choda-deck-companion");
+    expect(screen.getByTestId("workspace-tab-improve").getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByTestId("workspace-docs-pane")).toBeNull();
+  });
+
   it("CONTROL — falls back to Files with no ?tab=, and with a nonsense one", () => {
     // Without this, a build that always opened Tasks would pass both tests
     // above; and an unknown value must not leave the view with no pane at all.
@@ -648,6 +664,7 @@ describe("TASK-1830 — the Setup tab joins the strip without joining the sideba
       "Setup",
       "Docker",
       "Terminal",
+      "Improve",
     ]);
   });
 

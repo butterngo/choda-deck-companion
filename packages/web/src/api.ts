@@ -2069,3 +2069,156 @@ export interface ActivityDigest {
 export function fetchActivityDigests(signal?: AbortSignal): Promise<ActivityDigest[]> {
   return getJson<ActivityDigest[]>("/activity/digests", signal);
 }
+
+// TASK-2359 — the improve loop (TASK-2352), served by the adapter's /improve/:ws
+// routes (choda-deck TASK-2357). Mirrors of src/core/domain/improve/* there:
+// the config (improve-config.ts) and the scorecard `choda-deck improve measure`
+// writes (measure-engine.ts).
+export type ImproveMode = "off" | "manual" | "scheduled";
+export type CriterionBy = "auto" | "agent" | "you";
+
+export interface ImproveCriterion {
+  name: string;
+  by: CriterionBy;
+  measure: string;
+  target: string | number;
+  /** Ticked "good enough" — the loop stops proposing for it. */
+  good?: boolean;
+}
+
+export interface ImproveConfig {
+  mode: ImproveMode;
+  url: string;
+  startCmd?: string;
+  testCmd?: string;
+  pages: string[];
+  flows: { name: string; steps: string; spec?: string }[];
+  criteria: ImproveCriterion[];
+  model: string;
+  maxProposals: number;
+  stopAfterFlat: number;
+}
+
+export interface ImproveConfigIssue {
+  field: string;
+  message: string;
+}
+
+export interface ImproveCriterionScore {
+  name: string;
+  by: CriterionBy;
+  measure: string;
+  target: string | number;
+  /** null until measured — an `agent` criterion before the evaluator ran, or `you`. */
+  value: number | boolean | null;
+  /** The evaluator's evidence for an `agent` score, or why a value is missing. */
+  note?: string;
+}
+
+export interface ImproveScorecard {
+  ws: string;
+  date: string;
+  generatedAt: string;
+  commit: string | null;
+  tests: { total: number; passed: number; failed: number; passRate: number | null } | null;
+  pages: {
+    path: string;
+    /** Relative to the workspace's improve dir: `<date>/<slug>.png`. */
+    screenshot: string;
+    lcpMs: number | null;
+    consoleErrors: number;
+    uiChanged: boolean;
+    diffRatio: number | null;
+  }[];
+  flows: { name: string; pass: boolean; durationMs: number | null; steps: number | null }[];
+  criteria: ImproveCriterionScore[];
+}
+
+export interface ImproveRun {
+  runId: string;
+  ws: string;
+  startedAt: string;
+  endedAt: string | null;
+  exitCode: number | null;
+}
+
+export interface ImproveProposal {
+  id: string;
+  content: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface RejectedIdea {
+  inboxId: string;
+  reason: string;
+  at: string;
+  content: string;
+}
+
+export interface ImproveOverview {
+  /** null: the workspace has no `.choda/improve.json` (or it failed to parse — see configError). */
+  config: ImproveConfig | null;
+  configError: ImproveConfigIssue[] | null;
+  /** Up to 14 days, oldest first. */
+  scorecards: ImproveScorecard[];
+  /** Newest first. */
+  runs: ImproveRun[];
+  rejected: RejectedIdea[];
+  proposals: ImproveProposal[];
+}
+
+/** A 400 from PUT config names the offending field, so the form can put the message next to it. */
+export class ImproveConfigSaveError extends Error {
+  constructor(
+    message: string,
+    readonly field: string,
+    readonly errors: ImproveConfigIssue[],
+  ) {
+    super(message);
+    this.name = "ImproveConfigSaveError";
+  }
+}
+
+const improvePath = (ws: string): string => `/improve/${encodeURIComponent(ws)}`;
+
+export function fetchImprove(ws: string, signal?: AbortSignal): Promise<ImproveOverview> {
+  return getJson<ImproveOverview>(improvePath(ws), signal);
+}
+
+export async function saveImproveConfig(ws: string, config: ImproveConfig): Promise<ImproveConfig> {
+  const res = await fetch(`${API_BASE}${improvePath(ws)}/config`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(config),
+  });
+  const json = (await res.json().catch(() => null)) as
+    | { config?: ImproveConfig; error?: string; field?: string; errors?: ImproveConfigIssue[] }
+    | null;
+  if (res.status === 400) {
+    throw new ImproveConfigSaveError(json?.error ?? "invalid config", json?.field ?? "", json?.errors ?? []);
+  }
+  if (!res.ok || !json?.config) throw new Error(json?.error ?? `HTTP ${res.status} saving improve config`);
+  return json.config;
+}
+
+export function startImproveRun(ws: string): Promise<{ runId: string }> {
+  return postJson<{ runId: string }>(`${improvePath(ws)}/run`);
+}
+
+export function fetchImproveRun(ws: string, runId: string, signal?: AbortSignal): Promise<ImproveRun & { log: string }> {
+  return getJson<ImproveRun & { log: string }>(`${improvePath(ws)}/runs/${encodeURIComponent(runId)}`, signal);
+}
+
+export function approveImproveProposal(ws: string, inboxId: string): Promise<{ inboxId: string; taskId: string }> {
+  return postJson(`${improvePath(ws)}/proposals/${encodeURIComponent(inboxId)}/approve`);
+}
+
+export function rejectImproveProposal(ws: string, inboxId: string, reason: string): Promise<{ inboxId: string }> {
+  return postJson(`${improvePath(ws)}/proposals/${encodeURIComponent(inboxId)}/reject`, { reason });
+}
+
+/** Same-origin, so the packaged app's proxy adds the bridge token an <img> cannot send. */
+export function improveScreenshotUrl(ws: string, screenshot: string): string {
+  return `${API_BASE}${improvePath(ws)}/screenshots/${screenshot.split("/").map(encodeURIComponent).join("/")}`;
+}
