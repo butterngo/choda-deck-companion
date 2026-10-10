@@ -25,6 +25,7 @@ import { Trend } from "../components/Trend";
 import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { Skeleton } from "../components/state/Skeleton";
+import { ImproveSettings } from "./ImproveSettings";
 
 const MODES: { mode: ImproveMode; label: string }[] = [
   { mode: "off", label: "Off" },
@@ -467,17 +468,7 @@ export function ImproveTab({ workspaceId }: { workspaceId: string }): React.JSX.
   if (isLoading || overview === null) return <Skeleton shape="list" label="Loading improve loop…" />;
 
   if (settings) {
-    // TASK-2360 renders the settings form here.
-    return (
-      <div data-testid="improve-settings" className="space-y-2">
-        <button type="button" className={btn} onClick={() => setSettings(false)}>
-          <i className="ti ti-arrow-left" aria-hidden="true" /> Improve
-        </button>
-        <p className="text-[12.5px] text-zinc-500">
-          Màn cài đặt chưa có — sửa <code>.choda/improve.json</code> trong workspace.
-        </p>
-      </div>
-    );
+    return <ImproveSettings workspaceId={workspaceId} config={overview.config} onClose={() => setSettings(false)} />;
   }
 
   const config = overview.config;
