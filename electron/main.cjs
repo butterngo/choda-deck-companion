@@ -12,6 +12,8 @@ const { initUpdater } = require("./updater.cjs");
 const { createDisplayMediaHandler } = require("./display-media.cjs");
 const { createOpenFolderHandler } = require("./open-folder.cjs");
 const { createOpenHtmlHandler, workspaceCwdResolver } = require("./open-html.cjs");
+const { createAttentionReminder, fileStore } = require("./attention-reminder.cjs");
+const fs = require("node:fs");
 
 // PNG works for the window + tray; packaged builds also bake the .ico into the
 // exe via electron-builder. Same asset english-companion uses for its tray.
@@ -222,6 +224,33 @@ if (!app.requestSingleInstanceLock()) {
 
       win.loadURL(`http://127.0.0.1:${uiPort}/`);
       createTray();
+
+      // TASK-2382 — once a day, tell Butter on the desktop when automated
+      // sources left items for him (the decide screen only helps once the app
+      // is open). Checked at start and every 5 minutes; the module enforces
+      // "not before 09:05, at most once a day, never for 0 or an unreachable
+      // adapter". The bridge token stays in this process.
+      const reminder = createAttentionReminder({
+        fetchPending: async () => {
+          const res = await fetch(`http://127.0.0.1:${apiPort}/inbox/pending`, {
+            headers: bridgeToken ? { "x-choda-bridge-token": bridgeToken } : {},
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return (await res.json()).items;
+        },
+        notify: ({ title, body, onClick }) => {
+          const n = new Notification({ title, body, icon: appIcon });
+          n.on("click", onClick);
+          n.show();
+        },
+        openDecide: () => {
+          showWindow();
+          win.webContents.executeJavaScript('location.hash = "#/decide"').catch(() => {});
+        },
+        store: fileStore(fs, path.join(app.getPath("userData"), "attention-reminder.json")),
+      });
+      reminder.tick({ startup: true }).catch(() => {});
+      setInterval(() => reminder.tick().catch(() => {}), 5 * 60 * 1000).unref();
     });
 
     app.on("before-quit", () => {
