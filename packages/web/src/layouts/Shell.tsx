@@ -20,12 +20,14 @@ import { useHealth } from "../hooks/use-health";
 import { useSidebar } from "../hooks/use-sidebar";
 import { StatusBar } from "../components/StatusBar";
 import { SidebarNav } from "../components/nav/SidebarNav";
+import { usePending } from "../hooks/use-pending";
 import { RecorderProvider } from "../hooks/use-recorder";
 import { RecordingIndicator } from "../components/RecordingIndicator";
 
 export function Shell(): React.JSX.Element {
   const view = useHealth();
   const sidebar = useSidebar();
+  const pending = usePending();
 
   // TASK-1966 — the recorder wraps the whole frame, not a view. A MediaRecorder
   // owned by a view dies when that view unmounts, which is every navigation.
@@ -75,7 +77,7 @@ export function Shell(): React.JSX.Element {
           </button>
         </div>
 
-        <SidebarNav />
+        <SidebarNav counts={{ decide: pending.items.length }} />
 
         {/* Health is ambient status, so it lives at the foot of the chrome
             rather than as a full-width strip across the app. A banner over the
