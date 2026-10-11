@@ -10,9 +10,10 @@
 
 import { useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
-import type { PendingItem } from "../api";
+import type { AttentionSession, PendingItem } from "../api";
 import type { HealthView } from "../hooks/use-health";
 import { usePending, usePendingActions } from "../hooks/use-pending";
+import { useAttention } from "../hooks/use-attention";
 import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { Skeleton } from "../components/state/Skeleton";
@@ -145,9 +146,50 @@ function Block({
   );
 }
 
+function age(since: string, now: number): string {
+  const min = Math.max(0, Math.round((now - Date.parse(since)) / 60_000));
+  return min < 60 ? `${min} phút` : `${Math.floor(min / 60)} giờ ${min % 60} phút`;
+}
+
+/**
+ * TASK-2384 — Claude sessions waiting on Butter (INBOX-2108), right under the
+ * digest block: it is the other thing that is waiting on HIM, not on a tool.
+ */
+function Sessions({ sessions }: { sessions: AttentionSession[] }): React.JSX.Element | null {
+  if (sessions.length === 0) return null;
+  const now = Date.now();
+  return (
+    <section data-testid="decide-block-sessions">
+      <h2 className="mb-0.5 text-sm font-medium">
+        Đang chờ anh <span className="ml-1 text-zinc-400 tabular-nums">{sessions.length}</span>
+      </h2>
+      <p className="mb-2 text-[11.5px] text-zinc-500">Session Claude Code đã xong lượt hoặc đang chờ anh cấp quyền / trả lời.</p>
+      <ul className="space-y-1.5">
+        {sessions.map((s) => (
+          <li
+            key={s.sessionId}
+            data-testid={`decide-session-${s.sessionId}`}
+            className="flex items-baseline gap-2 rounded-md border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-[12.5px]"
+          >
+            <i
+              className={`ti ${s.state === "waiting" ? "ti-hand-stop text-amber-600" : "ti-circle-check text-emerald-600"}`}
+              aria-hidden="true"
+            />
+            <span className="font-medium">{s.workspaceId ?? (s.cwd.split(/[\\/]/).pop() || s.cwd)}</span>
+            <span className="text-zinc-500">
+              {s.state === "waiting" ? "chờ quyền / câu trả lời" : "đã xong lượt"} {age(s.since, now)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function DecideView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
   const { items, isLoading, isError } = usePending();
+  const { sessions } = useAttention();
 
   function body(): React.JSX.Element {
     if (health.conn === "disconnected") {
@@ -160,7 +202,7 @@ export function DecideView(): React.JSX.Element {
     }
     if (isError) return <ErrorState variant="failed" subject="the pending items" />;
     if (isLoading) return <Skeleton shape="list" label="Đang tải…" />;
-    if (items.length === 0) {
+    if (items.length === 0 && sessions.length === 0) {
       return (
         <EmptyState
           icon="ti-circle-check"
@@ -181,6 +223,7 @@ export function DecideView(): React.JSX.Element {
           items={digest}
           emphasis
         />
+        <Sessions sessions={sessions} />
         <Block
           id="decide-block-improve"
           title="Đề xuất cải tiến"

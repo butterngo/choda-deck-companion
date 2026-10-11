@@ -25,7 +25,7 @@ const { routes } = await import("../router");
 function serve(items: unknown[], status = 200): void {
   vi.stubGlobal("fetch", async (input: RequestInfo) => {
     const url = String(input);
-    const body = url.includes("/inbox/pending") ? { items } : [];
+    const body = url.includes("/inbox/pending") ? { items } : url.endsWith("/attention") ? { sessions: [] } : [];
     return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   });
 }

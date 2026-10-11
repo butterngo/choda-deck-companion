@@ -2249,3 +2249,18 @@ export function convertPending(id: string): Promise<{ inboxId: string; taskId: s
 export function archivePending(id: string, reason: string): Promise<{ inboxId: string }> {
   return postJson(`/inbox/${encodeURIComponent(id)}/archive`, { reason });
 }
+
+// TASK-2384 — Claude Code sessions waiting on Butter, from choda-deck's
+// GET /attention (written by the attention hook, TASK-2383).
+export interface AttentionSession {
+  sessionId: string;
+  cwd: string;
+  workspaceId: string | null;
+  /** finished = a turn ended and nobody has typed since; waiting = needs a permission or an answer. */
+  state: "finished" | "waiting";
+  since: string;
+}
+
+export async function fetchAttention(signal?: AbortSignal): Promise<AttentionSession[]> {
+  return (await getJson<{ sessions: AttentionSession[] }>("/attention", signal)).sessions;
+}
