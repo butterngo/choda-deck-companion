@@ -12,6 +12,8 @@ import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 
 export interface NavCounts {
+  /** TASK-2381 — automated inbox items waiting on Butter. */
+  decide?: number;
   projects?: number;
   conversations?: number;
   knowledge?: number;
@@ -92,6 +94,24 @@ export function SidebarNav({ counts = {} }: { counts?: NavCounts }): React.JSX.E
     <nav id="sidebar-nav"
       className="flex-1 min-h-0 overflow-y-auto px-1.5 rail:px-2.5 rail:group-data-[collapsed=true]/shell:px-1.5 pb-2.5"
       aria-label="Sections">
+      {/* TASK-2381 — first entry of the whole sidebar, above Work. What an
+          automated source filed must be the most visible thing in the app;
+          the badge is loud (not the grey Count) and absent at zero. */}
+      <div className="mb-3.5 rail:group-data-[collapsed=true]/shell:mb-0 rail:group-data-[collapsed=true]/shell:mt-1.5">
+        <NavLink to="/decide" className={itemClass} data-testid="nav-decide">
+          <i className="ti ti-bell text-zinc-400" aria-hidden="true" title="Cần anh quyết" />
+          <span className="sr-only rail:not-sr-only rail:group-data-[collapsed=true]/shell:sr-only">Cần anh quyết</span>
+          {counts.decide !== undefined && counts.decide > 0 && (
+            <span
+              data-testid="nav-decide-badge"
+              className="ml-auto rounded-full bg-red-600 px-1.5 text-[11px] font-medium tabular-nums text-white rail:group-data-[collapsed=true]/shell:absolute rail:group-data-[collapsed=true]/shell:right-0.5 rail:group-data-[collapsed=true]/shell:top-0"
+            >
+              {counts.decide}
+            </span>
+          )}
+        </NavLink>
+      </div>
+
       <div className="mb-3.5 rail:group-data-[collapsed=true]/shell:mb-0 rail:group-data-[collapsed=true]/shell:pb-1.5 rail:group-data-[collapsed=true]/shell:mt-1.5 rail:group-data-[collapsed=true]/shell:border-b rail:group-data-[collapsed=true]/shell:border-zinc-200 dark:rail:group-data-[collapsed=true]/shell:border-zinc-800">
         <GroupLabel>Work</GroupLabel>
         {/* TASK-1765 — the only entry point to a workspace and therefore to its

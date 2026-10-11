@@ -15,6 +15,8 @@ import { WorkspaceDocsView } from "./views/WorkspaceDocsView";
 import { ProjectsView } from "./views/ProjectsView";
 import { WorkspaceView } from "./views/WorkspaceView";
 import { ActivityView } from "./views/ActivityView";
+import { DecideView } from "./views/DecideView";
+import { LandingRedirect } from "./views/LandingRedirect";
 
 // Exported so a test can mount the REAL route table in a memory router — the
 // only way to prove a path is not swallowed by the catch-all below.
@@ -23,7 +25,10 @@ export const routes: RouteObject[] = [
     path: "/",
     element: <Shell />,
     children: [
-      { index: true, element: <Navigate to="/sync" replace /> },
+      // TASK-2381 — open on the decide screen when something is waiting on
+      // Butter, on Sync otherwise.
+      { index: true, element: <LandingRedirect /> },
+      { path: "decide", element: <DecideView /> },
       { path: "sync", element: <SyncView /> },
       // TASK-1765 — the top of the browse hierarchy: projects → workspaces →
       // docs and tasks. Before this, nothing enumerated projects at all.

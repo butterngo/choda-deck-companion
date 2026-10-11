@@ -2222,3 +2222,30 @@ export function rejectImproveProposal(ws: string, inboxId: string, reason: strin
 export function improveScreenshotUrl(ws: string, screenshot: string): string {
   return `${API_BASE}${improvePath(ws)}/screenshots/${screenshot.split("/").map(encodeURIComponent).join("/")}`;
 }
+
+// TASK-2381 — what automated sources filed and nobody has decided on yet,
+// served by choda-deck's GET /inbox/pending (TASK-2380): only items tagged
+// [activity-digest], [improve:<ws>] or [improve-note:<ws>], digest first.
+export type PendingSource = "activity-digest" | "improve" | "improve-note";
+
+export interface PendingItem {
+  id: string;
+  source: PendingSource;
+  workspaceId: string | null;
+  /** First line of the item, its tag removed. */
+  title: string;
+  content: string;
+  createdAt: string;
+}
+
+export async function fetchPending(signal?: AbortSignal): Promise<PendingItem[]> {
+  return (await getJson<{ items: PendingItem[] }>("/inbox/pending", signal)).items;
+}
+
+export function convertPending(id: string): Promise<{ inboxId: string; taskId: string }> {
+  return postJson(`/inbox/${encodeURIComponent(id)}/convert`);
+}
+
+export function archivePending(id: string, reason: string): Promise<{ inboxId: string }> {
+  return postJson(`/inbox/${encodeURIComponent(id)}/archive`, { reason });
+}

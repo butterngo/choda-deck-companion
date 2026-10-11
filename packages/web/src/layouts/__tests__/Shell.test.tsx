@@ -157,10 +157,16 @@ describe("TASK-1830 — the sidebar does not grow", () => {
     // live in the Shell foot (Shell.tsx), which SidebarNav does not render. The
     // eight in TASK-1830 AC-1 counts both. Neither is touched by this feature,
     // and a seventh entry here reddens this test.
+    //
+    // TASK-2381 — the seventh entry is deliberate: Butter asked (2026-10-11)
+    // that what automated sources file be the most visible thing in the app,
+    // as the FIRST sidebar entry. That request supersedes "no more menu" for
+    // this one destination; any other addition still reddens this test.
     nav("/projects");
     const links = screen.getAllByRole("link");
     expect(links.map((l) => l.getAttribute("href")).sort()).toEqual([
       "/conversations",
+      "/decide",
       "/graph",
       "/knowledge",
       "/projects",
