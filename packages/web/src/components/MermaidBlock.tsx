@@ -16,6 +16,21 @@ import { useEffect, useRef, useState } from "react";
 /** Bumped per render so two diagrams on one page cannot share an element id. */
 let seq = 0;
 
+/** One import for every block on the page (TASK-2377). Each block used to call
+    `import("mermaid")` itself; under load in vitest a two-fence render had one
+    block drawn by the mocked module and the other by the REAL 84 MB package,
+    whose evaluation then stalled the event loop past the hook timeout. Sharing
+    the promise means a page asks once and every block gets the same module. */
+let mermaidModule: Promise<typeof import("mermaid")> | null = null;
+function loadMermaid(): Promise<typeof import("mermaid")> {
+  mermaidModule ??= import("mermaid").catch((e: unknown) => {
+    // A chunk that failed to load is not cached as failed — the next block retries.
+    mermaidModule = null;
+    throw e;
+  });
+  return mermaidModule;
+}
+
 export function MermaidBlock({
   code,
   edit,
@@ -33,7 +48,7 @@ export function MermaidBlock({
     let cancelled = false;
     void (async () => {
       try {
-        const mermaid = (await import("mermaid")).default;
+        const mermaid = (await loadMermaid()).default;
         mermaid.initialize({
           startOnLoad: false,
           // The docs pane follows the OS theme; `neutral` reads acceptably in

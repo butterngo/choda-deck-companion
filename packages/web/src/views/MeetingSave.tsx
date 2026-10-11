@@ -117,7 +117,7 @@ export function saveDestinations(opts: {
   // but a destination list that quietly showed "null/docs/meetings" on the way
   // there would be worse than showing one destination.
   if (opts.alsoRepo && opts.workspaceCwd) {
-    out.push({ kind: "repo", path: `${opts.workspaceCwd.replace(/[\/]+$/, "")}/docs/meetings/${folder}` });
+    out.push({ kind: "repo", path: `${opts.workspaceCwd.replace(/\/+$/, "")}/docs/meetings/${folder}` });
   }
   return out;
 }
