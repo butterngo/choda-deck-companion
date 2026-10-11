@@ -8,7 +8,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { HealthView } from "../../hooks/use-health";
-import type { PendingItem } from "../../api";
+import type { AttentionSession, PendingItem } from "../../api";
 
 let outletValue: HealthView = {
   health: { loopAlive: true, lastPullAgeSec: 5, jwtState: "refresh", reachable: true },
@@ -52,6 +52,7 @@ interface Seen {
 }
 let seen: Seen[] = [];
 let served: PendingItem[] = ITEMS;
+let sessions: AttentionSession[] = [];
 
 function serve(): void {
   vi.stubGlobal("fetch", async (input: RequestInfo, init?: RequestInit) => {
@@ -61,6 +62,7 @@ function serve(): void {
     seen.push({ method, url, body });
     const json = (b: unknown): Response =>
       new Response(JSON.stringify(b), { status: 200, headers: { "content-type": "application/json" } });
+    if (method === "GET" && url.endsWith("/attention")) return json({ sessions });
     if (method === "GET") return json({ items: served });
     if (url.endsWith("/convert")) return json({ inboxId: "INBOX-9001", taskId: "TASK-9999" });
     return json({ inboxId: "INBOX-9001", archived: true });
@@ -84,6 +86,7 @@ describe("DecideView (TASK-2381)", () => {
   beforeEach(() => {
     seen = [];
     served = ITEMS;
+    sessions = [];
     outletValue = { ...outletValue, conn: "connected" };
     serve();
   });
@@ -129,6 +132,43 @@ describe("DecideView (TASK-2381)", () => {
       url: "/api/inbox/INBOX-9001/archive",
       body: { reason: "already have /next" },
     });
+  });
+
+  it("TASK-2384 AC-2: waiting sessions render below the digest block and above improve, with state and age", async () => {
+    sessions = [
+      {
+        sessionId: "s1",
+        cwd: "C:\\dev\\test\\headless-cms",
+        workspaceId: "headless-cms",
+        state: "waiting",
+        since: new Date(Date.now() - 4 * 60_000).toISOString(),
+      },
+    ];
+    mount();
+    const block = await screen.findByTestId("decide-block-sessions");
+    const digest = screen.getByTestId("decide-block-digest");
+    const improve = screen.getByTestId("decide-block-improve");
+    expect(digest.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(block.compareDocumentPosition(improve) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByTestId("decide-session-s1").textContent).toContain("headless-cms");
+    expect(screen.getByTestId("decide-session-s1").textContent).toContain("chờ quyền / câu trả lời 4 phút");
+  });
+
+  it("a session in no registered workspace is named by its folder, Windows path or not", async () => {
+    sessions = [
+      { sessionId: "w", cwd: "C:\\dev\\scratch\\demo", workspaceId: null, state: "finished", since: new Date().toISOString() },
+      { sessionId: "p", cwd: "/home/b/proj", workspaceId: null, state: "finished", since: new Date().toISOString() },
+    ];
+    mount();
+    expect((await screen.findByTestId("decide-session-w")).textContent).toContain("demo");
+    expect(screen.getByTestId("decide-session-w").textContent).not.toContain("C:");
+    expect(screen.getByTestId("decide-session-p").textContent).toContain("proj");
+  });
+
+  it("TASK-2384 AC-2: no waiting sessions → no sessions block", async () => {
+    mount();
+    await screen.findByTestId("decide-block-digest");
+    expect(screen.queryByTestId("decide-block-sessions")).toBeNull();
   });
 
   it("AC-5: nothing pending shows an empty state naming the sources, not a blank page", async () => {
