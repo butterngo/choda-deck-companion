@@ -206,41 +206,92 @@ describe("ProjectsView — grouped by org (TASK-2200)", () => {
   });
 });
 
-// TASK-2376 — the list scrolls; at rest its last visible row was cut by the
-// edge and read as a clipping bug. jsdom has no layout, so the scroll metrics
-// are stubbed: a list taller than its box must show the fade at the top and
-// drop it at the end, and a list that fits must never show it.
-describe("ProjectsView — more-below cue (TASK-2376)", () => {
-  function stubMetrics(scrollHeight: number, clientHeight: number): () => void {
+// TASK-2376/2400 — the list scrolls; at rest its last visible row was cut by
+// the edge and read as a clipping bug. jsdom has no layout, so the geometry is
+// stubbed: the list box is CLIENT tall at top 0, rows are ROW tall and stacked
+// in DOM order, shifted by the list's scrollTop. With 8 rows of 100 in a 500
+// box, rows 6-8 end below the edge — "3 more" — and a version counting rows
+// that merely exist (8) or only fully hidden ones (2) answers differently.
+describe("ProjectsView — more-below control (TASK-2376/2400)", () => {
+  const ROW = 100;
+  const CLIENT = 500;
+  const EIGHT: Project[] = Array.from({ length: 8 }, (_, i) => ({
+    id: `p${i + 1}`,
+    name: `Project ${i + 1}`,
+    cwd: `C:\\dev\\p${i + 1}`,
+  }));
+
+  function stubLayout(rows: number, client: number): () => void {
     const proto = HTMLElement.prototype;
-    const sh = Object.getOwnPropertyDescriptor(proto, "scrollHeight");
-    const ch = Object.getOwnPropertyDescriptor(proto, "clientHeight");
-    Object.defineProperty(proto, "scrollHeight", { configurable: true, get: () => scrollHeight });
-    Object.defineProperty(proto, "clientHeight", { configurable: true, get: () => clientHeight });
+    const saved = ["scrollHeight", "clientHeight", "getBoundingClientRect"].map(
+      (k) => [k, Object.getOwnPropertyDescriptor(proto, k)] as const,
+    );
+    const list = (): HTMLElement | null => document.querySelector('[data-testid="project-list"]');
+    Object.defineProperty(proto, "scrollHeight", { configurable: true, get: () => rows * ROW });
+    Object.defineProperty(proto, "clientHeight", { configurable: true, get: () => client });
+    Object.defineProperty(proto, "getBoundingClientRect", {
+      configurable: true,
+      value(this: HTMLElement): DOMRect {
+        const l = list();
+        if (this === l) return { top: 0, bottom: client, height: client } as DOMRect;
+        const id = this.getAttribute("data-testid") ?? "";
+        if (l !== null && id.startsWith("project-row-")) {
+          const all = Array.from(l.querySelectorAll('[data-testid^="project-row-"]'));
+          const top = all.indexOf(this) * ROW - l.scrollTop;
+          return { top, bottom: top + ROW, height: ROW } as DOMRect;
+        }
+        return { top: 0, bottom: 0, height: 0 } as DOMRect;
+      },
+    });
     return () => {
-      if (sh) Object.defineProperty(proto, "scrollHeight", sh);
-      if (ch) Object.defineProperty(proto, "clientHeight", ch);
+      for (const [k, d] of saved) {
+        if (d) Object.defineProperty(proto, k, d);
+        else delete (proto as unknown as Record<string, unknown>)[k];
+      }
     };
   }
 
   beforeEach(() => {
     outletValue = health("connected");
-    state.projects = PROJECTS;
+    state.projects = EIGHT;
   });
 
-  it("shows the fade at the top of an overflowing list and drops it at the end", () => {
-    const restore = stubMetrics(1000, 400);
+  it("counts the rows below the visible edge: 3 more", () => {
+    const restore = stubLayout(8, CLIENT);
     try {
       mount();
-      expect(screen.getByTestId("project-list-more")).toBeTruthy();
+      expect(screen.getByTestId("project-list-more").textContent).toBe("3 more");
+    } finally {
+      restore();
+    }
+  });
+
+  it("follows the scroll position — fewer below after scrolling, gone at the end, back on the way up", () => {
+    const restore = stubLayout(8, CLIENT);
+    try {
+      mount();
       const list = screen.getByTestId("project-list");
-      list.scrollTop = 600;
+      list.scrollTop = 150; // rows 7 and 8 now end below 500
+      fireEvent.scroll(list);
+      expect(screen.getByTestId("project-list-more").textContent).toBe("2 more");
+      list.scrollTop = 300;
       fireEvent.scroll(list);
       expect(screen.queryByTestId("project-list-more")).toBeNull();
-      // And back up — the cue follows the position, it is not a one-way latch.
-      list.scrollTop = 100;
+      list.scrollTop = 0;
       fireEvent.scroll(list);
-      expect(screen.getByTestId("project-list-more")).toBeTruthy();
+      expect(screen.getByTestId("project-list-more").textContent).toBe("3 more");
+    } finally {
+      restore();
+    }
+  });
+
+  it("pressing it scrolls to the end, after which it is gone", () => {
+    const restore = stubLayout(8, CLIENT);
+    try {
+      mount();
+      fireEvent.click(screen.getByTestId("project-list-more"));
+      expect(screen.getByTestId("project-list").scrollTop).toBeGreaterThanOrEqual(8 * ROW - CLIENT);
+      expect(screen.queryByTestId("project-list-more")).toBeNull();
     } finally {
       restore();
     }
@@ -250,7 +301,7 @@ describe("ProjectsView — more-below cue (TASK-2376)", () => {
     // The browser case that broke the first version: projects already cached,
     // list not yet mounted (adapter disconnected), so nothing keyed on the rows
     // changes when it finally appears. A ref read in an effect saw null here.
-    const restore = stubMetrics(1000, 400);
+    const restore = stubLayout(8, CLIENT);
     try {
       outletValue = health("disconnected");
       const { rerender } = render(
@@ -265,14 +316,14 @@ describe("ProjectsView — more-below cue (TASK-2376)", () => {
           <ProjectsView />
         </MemoryRouter>,
       );
-      expect(screen.getByTestId("project-list-more")).toBeTruthy();
+      expect(screen.getByTestId("project-list-more").textContent).toBe("3 more");
     } finally {
       restore();
     }
   });
 
-  it("never shows the fade when the whole list fits", () => {
-    const restore = stubMetrics(400, 400);
+  it("never shows it when the whole list fits", () => {
+    const restore = stubLayout(5, CLIENT);
     try {
       mount();
       expect(screen.getByTestId("project-list")).toBeTruthy();

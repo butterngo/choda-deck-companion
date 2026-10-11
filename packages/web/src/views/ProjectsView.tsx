@@ -44,13 +44,13 @@ export function ProjectsView(): React.JSX.Element {
     });
   }
 
-  // TASK-2376 — the list scrolls. Without a cue, the row cut by its bottom edge
-  // read as a clipping bug; the fade says "more below" and goes away at the end,
-  // where bottom padding keeps the last row clear of the edge.
-  const more = useMoreBelow<HTMLUListElement>([
-    list.projects.length,
-    collapsed,
-  ]);
+  // TASK-2376/2400 — the list scrolls. Without a cue, the row cut by its bottom
+  // edge read as a clipping bug; a "N more" bar says what is below and goes away
+  // at the end, where bottom padding keeps the last row clear of the edge.
+  const more = useMoreBelow<HTMLUListElement>(
+    [list.projects.length, collapsed],
+    '[data-testid^="project-row-"]',
+  );
 
   function projectRow(p: Project): React.JSX.Element {
     const active = p.id === selectedId;
@@ -216,12 +216,19 @@ export function ProjectsView(): React.JSX.Element {
               })}
             </ul>
           )}
-          {more.moreBelow && (
-            <div
+          {/* TASK-2400 — an explicit control, not a fade: the row cut by the edge
+              sits behind an opaque bar that says how many projects are below
+              and takes the reader there. A fade still read as clipping. */}
+          {more.belowCount > 0 && (
+            <button
+              type="button"
               data-testid="project-list-more"
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-background to-transparent"
-            />
+              onClick={more.scrollToEnd}
+              className="absolute inset-x-0 bottom-0 flex h-9 items-center justify-center gap-1.5 border-t border-zinc-200 dark:border-zinc-800 bg-background text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+            >
+              <i className="ti ti-chevron-down" aria-hidden="true" />
+              {more.belowCount} more
+            </button>
           )}
         </div>
 
