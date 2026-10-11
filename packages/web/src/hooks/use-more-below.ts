@@ -11,6 +11,22 @@ import { useCallback, useEffect, useState } from "react";
     never quite reach zero on scaled displays. */
 const END_SLACK_PX = 2;
 
+/** TASK-2400 — how many rows end below the container's visible bottom, i.e.
+    are cut or entirely out of view. A row inside a collapsed (display:none)
+    group has an all-zero rect and is never counted. */
+export function countBelow(
+  container: Pick<HTMLElement, "getBoundingClientRect">,
+  rows: Iterable<Element>,
+): number {
+  const edge = container.getBoundingClientRect().bottom;
+  let n = 0;
+  for (const row of rows) {
+    const r = row.getBoundingClientRect();
+    if (r.height > 0 && r.bottom > edge + END_SLACK_PX) n += 1;
+  }
+  return n;
+}
+
 export function hasMoreBelow(
   el: Pick<HTMLElement, "scrollHeight" | "scrollTop" | "clientHeight">,
 ): boolean {
@@ -28,17 +44,30 @@ export function hasMoreBelow(
     layout settling or a group toggle fires no scroll event. */
 export function useMoreBelow<T extends HTMLElement>(
   deps: readonly unknown[],
+  rowSelector: string,
 ): {
   ref: (el: T | null) => void;
-  moreBelow: boolean;
+  /** Rows below the visible edge; 0 when the reader is at the end. */
+  belowCount: number;
   onScroll: () => void;
+  scrollToEnd: () => void;
 } {
   const [el, setEl] = useState<T | null>(null);
-  const [moreBelow, setMoreBelow] = useState(false);
+  const [belowCount, setBelowCount] = useState(0);
 
   const measure = useCallback(() => {
-    setMoreBelow(el !== null && hasMoreBelow(el));
-  }, [el]);
+    setBelowCount(
+      el !== null && hasMoreBelow(el)
+        ? countBelow(el, el.querySelectorAll(rowSelector))
+        : 0,
+    );
+  }, [el, rowSelector]);
+
+  const scrollToEnd = useCallback(() => {
+    if (el === null) return;
+    el.scrollTop = el.scrollHeight;
+    measure();
+  }, [el, measure]);
 
   useEffect(() => {
     measure();
@@ -58,5 +87,5 @@ export function useMoreBelow<T extends HTMLElement>(
     };
   }, [el, measure, ...deps]);
 
-  return { ref: setEl, moreBelow, onScroll: measure };
+  return { ref: setEl, belowCount, onScroll: measure, scrollToEnd };
 }
