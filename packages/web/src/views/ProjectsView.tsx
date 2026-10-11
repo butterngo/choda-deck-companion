@@ -16,6 +16,7 @@ import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { Skeleton } from "../components/state/Skeleton";
 import { ProjectVaultBlock } from "./ProjectVaultBlock";
+import { useMoreBelow } from "../hooks/use-more-below";
 
 // A group's key for state and test ids. "none" cannot collide with an org id
 // in practice, and it keeps the null group addressable.
@@ -43,6 +44,14 @@ export function ProjectsView(): React.JSX.Element {
     });
   }
 
+  // TASK-2376 — the list scrolls. Without a cue, the row cut by its bottom edge
+  // read as a clipping bug; the fade says "more below" and goes away at the end,
+  // where bottom padding keeps the last row clear of the edge.
+  const more = useMoreBelow<HTMLUListElement>([
+    list.projects.length,
+    collapsed,
+  ]);
+
   function projectRow(p: Project): React.JSX.Element {
     const active = p.id === selectedId;
     return (
@@ -65,7 +74,9 @@ export function ProjectsView(): React.JSX.Element {
               {list.liveCountOf(p.id)}
             </span>
           </div>
-          <p className="mt-0.5 text-[11.5px] text-zinc-500 font-mono truncate">{p.cwd}</p>
+          <p className="mt-0.5 text-[11.5px] text-zinc-500 font-mono truncate">
+            {p.cwd}
+          </p>
         </button>
       </li>
     );
@@ -115,9 +126,13 @@ export function ProjectsView(): React.JSX.Element {
                     archived
                   </span>
                 )}
-                <span className="ml-auto text-[11.5px] text-zinc-400 font-mono">{w.id}</span>
+                <span className="ml-auto text-[11.5px] text-zinc-400 font-mono">
+                  {w.id}
+                </span>
               </div>
-              <p className="mt-1 text-[11.5px] text-zinc-500 font-mono truncate">{w.cwd}</p>
+              <p className="mt-1 text-[11.5px] text-zinc-500 font-mono truncate">
+                {w.cwd}
+              </p>
             </Link>
           </li>
         ))}
@@ -139,7 +154,8 @@ export function ProjectsView(): React.JSX.Element {
     if (list.isError) {
       return <ErrorState variant="failed" subject="projects" />;
     }
-    if (list.isLoading) return <Skeleton shape="list" label="Loading projects…" />;
+    if (list.isLoading)
+      return <Skeleton shape="list" label="Loading projects…" />;
     if (list.projects.length === 0) {
       return (
         <EmptyState
@@ -152,49 +168,75 @@ export function ProjectsView(): React.JSX.Element {
 
     return (
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,340px)_1fr] gap-6 flex-1 min-h-0 lg:grid-rows-[minmax(0,1fr)]">
-        {groups.length === 0 ? (
-          <ul data-testid="project-list" className="min-h-0 overflow-y-auto space-y-1">
-            {list.projects.map(projectRow)}
-          </ul>
-        ) : (
-          <ul data-testid="project-list" className="min-h-0 overflow-y-auto space-y-3">
-            {groups.map((g) => {
-              const key = groupKey(g.org);
-              const open = !collapsed.has(key);
-              return (
-                <li key={key} data-testid={`project-group-${key}`}>
-                  <button
-                    type="button"
-                    aria-expanded={open}
-                    onClick={() => toggleGroup(key)}
-                    data-testid={`project-group-toggle-${key}`}
-                    className="w-full flex items-baseline gap-2 px-3 py-1 text-left"
-                  >
-                    <i
-                      className={`ti ti-chevron-down text-zinc-400 transition-transform ${open ? "" : "-rotate-90"}`}
-                      aria-hidden="true"
-                    />
-                    <span className="text-[11px] uppercase tracking-wide text-zinc-500">
-                      {g.org ?? "No organisation"}
-                    </span>
-                    <span className="ml-auto text-[11.5px] tabular-nums text-zinc-400">
-                      {g.projects.length}
-                    </span>
-                  </button>
-                  <ul hidden={!open} className="mt-1 space-y-1">
-                    {g.projects.map(projectRow)}
-                  </ul>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+        <div className="relative min-h-0 flex flex-col">
+          {groups.length === 0 ? (
+            <ul
+              ref={more.ref}
+              onScroll={more.onScroll}
+              data-testid="project-list"
+              className="min-h-0 flex-1 overflow-y-auto pb-4 space-y-1"
+            >
+              {list.projects.map(projectRow)}
+            </ul>
+          ) : (
+            <ul
+              ref={more.ref}
+              onScroll={more.onScroll}
+              data-testid="project-list"
+              className="min-h-0 flex-1 overflow-y-auto pb-4 space-y-3"
+            >
+              {groups.map((g) => {
+                const key = groupKey(g.org);
+                const open = !collapsed.has(key);
+                return (
+                  <li key={key} data-testid={`project-group-${key}`}>
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      onClick={() => toggleGroup(key)}
+                      data-testid={`project-group-toggle-${key}`}
+                      className="w-full flex items-baseline gap-2 px-3 py-1 text-left"
+                    >
+                      <i
+                        className={`ti ti-chevron-down text-zinc-400 transition-transform ${open ? "" : "-rotate-90"}`}
+                        aria-hidden="true"
+                      />
+                      <span className="text-[11px] uppercase tracking-wide text-zinc-500">
+                        {g.org ?? "No organisation"}
+                      </span>
+                      <span className="ml-auto text-[11.5px] tabular-nums text-zinc-400">
+                        {g.projects.length}
+                      </span>
+                    </button>
+                    <ul hidden={!open} className="mt-1 space-y-1">
+                      {g.projects.map(projectRow)}
+                    </ul>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {more.moreBelow && (
+            <div
+              data-testid="project-list-more"
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-background to-transparent"
+            />
+          )}
+        </div>
 
-        <div data-testid="project-detail-pane" className="min-w-0 min-h-0 overflow-y-auto">
+        <div
+          data-testid="project-detail-pane"
+          className="min-w-0 min-h-0 overflow-y-auto"
+        >
           {selected !== null && (
             <header className="pb-3.5 mb-4 border-b border-zinc-100 dark:border-zinc-800">
-              <h2 className="text-[17px] leading-snug font-medium">{selected.name}</h2>
-              <p className="mt-1 text-[11.5px] text-zinc-500 font-mono">{selected.cwd}</p>
+              <h2 className="text-[17px] leading-snug font-medium">
+                {selected.name}
+              </h2>
+              <p className="mt-1 text-[11.5px] text-zinc-500 font-mono">
+                {selected.cwd}
+              </p>
             </header>
           )}
           {/* TASK-2049 — the vault folder comes FIRST. "Where did that note go?"
@@ -206,7 +248,9 @@ export function ProjectsView(): React.JSX.Element {
             </div>
           )}
           {selected !== null && (
-            <h3 className="mb-2 text-[11px] uppercase tracking-wide text-zinc-400">Workspaces</h3>
+            <h3 className="mb-2 text-[11px] uppercase tracking-wide text-zinc-400">
+              Workspaces
+            </h3>
           )}
           {workspacePane()}
         </div>
@@ -218,11 +262,15 @@ export function ProjectsView(): React.JSX.Element {
     <section aria-label="projects" className="flex-1 min-h-0 flex flex-col">
       <div className="flex items-baseline gap-2 mb-4">
         <h1 className="text-lg font-medium">Projects</h1>
-        <span className="text-xs text-zinc-400">pick a project, then a workspace</span>
+        <span className="text-xs text-zinc-400">
+          pick a project, then a workspace
+        </span>
       </div>
       {body()}
       {health.conn === "stale" && (
-        <p className="mt-3 text-xs text-zinc-400">Possibly stale — see the status bar.</p>
+        <p className="mt-3 text-xs text-zinc-400">
+          Possibly stale — see the status bar.
+        </p>
       )}
     </section>
   );
