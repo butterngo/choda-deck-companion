@@ -205,3 +205,80 @@ describe("ProjectsView — grouped by org (TASK-2200)", () => {
     expect(screen.queryByTestId("project-group-toggle-none")).toBeNull();
   });
 });
+
+// TASK-2376 — the list scrolls; at rest its last visible row was cut by the
+// edge and read as a clipping bug. jsdom has no layout, so the scroll metrics
+// are stubbed: a list taller than its box must show the fade at the top and
+// drop it at the end, and a list that fits must never show it.
+describe("ProjectsView — more-below cue (TASK-2376)", () => {
+  function stubMetrics(scrollHeight: number, clientHeight: number): () => void {
+    const proto = HTMLElement.prototype;
+    const sh = Object.getOwnPropertyDescriptor(proto, "scrollHeight");
+    const ch = Object.getOwnPropertyDescriptor(proto, "clientHeight");
+    Object.defineProperty(proto, "scrollHeight", { configurable: true, get: () => scrollHeight });
+    Object.defineProperty(proto, "clientHeight", { configurable: true, get: () => clientHeight });
+    return () => {
+      if (sh) Object.defineProperty(proto, "scrollHeight", sh);
+      if (ch) Object.defineProperty(proto, "clientHeight", ch);
+    };
+  }
+
+  beforeEach(() => {
+    outletValue = health("connected");
+    state.projects = PROJECTS;
+  });
+
+  it("shows the fade at the top of an overflowing list and drops it at the end", () => {
+    const restore = stubMetrics(1000, 400);
+    try {
+      mount();
+      expect(screen.getByTestId("project-list-more")).toBeTruthy();
+      const list = screen.getByTestId("project-list");
+      list.scrollTop = 600;
+      fireEvent.scroll(list);
+      expect(screen.queryByTestId("project-list-more")).toBeNull();
+      // And back up — the cue follows the position, it is not a one-way latch.
+      list.scrollTop = 100;
+      fireEvent.scroll(list);
+      expect(screen.getByTestId("project-list-more")).toBeTruthy();
+    } finally {
+      restore();
+    }
+  });
+
+  it("measures a list that mounts only after the adapter turns healthy", () => {
+    // The browser case that broke the first version: projects already cached,
+    // list not yet mounted (adapter disconnected), so nothing keyed on the rows
+    // changes when it finally appears. A ref read in an effect saw null here.
+    const restore = stubMetrics(1000, 400);
+    try {
+      outletValue = health("disconnected");
+      const { rerender } = render(
+        <MemoryRouter>
+          <ProjectsView />
+        </MemoryRouter>,
+      );
+      expect(screen.queryByTestId("project-list")).toBeNull();
+      outletValue = health("connected");
+      rerender(
+        <MemoryRouter>
+          <ProjectsView />
+        </MemoryRouter>,
+      );
+      expect(screen.getByTestId("project-list-more")).toBeTruthy();
+    } finally {
+      restore();
+    }
+  });
+
+  it("never shows the fade when the whole list fits", () => {
+    const restore = stubMetrics(400, 400);
+    try {
+      mount();
+      expect(screen.getByTestId("project-list")).toBeTruthy();
+      expect(screen.queryByTestId("project-list-more")).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+});
