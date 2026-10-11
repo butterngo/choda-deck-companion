@@ -13,6 +13,7 @@ import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { Skeleton } from "../components/state/Skeleton";
 import { Trend } from "../components/Trend";
+import { WeekCompare } from "../components/WeekCompare";
 
 interface Metric {
   key: string;
@@ -106,6 +107,8 @@ export function ActivityView(): React.JSX.Element {
     }
     return (
       <div className="flex-1 min-h-0 overflow-y-auto space-y-5">
+        {/* TASK-2386 — the one line that says whether things got better. */}
+        <WeekCompare digests={ordered} />
         <div data-testid="activity-trends" className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {METRICS.map((m) => (
             <Trend
