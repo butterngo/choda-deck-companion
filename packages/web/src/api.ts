@@ -2226,7 +2226,9 @@ export function improveScreenshotUrl(ws: string, screenshot: string): string {
 // TASK-2381 — what automated sources filed and nobody has decided on yet,
 // served by choda-deck's GET /inbox/pending (TASK-2380): only items tagged
 // [activity-digest], [improve:<ws>] or [improve-note:<ws>], digest first.
-export type PendingSource = "activity-digest" | "improve" | "improve-note";
+// TASK-2419: plus [loop:<ws>] — status notices from /choda-autopilot and
+// /choda-burn-backlog, which the adapter refuses to convert (TASK-2417).
+export type PendingSource = "activity-digest" | "improve" | "improve-note" | "loop";
 
 export interface PendingItem {
   id: string;
