@@ -81,7 +81,7 @@ describe("landing (TASK-2381 AC-4)", () => {
     serve([ITEM]);
     const router = open("/");
     await waitFor(() => expect(router.state.location.pathname).toBe("/decide"));
-    expect(await screen.findByRole("heading", { level: 1, name: "Cần anh quyết" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { level: 1, name: "Needs your decision" })).toBeTruthy();
   });
 
   it("opens on #/sync when nothing is pending", async () => {
@@ -99,7 +99,7 @@ describe("landing (TASK-2381 AC-4)", () => {
   it("#/decide is a real route, not swallowed by the catch-all", async () => {
     serve([]);
     const router = open("/decide");
-    expect(await screen.findByRole("heading", { level: 1, name: "Cần anh quyết" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { level: 1, name: "Needs your decision" })).toBeTruthy();
     expect(router.state.location.pathname).toBe("/decide");
   });
 });

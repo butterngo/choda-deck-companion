@@ -35,7 +35,7 @@ describe("attention reminder (TASK-2382)", () => {
     const h = harness({ items: THREE });
     expect(await h.reminder.tick()).toBe("reminded");
     expect(h.notes).toHaveLength(1);
-    expect(h.notes[0].body).toBe("3 mục đang chờ anh quyết (1 từ daily digest)");
+    expect(h.notes[0].body).toBe("3 items waiting on your decision (1 from the daily digest)");
 
     h.setClock(new Date(2026, 9, 12, 15, 0));
     expect(await h.reminder.tick()).toBe("skipped:already-today");
@@ -51,7 +51,7 @@ describe("attention reminder (TASK-2382)", () => {
     h.state.items = [{ source: "improve" }];
     h.setClock(new Date(2026, 9, 12, 11, 0));
     expect(await h.reminder.tick()).toBe("reminded");
-    expect(h.notes[0].body).toBe("1 mục đang chờ anh quyết");
+    expect(h.notes[0].body).toBe("1 item waiting on your decision");
   });
 
   it("AC-1: the next day with items → one reminder again", async () => {

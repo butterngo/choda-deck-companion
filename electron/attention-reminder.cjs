@@ -24,8 +24,8 @@ function localDay(d) {
 
 function reminderBody(items) {
   const digest = items.filter((i) => i.source === "activity-digest").length;
-  const head = `${items.length} mục đang chờ anh quyết`;
-  return digest > 0 ? `${head} (${digest} từ daily digest)` : head;
+  const head = `${items.length} ${items.length === 1 ? "item" : "items"} waiting on your decision`;
+  return digest > 0 ? `${head} (${digest} from the daily digest)` : head;
 }
 
 /**
@@ -57,7 +57,7 @@ function createAttentionReminder(deps) {
       if (!Array.isArray(items) || items.length === 0) return "skipped:nothing";
       deps.store.setLastDay(day);
       deps.notify({
-        title: "Choda — cần anh quyết",
+        title: "Choda — needs your decision",
         body: reminderBody(items),
         onClick: deps.openDecide,
       });

@@ -1,4 +1,4 @@
-// TASK-2381 — "Cần anh quyết": everything an automated source filed that is
+// TASK-2381 — "Needs your decision" (TASK-2404: was "Cần anh quyết"): everything an automated source filed that is
 // still waiting on Butter, in one place, with the decision next to it.
 //
 // Why it exists: in three weeks the daily digest filed 15 ideas into a raw
@@ -45,7 +45,7 @@ function Row({ item }: { item: PendingItem }): React.JSX.Element {
       </p>
       {created ? (
         <p role="status" className="mt-2 text-[12.5px] text-emerald-700 dark:text-emerald-400">
-          Đã tạo{" "}
+          Created{" "}
           <Link to={`/tasks/${encodeURIComponent(created)}`} className="underline">
             {created}
           </Link>
@@ -54,8 +54,8 @@ function Row({ item }: { item: PendingItem }): React.JSX.Element {
         <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
           <input
             data-testid={`decide-reason-${item.id}`}
-            aria-label="Lý do bỏ"
-            placeholder="Lý do bỏ"
+            aria-label="Reason to dismiss"
+            placeholder="Reason to dismiss"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             className="min-w-0 flex-1 rounded-md border border-zinc-200 dark:border-zinc-700 bg-transparent px-2 py-1 text-[12.5px]"
@@ -68,10 +68,10 @@ function Row({ item }: { item: PendingItem }): React.JSX.Element {
               disabled={reason.trim() === "" || actions.archive.isPending}
               onClick={() => actions.archive.mutate({ id: item.id, reason: reason.trim() })}
             >
-              Lưu
+              Save
             </button>
             <button type="button" className={btn} onClick={() => setRejecting(false)}>
-              Hủy
+              Cancel
             </button>
           </span>
         </div>
@@ -86,7 +86,7 @@ function Row({ item }: { item: PendingItem }): React.JSX.Element {
               actions.convert.mutate(item.id, { onSuccess: (r) => setCreated(r.taskId) })
             }
           >
-            Duyệt → task
+            Approve → task
           </button>
           <button
             type="button"
@@ -97,7 +97,7 @@ function Row({ item }: { item: PendingItem }): React.JSX.Element {
               setReason("");
             }}
           >
-            Bỏ
+            Dismiss
           </button>
         </div>
       )}
@@ -148,7 +148,7 @@ function Block({
 
 function age(since: string, now: number): string {
   const min = Math.max(0, Math.round((now - Date.parse(since)) / 60_000));
-  return min < 60 ? `${min} phút` : `${Math.floor(min / 60)} giờ ${min % 60} phút`;
+  return min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${min % 60} min`;
 }
 
 /**
@@ -161,9 +161,9 @@ function Sessions({ sessions }: { sessions: AttentionSession[] }): React.JSX.Ele
   return (
     <section data-testid="decide-block-sessions">
       <h2 className="mb-0.5 text-sm font-medium">
-        Đang chờ anh <span className="ml-1 text-zinc-400 tabular-nums">{sessions.length}</span>
+        Waiting on you <span className="ml-1 text-zinc-400 tabular-nums">{sessions.length}</span>
       </h2>
-      <p className="mb-2 text-[11.5px] text-zinc-500">Session Claude Code đã xong lượt hoặc đang chờ anh cấp quyền / trả lời.</p>
+      <p className="mb-2 text-[11.5px] text-zinc-500">Claude Code sessions that finished a turn or are waiting for your permission or answer.</p>
       <ul className="space-y-1.5">
         {sessions.map((s) => (
           <li
@@ -177,7 +177,7 @@ function Sessions({ sessions }: { sessions: AttentionSession[] }): React.JSX.Ele
             />
             <span className="font-medium">{s.workspaceId ?? (s.cwd.split(/[\\/]/).pop() || s.cwd)}</span>
             <span className="text-zinc-500">
-              {s.state === "waiting" ? "chờ quyền / câu trả lời" : "đã xong lượt"} {age(s.since, now)}
+              {s.state === "waiting" ? "waiting for permission / answer" : "turn finished"} {age(s.since, now)}
             </span>
           </li>
         ))}
@@ -196,18 +196,18 @@ export function DecideView(): React.JSX.Element {
       return (
         <ErrorState
           variant="unreachable"
-          description="Không đọc được danh sách — đây không phải là 'không có gì đang chờ'."
+          description="Couldn't read the list — this is not 'nothing waiting'."
         />
       );
     }
     if (isError) return <ErrorState variant="failed" subject="the pending items" />;
-    if (isLoading) return <Skeleton shape="list" label="Đang tải…" />;
+    if (isLoading) return <Skeleton shape="list" label="Loading…" />;
     if (items.length === 0 && sessions.length === 0) {
       return (
         <EmptyState
           icon="ti-circle-check"
-          title="Không có gì đang chờ anh"
-          description="Màn này hiện những gì daily digest và improve loop gửi vào inbox mà chưa ai quyết."
+          title="Nothing waiting on you"
+          description="This screen shows what the daily digest and the improve loop filed to the inbox that nobody has decided yet."
         />
       );
     }
@@ -218,22 +218,22 @@ export function DecideView(): React.JSX.Element {
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pb-6">
         <Block
           id="decide-block-digest"
-          title="Từ daily digest"
-          hint="Ý tưởng cải thiện cách anh làm việc, rút ra từ hoạt động của anh."
+          title="From the daily digest"
+          hint="Ideas for how you work, drawn from your own activity."
           items={digest}
           emphasis
         />
         <Sessions sessions={sessions} />
         <Block
           id="decide-block-improve"
-          title="Đề xuất cải tiến"
-          hint="Improve loop đề xuất sửa app, kèm bằng chứng và tiêu chí kiểm chứng."
+          title="Improvement proposals"
+          hint="App fixes the improve loop proposes, with evidence and a way to check them."
           items={[...improve].sort((a, b) => (a.workspaceId ?? "").localeCompare(b.workspaceId ?? ""))}
         />
         <Block
           id="decide-block-notes"
-          title="Ghi chú"
-          hint="Thông báo và câu hỏi từ improve loop."
+          title="Notes"
+          hint="Notices and questions from the improve loop."
           items={notes}
         />
       </div>
@@ -243,8 +243,8 @@ export function DecideView(): React.JSX.Element {
   return (
     <section aria-label="decide" className="flex min-h-0 flex-1 flex-col">
       <div className="mb-4 flex items-baseline gap-2">
-        <h1 className="text-lg font-medium">Cần anh quyết</h1>
-        <span className="text-xs text-zinc-400">những gì công cụ tự động gửi vào và đang chờ anh</span>
+        <h1 className="text-lg font-medium">Needs your decision</h1>
+        <span className="text-xs text-zinc-400">what automated tools filed and is waiting on you</span>
       </div>
       {body()}
     </section>
