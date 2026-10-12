@@ -171,6 +171,42 @@ describe("DecideView (TASK-2381)", () => {
     expect(screen.queryByTestId("decide-block-sessions")).toBeNull();
   });
 
+  it("TASK-2419 AC-1: a loop notice renders Dismiss and no Approve", async () => {
+    served = [
+      ...ITEMS,
+      {
+        id: "INBOX-9003",
+        source: "loop",
+        workspaceId: "main",
+        title: "🔴 TASK-1: typecheck failed twice",
+        content: "[loop:main] 🔴 TASK-1: typecheck failed twice",
+        createdAt: "2026-10-12T05:00:00Z",
+      },
+    ];
+    mount();
+    const block = await screen.findByTestId("decide-block-loops");
+    expect(block.textContent).toContain("typecheck failed twice");
+    expect(screen.getByTestId("decide-archive-INBOX-9003")).toBeTruthy();
+    expect(screen.queryByTestId("decide-convert-INBOX-9003")).toBeNull();
+  });
+
+  it("TASK-2419 AC-2: an improve item still renders Approve next to the loop notice", async () => {
+    served = [
+      ...ITEMS,
+      {
+        id: "INBOX-9003",
+        source: "loop",
+        workspaceId: "main",
+        title: "🟢 PR ready",
+        content: "[loop:main] 🟢 PR ready",
+        createdAt: "2026-10-12T05:00:00Z",
+      },
+    ];
+    mount();
+    await screen.findByTestId("decide-block-loops");
+    expect(screen.getByTestId("decide-convert-INBOX-9002")).toBeTruthy();
+  });
+
   it("AC-5: nothing pending shows an empty state naming the sources, not a blank page", async () => {
     served = [];
     mount();

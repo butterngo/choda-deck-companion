@@ -77,17 +77,21 @@ function Row({ item }: { item: PendingItem }): React.JSX.Element {
         </div>
       ) : (
         <div className="mt-2 flex gap-2">
-          <button
-            type="button"
-            data-testid={`decide-convert-${item.id}`}
-            className={btn}
-            disabled={actions.convert.isPending}
-            onClick={() =>
-              actions.convert.mutate(item.id, { onSuccess: (r) => setCreated(r.taskId) })
-            }
-          >
-            Approve → task
-          </button>
+          {/* A loop notice is a report to read and dismiss, never a proposal: the
+              adapter answers 400 to converting one (TASK-2417), so no button. */}
+          {item.source !== "loop" && (
+            <button
+              type="button"
+              data-testid={`decide-convert-${item.id}`}
+              className={btn}
+              disabled={actions.convert.isPending}
+              onClick={() =>
+                actions.convert.mutate(item.id, { onSuccess: (r) => setCreated(r.taskId) })
+              }
+            >
+              Approve → task
+            </button>
+          )}
           <button
             type="button"
             data-testid={`decide-archive-${item.id}`}
@@ -214,6 +218,7 @@ export function DecideView(): React.JSX.Element {
     const digest = items.filter((i) => i.source === "activity-digest");
     const improve = items.filter((i) => i.source === "improve");
     const notes = items.filter((i) => i.source === "improve-note");
+    const loops = items.filter((i) => i.source === "loop");
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pb-6">
         <Block
@@ -224,6 +229,12 @@ export function DecideView(): React.JSX.Element {
           emphasis
         />
         <Sessions sessions={sessions} />
+        <Block
+          id="decide-block-loops"
+          title="From your loops"
+          hint="Blocked items, decisions and ready PRs reported by /choda-autopilot and /choda-burn-backlog. Dismiss once read."
+          items={loops}
+        />
         <Block
           id="decide-block-improve"
           title="Improvement proposals"
