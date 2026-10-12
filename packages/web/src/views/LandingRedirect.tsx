@@ -9,6 +9,6 @@ import { Skeleton } from "../components/state/Skeleton";
 
 export function LandingRedirect(): React.JSX.Element {
   const { items, isLoading, isError } = usePending();
-  if (isLoading) return <Skeleton shape="list" label="Đang mở…" />;
+  if (isLoading) return <Skeleton shape="list" label="Opening…" />;
   return <Navigate to={!isError && items.length > 0 ? "/decide" : "/sync"} replace />;
 }

@@ -99,8 +99,8 @@ export function SidebarNav({ counts = {} }: { counts?: NavCounts }): React.JSX.E
           the badge is loud (not the grey Count) and absent at zero. */}
       <div className="mb-3.5 rail:group-data-[collapsed=true]/shell:mb-0 rail:group-data-[collapsed=true]/shell:mt-1.5">
         <NavLink to="/decide" className={itemClass} data-testid="nav-decide">
-          <i className="ti ti-bell text-zinc-400" aria-hidden="true" title="Cần anh quyết" />
-          <span className="sr-only rail:not-sr-only rail:group-data-[collapsed=true]/shell:sr-only">Cần anh quyết</span>
+          <i className="ti ti-bell text-zinc-400" aria-hidden="true" title="Needs your decision" />
+          <span className="sr-only rail:not-sr-only rail:group-data-[collapsed=true]/shell:sr-only">Needs your decision</span>
           {counts.decide !== undefined && counts.decide > 0 && (
             <span
               data-testid="nav-decide-badge"

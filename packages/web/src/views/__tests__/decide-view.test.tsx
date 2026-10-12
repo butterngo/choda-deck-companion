@@ -1,4 +1,4 @@
-// TASK-2381 — the "Cần anh quyết" screen over GET /inbox/pending (TASK-2380).
+// TASK-2381 — the "Needs your decision" screen over GET /inbox/pending (TASK-2380).
 //
 // fetch is stubbed rather than the hooks, so the real react-query path runs and
 // every write assertion reads the request the adapter would receive.
@@ -104,7 +104,7 @@ describe("DecideView (TASK-2381)", () => {
     expect(seen[0]?.url).toBe("/api/inbox/pending");
   });
 
-  it("AC-2: Duyệt calls POST /inbox/:id/convert and links the new task", async () => {
+  it("AC-2: Approve calls POST /inbox/:id/convert and links the new task", async () => {
     mount();
     fireEvent.click(await screen.findByTestId("decide-convert-INBOX-9001"));
     await waitFor(() => expect(writes()).toHaveLength(1));
@@ -112,7 +112,7 @@ describe("DecideView (TASK-2381)", () => {
     expect((await screen.findByRole("status")).textContent).toContain("TASK-9999");
   });
 
-  it("AC-2: Bỏ sends { reason }, and an empty reason sends nothing", async () => {
+  it("AC-2: Dismiss sends { reason }, and an empty reason sends nothing", async () => {
     mount();
     fireEvent.click(await screen.findByTestId("decide-archive-INBOX-9001"));
     const save = screen.getByTestId("decide-archive-save-INBOX-9001") as HTMLButtonElement;
@@ -151,7 +151,7 @@ describe("DecideView (TASK-2381)", () => {
     expect(digest.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(block.compareDocumentPosition(improve) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByTestId("decide-session-s1").textContent).toContain("headless-cms");
-    expect(screen.getByTestId("decide-session-s1").textContent).toContain("chờ quyền / câu trả lời 4 phút");
+    expect(screen.getByTestId("decide-session-s1").textContent).toContain("waiting for permission / answer 4 min");
   });
 
   it("a session in no registered workspace is named by its folder, Windows path or not", async () => {
@@ -174,14 +174,14 @@ describe("DecideView (TASK-2381)", () => {
   it("AC-5: nothing pending shows an empty state naming the sources, not a blank page", async () => {
     served = [];
     mount();
-    expect(await screen.findByText("Không có gì đang chờ anh")).toBeTruthy();
-    expect(screen.getByText(/daily digest và improve loop/)).toBeTruthy();
+    expect(await screen.findByText("Nothing waiting on you")).toBeTruthy();
+    expect(screen.getByText(/daily digest and the improve loop/)).toBeTruthy();
   });
 
   it("AC-5: an unreachable adapter is not shown as nothing pending", () => {
     outletValue = { ...outletValue, conn: "disconnected" };
     mount();
-    expect(screen.queryByText("Không có gì đang chờ anh")).toBeNull();
-    expect(screen.getByText(/không phải là 'không có gì đang chờ'/)).toBeTruthy();
+    expect(screen.queryByText("Nothing waiting on you")).toBeNull();
+    expect(screen.getByText(/not 'nothing waiting'/)).toBeTruthy();
   });
 });
