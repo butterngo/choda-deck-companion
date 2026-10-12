@@ -19,7 +19,12 @@ import type { HealthView } from "../../hooks/use-health";
 import type { Project, Workspace } from "../../api";
 
 const health = (conn: HealthView["conn"]): HealthView => ({
-  health: { loopAlive: true, lastPullAgeSec: 5, jwtState: "refresh", reachable: conn !== "disconnected" },
+  health: {
+    loopAlive: true,
+    lastPullAgeSec: 5,
+    jwtState: "refresh",
+    reachable: conn !== "disconnected",
+  },
   conn,
   lastFetchedAgoSec: 2,
 });
@@ -28,14 +33,42 @@ let outletValue: HealthView = health("connected");
 
 const PROJECTS: Project[] = [
   { id: "choda-deck", name: "Choda Deck", cwd: "C:\\dev\\choda-deck" },
-  { id: "english-companion", name: "English Companion", cwd: "C:\\dev\\english-companion" },
+  {
+    id: "english-companion",
+    name: "English Companion",
+    cwd: "C:\\dev\\english-companion",
+  },
 ];
 
 const WORKSPACES: Workspace[] = [
-  { id: "choda-deck-companion", projectId: "choda-deck", label: "Companion", cwd: "C:\\dev\\choda-deck-companion", archivedAt: null },
-  { id: "main", projectId: "choda-deck", label: "Main", cwd: "C:\\dev\\choda-deck", archivedAt: null },
-  { id: "retired", projectId: "choda-deck", label: "Retired", cwd: "C:\\dev\\old", archivedAt: "2026-01-01" },
-  { id: "web", projectId: "english-companion", label: "Web", cwd: "C:\\dev\\english-companion", archivedAt: null },
+  {
+    id: "choda-deck-companion",
+    projectId: "choda-deck",
+    label: "Companion",
+    cwd: "C:\\dev\\choda-deck-companion",
+    archivedAt: null,
+  },
+  {
+    id: "main",
+    projectId: "choda-deck",
+    label: "Main",
+    cwd: "C:\\dev\\choda-deck",
+    archivedAt: null,
+  },
+  {
+    id: "retired",
+    projectId: "choda-deck",
+    label: "Retired",
+    cwd: "C:\\dev\\old",
+    archivedAt: "2026-01-01",
+  },
+  {
+    id: "web",
+    projectId: "english-companion",
+    label: "Web",
+    cwd: "C:\\dev\\english-companion",
+    archivedAt: null,
+  },
 ];
 
 const state = {
@@ -43,7 +76,9 @@ const state = {
   isLoading: false,
   isError: false,
   workspacesOf: (id: string) => WORKSPACES.filter((w) => w.projectId === id),
-  liveCountOf: (id: string) => WORKSPACES.filter((w) => w.projectId === id && w.archivedAt === null).length,
+  liveCountOf: (id: string) =>
+    WORKSPACES.filter((w) => w.projectId === id && w.archivedAt === null)
+      .length,
 };
 
 vi.mock("react-router-dom", async (orig) => ({
@@ -84,7 +119,9 @@ describe("ProjectsView (TASK-1765)", () => {
   it("shows only the SELECTED project's workspaces", () => {
     mount();
     fireEvent.click(screen.getByTestId("project-row-choda-deck"));
-    expect(screen.getByTestId("workspace-row-choda-deck-companion")).toBeTruthy();
+    expect(
+      screen.getByTestId("workspace-row-choda-deck-companion"),
+    ).toBeTruthy();
     expect(screen.getByTestId("workspace-row-main")).toBeTruthy();
     // The discriminating half: a filter that dropped its predicate would still
     // render rows, and every assertion above would still pass.
@@ -104,7 +141,21 @@ describe("ProjectsView (TASK-1765)", () => {
   it("counts only LIVE workspaces — a count is a claim about what is usable", () => {
     mount();
     // choda-deck has 3 workspaces, one archived.
-    expect(screen.getByTestId("project-row-choda-deck").textContent).toContain("2");
+    expect(screen.getByTestId("project-row-choda-deck").textContent).toContain(
+      "2",
+    );
+  });
+
+  it("labels the count — exactly '2 workspaces', and the singular for one (TASK-2402)", () => {
+    mount();
+    // 3 registered, 1 archived: the label must not count the archived one (3).
+    expect(
+      screen.getByTestId("project-workspace-count-choda-deck").textContent,
+    ).toBe("2 workspaces");
+    expect(
+      screen.getByTestId("project-workspace-count-english-companion")
+        .textContent,
+    ).toBe("1 workspace");
   });
 
   it("links each workspace to its workspace page, so the route is reachable by click", () => {
@@ -148,8 +199,18 @@ describe("ProjectsView (TASK-1765)", () => {
 // TASK-2200 — projects grouped by organisation.
 describe("ProjectsView — grouped by org (TASK-2200)", () => {
   const ORG_PROJECTS: Project[] = [
-    { id: "choda-deck", name: "Choda Deck", cwd: "C:\\dev\\choda-deck", org: "personal" },
-    { id: "headless-cms", name: "Headless CMS", cwd: "C:\\dev\\test\\headless-cms", org: "ichiba" },
+    {
+      id: "choda-deck",
+      name: "Choda Deck",
+      cwd: "C:\\dev\\choda-deck",
+      org: "personal",
+    },
+    {
+      id: "headless-cms",
+      name: "Headless CMS",
+      cwd: "C:\\dev\\test\\headless-cms",
+      org: "ichiba",
+    },
     { id: "pim", name: "PIM", cwd: "C:\\vault", org: "ichiba" },
     { id: "loose", name: "Loose", cwd: "C:\\dev\\loose", org: null },
   ];
@@ -163,8 +224,22 @@ describe("ProjectsView — grouped by org (TASK-2200)", () => {
 
   function groupOf(projectId: string): string | null {
     const row = screen.getByTestId(`project-row-${projectId}`);
-    return row.closest("[data-testid^='project-group-']")?.getAttribute("data-testid") ?? null;
+    return (
+      row
+        .closest("[data-testid^='project-group-']")
+        ?.getAttribute("data-testid") ?? null
+    );
   }
+
+  it("labels each group's count — '2 projects', and the singular for one (TASK-2402)", () => {
+    mount();
+    expect(screen.getByTestId("group-count-ichiba").textContent).toBe(
+      "2 projects",
+    );
+    expect(screen.getByTestId("group-count-personal").textContent).toBe(
+      "1 project",
+    );
+  });
 
   it("puts each project under its org, and org-less projects under one No organisation group", () => {
     mount();
@@ -172,7 +247,9 @@ describe("ProjectsView — grouped by org (TASK-2200)", () => {
     expect(groupOf("pim")).toBe("project-group-ichiba");
     expect(groupOf("choda-deck")).toBe("project-group-personal");
     expect(groupOf("loose")).toBe("project-group-none");
-    expect(screen.getByTestId("project-group-toggle-none").textContent).toContain("No organisation");
+    expect(
+      screen.getByTestId("project-group-toggle-none").textContent,
+    ).toContain("No organisation");
   });
 
   it("orders named orgs alphabetically with No organisation last", () => {
@@ -180,7 +257,11 @@ describe("ProjectsView — grouped by org (TASK-2200)", () => {
     const order = screen
       .getAllByTestId(/^project-group-(?!toggle)/)
       .map((el) => el.getAttribute("data-testid"));
-    expect(order).toEqual(["project-group-ichiba", "project-group-personal", "project-group-none"]);
+    expect(order).toEqual([
+      "project-group-ichiba",
+      "project-group-personal",
+      "project-group-none",
+    ]);
   });
 
   it("collapses and expands a group, hiding only that group's rows", () => {
@@ -190,12 +271,18 @@ describe("ProjectsView — grouped by org (TASK-2200)", () => {
 
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.getByTestId("project-row-pim").closest("ul")?.hidden).toBe(true);
-    expect(screen.getByTestId("project-row-choda-deck").closest("ul")?.hidden).toBe(false);
+    expect(screen.getByTestId("project-row-pim").closest("ul")?.hidden).toBe(
+      true,
+    );
+    expect(
+      screen.getByTestId("project-row-choda-deck").closest("ul")?.hidden,
+    ).toBe(false);
 
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByTestId("project-row-pim").closest("ul")?.hidden).toBe(false);
+    expect(screen.getByTestId("project-row-pim").closest("ul")?.hidden).toBe(
+      false,
+    );
   });
 
   it("renders the plain list, with no group headers, when no project has an org", () => {
@@ -229,9 +316,14 @@ describe("ProjectsView — snapped list + more-below control (TASK-2376/2400/240
     const saved = ["scrollHeight", "clientHeight", "getBoundingClientRect"].map(
       (k) => [k, Object.getOwnPropertyDescriptor(proto, k)] as const,
     );
-    const list = (): HTMLElement | null => document.querySelector('[data-testid="project-list"]');
-    const height = (e: HTMLElement): number => (e.style.height ? parseFloat(e.style.height) : AREA);
-    Object.defineProperty(proto, "scrollHeight", { configurable: true, get: () => rows * ROW });
+    const list = (): HTMLElement | null =>
+      document.querySelector('[data-testid="project-list"]');
+    const height = (e: HTMLElement): number =>
+      e.style.height ? parseFloat(e.style.height) : AREA;
+    Object.defineProperty(proto, "scrollHeight", {
+      configurable: true,
+      get: () => rows * ROW,
+    });
     Object.defineProperty(proto, "clientHeight", {
       configurable: true,
       get(this: HTMLElement) {
@@ -242,10 +334,13 @@ describe("ProjectsView — snapped list + more-below control (TASK-2376/2400/240
       configurable: true,
       value(this: HTMLElement): DOMRect {
         const l = list();
-        if (this === l) return { top: 0, bottom: height(l), height: height(l) } as DOMRect;
+        if (this === l)
+          return { top: 0, bottom: height(l), height: height(l) } as DOMRect;
         const id = this.getAttribute("data-testid") ?? "";
         if (l !== null && id.startsWith("project-row-")) {
-          const all = Array.from(l.querySelectorAll('[data-testid^="project-row-"]'));
+          const all = Array.from(
+            l.querySelectorAll('[data-testid^="project-row-"]'),
+          );
           const top = all.indexOf(this) * ROW - l.scrollTop;
           return { top, bottom: top + ROW, height: ROW } as DOMRect;
         }
@@ -270,7 +365,9 @@ describe("ProjectsView — snapped list + more-below control (TASK-2376/2400/240
     try {
       mount();
       expect(screen.getByTestId("project-list").style.height).toBe("404px");
-      expect(screen.getByTestId("project-list-more").textContent).toBe("4 more");
+      expect(screen.getByTestId("project-list-more").textContent).toBe(
+        "4 more",
+      );
     } finally {
       restore();
     }
@@ -283,13 +380,17 @@ describe("ProjectsView — snapped list + more-below control (TASK-2376/2400/240
       const list = screen.getByTestId("project-list");
       list.scrollTop = 150; // rows ending past 556: 6, 7, 8
       fireEvent.scroll(list);
-      expect(screen.getByTestId("project-list-more").textContent).toBe("3 more");
+      expect(screen.getByTestId("project-list-more").textContent).toBe(
+        "3 more",
+      );
       list.scrollTop = 396; // the end: 800 - 404
       fireEvent.scroll(list);
       expect(screen.queryByTestId("project-list-more")).toBeNull();
       list.scrollTop = 0;
       fireEvent.scroll(list);
-      expect(screen.getByTestId("project-list-more").textContent).toBe("4 more");
+      expect(screen.getByTestId("project-list-more").textContent).toBe(
+        "4 more",
+      );
     } finally {
       restore();
     }
@@ -300,7 +401,9 @@ describe("ProjectsView — snapped list + more-below control (TASK-2376/2400/240
     try {
       mount();
       fireEvent.click(screen.getByTestId("project-list-more"));
-      expect(screen.getByTestId("project-list").scrollTop).toBeGreaterThanOrEqual(8 * ROW - 404);
+      expect(
+        screen.getByTestId("project-list").scrollTop,
+      ).toBeGreaterThanOrEqual(8 * ROW - 404);
       expect(screen.queryByTestId("project-list-more")).toBeNull();
     } finally {
       restore();
@@ -326,7 +429,9 @@ describe("ProjectsView — snapped list + more-below control (TASK-2376/2400/240
           <ProjectsView />
         </MemoryRouter>,
       );
-      expect(screen.getByTestId("project-list-more").textContent).toBe("4 more");
+      expect(screen.getByTestId("project-list-more").textContent).toBe(
+        "4 more",
+      );
     } finally {
       restore();
     }

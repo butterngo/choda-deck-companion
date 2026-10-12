@@ -23,6 +23,11 @@ import { useMoreBelow } from "../hooks/use-more-below";
 /** Height of the "N more" bar (h-9); the snapped list leaves exactly this below it. */
 const MORE_BAR_PX = 36;
 
+/** TASK-2402 — a bare gray digit made the reader guess what it counted. */
+export function countLabel(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
 function groupKey(org: string | null): string {
   return org ?? "none";
 }
@@ -83,8 +88,11 @@ export function ProjectsView(): React.JSX.Element {
         >
           <div className="flex items-baseline gap-2">
             <span className="text-sm font-medium">{p.name}</span>
-            <span className="ml-auto text-[11.5px] tabular-nums text-zinc-400">
-              {list.liveCountOf(p.id)}
+            <span
+              data-testid={`project-workspace-count-${p.id}`}
+              className="ml-auto flex-none text-[11.5px] tabular-nums text-zinc-400"
+            >
+              {countLabel(list.liveCountOf(p.id), "workspace")}
             </span>
           </div>
           <p className="mt-0.5 text-[11.5px] text-zinc-500 font-mono truncate">
@@ -219,8 +227,11 @@ export function ProjectsView(): React.JSX.Element {
                       <span className="text-[11px] uppercase tracking-wide text-zinc-500">
                         {g.org ?? "No organisation"}
                       </span>
-                      <span className="ml-auto text-[11.5px] tabular-nums text-zinc-400">
-                        {g.projects.length}
+                      <span
+                        data-testid={`group-count-${key}`}
+                        className="ml-auto text-[11.5px] tabular-nums text-zinc-400"
+                      >
+                        {countLabel(g.projects.length, "project")}
                       </span>
                     </button>
                     <ul hidden={!open} className="mt-1 space-y-1">
