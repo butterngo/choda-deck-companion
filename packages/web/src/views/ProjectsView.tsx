@@ -20,6 +20,9 @@ import { useMoreBelow } from "../hooks/use-more-below";
 
 // A group's key for state and test ids. "none" cannot collide with an org id
 // in practice, and it keeps the null group addressable.
+/** Height of the "N more" bar (h-9); the snapped list leaves exactly this below it. */
+const MORE_BAR_PX = 36;
+
 function groupKey(org: string | null): string {
   return org ?? "none";
 }
@@ -44,13 +47,23 @@ export function ProjectsView(): React.JSX.Element {
     });
   }
 
-  // TASK-2376/2400 — the list scrolls. Without a cue, the row cut by its bottom
-  // edge read as a clipping bug; a "N more" bar says what is below and goes away
-  // at the end, where bottom padding keeps the last row clear of the edge.
+  // TASK-2376/2400/2401 — the list scrolls. Without a cue, the row cut by its
+  // bottom edge read as a clipping bug. When it overflows, the box now ends on
+  // the last item that fits whole and a "N more" bar sits below it; the bar goes
+  // away at the end, where bottom padding keeps the last row clear of the edge.
   const more = useMoreBelow<HTMLUListElement>(
     [list.projects.length, collapsed],
-    '[data-testid^="project-row-"]',
+    {
+      rows: '[data-testid^="project-row-"]',
+      boundaries:
+        '[data-testid^="project-row-"], [data-testid^="project-group-toggle-"]',
+      barPx: MORE_BAR_PX,
+    },
   );
+  const boxStyle: React.CSSProperties | undefined =
+    more.boxHeight === null
+      ? undefined
+      : { height: more.boxHeight, flex: "none" };
 
   function projectRow(p: Project): React.JSX.Element {
     const active = p.id === selectedId;
@@ -168,11 +181,12 @@ export function ProjectsView(): React.JSX.Element {
 
     return (
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(260px,340px)_1fr] gap-6 flex-1 min-h-0 lg:grid-rows-[minmax(0,1fr)]">
-        <div className="relative min-h-0 flex flex-col">
+        <div className="min-h-0 flex flex-col">
           {groups.length === 0 ? (
             <ul
               ref={more.ref}
               onScroll={more.onScroll}
+              style={boxStyle}
               data-testid="project-list"
               className="min-h-0 flex-1 overflow-y-auto pb-4 space-y-1"
             >
@@ -182,6 +196,7 @@ export function ProjectsView(): React.JSX.Element {
             <ul
               ref={more.ref}
               onScroll={more.onScroll}
+              style={boxStyle}
               data-testid="project-list"
               className="min-h-0 flex-1 overflow-y-auto pb-4 space-y-3"
             >
@@ -216,15 +231,16 @@ export function ProjectsView(): React.JSX.Element {
               })}
             </ul>
           )}
-          {/* TASK-2400 — an explicit control, not a fade: the row cut by the edge
-              sits behind an opaque bar that says how many projects are below
-              and takes the reader there. A fade still read as clipping. */}
+          {/* TASK-2400/2401 — an explicit control, not a fade: it says how many
+              projects are below and takes the reader there. It sits in flow under
+              the snapped box rather than over the edge — overlaid, a sliver of
+              the next item still peeked above it and read as clipping. */}
           {more.belowCount > 0 && (
             <button
               type="button"
               data-testid="project-list-more"
               onClick={more.scrollToEnd}
-              className="absolute inset-x-0 bottom-0 flex h-9 items-center justify-center gap-1.5 border-t border-zinc-200 dark:border-zinc-800 bg-background text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+              className="flex h-9 flex-none items-center justify-center gap-1.5 border-t border-zinc-200 dark:border-zinc-800 bg-background text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
             >
               <i className="ti ti-chevron-down" aria-hidden="true" />
               {more.belowCount} more
