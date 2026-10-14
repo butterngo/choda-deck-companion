@@ -174,6 +174,7 @@ export function SidebarNav({ counts = {} }: { counts?: NavCounts }): React.JSX.E
         {/* Graph is an inspector over both stores, not a third place to read. */}
         <Item to="/graph" icon="ti-share" label="Graph" />
         <Item to="/sync" icon="ti-refresh" label="Sync" />
+        <Item to="/secrets" icon="ti-key" label="Secrets" />
       </div>
     </nav>
   );

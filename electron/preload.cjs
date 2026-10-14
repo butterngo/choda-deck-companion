@@ -5,7 +5,7 @@
 // is the safest possible state and the one to leave as intact as possible.
 //
 // So this exposes a FIXED set of functions and nothing else — openFolder
-// (TASK-2050) and openHtml (TASK-2145), one channel each. No ipcRenderer, no `require`,
+// (TASK-2050), openHtml (TASK-2145) and the secrets pair, one channel each. No ipcRenderer, no `require`,
 // no generic invoke — a renderer that could call an arbitrary channel would
 // have the whole main process, and the whole point of the guard in
 // open-folder.cjs is that the renderer is not trusted.
@@ -39,4 +39,37 @@ contextBridge.exposeInMainWorld("choda", {
    */
   openHtml: (workspaceId, relativePath) =>
     ipcRenderer.invoke("choda:open-html", workspaceId, relativePath),
+
+  /**
+   * List the credentials in every workspace's `sensitive_information/` — names
+   * only (workspace, file, key), no values.
+   *
+   * @returns {Promise<{ ok: boolean, reason?: string, entries?: { workspaceId: string, workspaceLabel: string, file: string, key: string }[] }>}
+   */
+  listSecrets: () => ipcRenderer.invoke("choda:list-secrets"),
+
+  /**
+   * Copy one credential to the clipboard. The main process reads the value and
+   * writes the clipboard itself, then clears it after a short delay.
+   *
+   * @param {string} workspaceId
+   * @param {string} file bare file name inside `sensitive_information/`
+   * @param {string} key "" for a single-value file
+   * @returns {Promise<{ ok: boolean, reason?: string, clearsInSeconds?: number }>}
+   */
+  copySecret: (workspaceId, file, key) =>
+    ipcRenderer.invoke("choda:copy-secret", workspaceId, file, key),
+
+  /**
+   * Return one credential's value so the UI can show it briefly. The only call
+   * that brings a value across this bridge; the UI calls it on an explicit
+   * click and never caches the result.
+   *
+   * @param {string} workspaceId
+   * @param {string} file
+   * @param {string} key
+   * @returns {Promise<{ ok: boolean, reason?: string, value?: string }>}
+   */
+  revealSecret: (workspaceId, file, key) =>
+    ipcRenderer.invoke("choda:reveal-secret", workspaceId, file, key),
 });

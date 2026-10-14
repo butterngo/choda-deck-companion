@@ -17,6 +17,7 @@ import { WorkspaceView } from "./views/WorkspaceView";
 import { ActivityView } from "./views/ActivityView";
 import { DecideView } from "./views/DecideView";
 import { LandingRedirect } from "./views/LandingRedirect";
+import { SecretsView } from "./views/SecretsView";
 
 // Exported so a test can mount the REAL route table in a memory router — the
 // only way to prove a path is not swallowed by the catch-all below.
@@ -49,6 +50,8 @@ export const routes: RouteObject[] = [
       { path: "workspace-docs", element: <WorkspaceDocsView /> },
       // TASK-2153 — daily activity digests: the four success metrics as trends.
       { path: "activity", element: <ActivityView /> },
+      // Quick copy / view of each workspace's sensitive_information/ files.
+      { path: "secrets", element: <SecretsView /> },
       { path: "*", element: <Navigate to="/sync" replace /> },
     ],
   },

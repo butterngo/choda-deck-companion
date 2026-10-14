@@ -3,7 +3,7 @@
 // server (see static-proxy-server.cjs for why), and opens one window. No
 // changes to the adapter (choda-deck repo) or packages/web's own source.
 
-const { app, BrowserWindow, dialog, Menu, Tray, Notification, nativeImage, session, desktopCapturer, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, Menu, Tray, Notification, nativeImage, session, desktopCapturer, ipcMain, shell } = require("electron");
 const path = require("node:path");
 const { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveModelDir, resolveBridgeToken, spawnAdapter, writePortFile, clearPortFile, watchAdapter } = require("./adapter-launcher.cjs");
 const { createStaticProxyServer } = require("./static-proxy-server.cjs");
@@ -12,6 +12,7 @@ const { initUpdater } = require("./updater.cjs");
 const { createDisplayMediaHandler } = require("./display-media.cjs");
 const { createOpenFolderHandler } = require("./open-folder.cjs");
 const { createOpenHtmlHandler, workspaceCwdResolver } = require("./open-html.cjs");
+const { createSecretsHandlers, workspaceLister } = require("./secrets.cjs");
 const { createAttentionReminder, fileStore } = require("./attention-reminder.cjs");
 const fs = require("node:fs");
 
@@ -220,6 +221,21 @@ if (!app.requestSingleInstanceLock()) {
           });
           return (_event, workspaceId, relPath) => openHtml(workspaceId, relPath);
         })()
+      );
+      // Quick-copy credentials from each workspace's sensitive_information/.
+      // The renderer lists names and asks for a copy; the value is read and put
+      // on the clipboard HERE. Only reveal (an explicit eye-icon click) returns
+      // a value to the renderer.
+      const secrets = createSecretsHandlers({
+        listWorkspaces: workspaceLister({ apiPort, bridgeToken }),
+        clipboard,
+      });
+      ipcMain.handle("choda:list-secrets", () => secrets.list());
+      ipcMain.handle("choda:copy-secret", (_event, workspaceId, file, key) =>
+        secrets.copy(workspaceId, file, key)
+      );
+      ipcMain.handle("choda:reveal-secret", (_event, workspaceId, file, key) =>
+        secrets.reveal(workspaceId, file, key)
       );
 
       win.loadURL(`http://127.0.0.1:${uiPort}/`);
