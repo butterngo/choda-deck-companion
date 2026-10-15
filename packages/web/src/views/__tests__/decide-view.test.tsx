@@ -190,6 +190,48 @@ describe("DecideView (TASK-2381)", () => {
     expect(screen.queryByTestId("decide-convert-INBOX-9003")).toBeNull();
   });
 
+  it("the loops block explains what each of its four colors means", async () => {
+    served = [
+      ...ITEMS,
+      {
+        id: "INBOX-9003",
+        source: "loop",
+        workspaceId: "main",
+        title: "🟢 PR ready",
+        content: "[loop:main] 🟢 PR ready",
+        createdAt: "2026-10-12T05:00:00Z",
+      },
+    ];
+    mount();
+    const legend = await screen.findByTestId("decide-block-loops-legend");
+    for (const mark of ["🔴", "🟡", "🟢", "⚪"]) expect(legend.textContent).toContain(mark);
+    expect(legend.textContent).toContain("waiting for you to merge");
+    expect(screen.queryByTestId("decide-block-improve-legend")).toBeNull();
+  });
+
+  it("Dismiss on a loop notice archives in one click with reason 'read', no reason box", async () => {
+    served = [
+      ...ITEMS,
+      {
+        id: "INBOX-9003",
+        source: "loop",
+        workspaceId: "main",
+        title: "⚪ run TASK-1 finished",
+        content: "[loop:main] ⚪ run TASK-1 finished",
+        createdAt: "2026-10-12T05:00:00Z",
+      },
+    ];
+    mount();
+    fireEvent.click(await screen.findByTestId("decide-archive-INBOX-9003"));
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    expect(writes()[0]).toEqual({
+      method: "POST",
+      url: "/api/inbox/INBOX-9003/archive",
+      body: { reason: "read" },
+    });
+    expect(screen.queryByTestId("decide-reason-INBOX-9003")).toBeNull();
+  });
+
   it("TASK-2419 AC-2: an improve item still renders Approve next to the loop notice", async () => {
     served = [
       ...ITEMS,

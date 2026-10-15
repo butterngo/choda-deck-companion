@@ -96,7 +96,14 @@ function Row({ item }: { item: PendingItem }): React.JSX.Element {
             type="button"
             data-testid={`decide-archive-${item.id}`}
             className={btn}
+            disabled={actions.archive.isPending}
             onClick={() => {
+              // A loop notice was only read, not rejected, so there is no reason to
+              // ask for; the adapter still requires one, so "read" is sent for it.
+              if (item.source === "loop") {
+                actions.archive.mutate({ id: item.id, reason: "read" });
+                return;
+              }
               setRejecting(true);
               setReason("");
             }}
@@ -114,18 +121,28 @@ function Row({ item }: { item: PendingItem }): React.JSX.Element {
   );
 }
 
+/** What each loop notice's leading emoji means — the same scale /choda-autopilot files with. */
+const LOOP_LEGEND: [string, string][] = [
+  ["🔴", "blocked or refused — something failed and needs you"],
+  ["🟡", "needs a decision — missing criteria or a contract gap"],
+  ["🟢", "PR ready — waiting for you to merge"],
+  ["⚪", "for information — a run started or finished"],
+];
+
 function Block({
   id,
   title,
   hint,
   items,
   emphasis = false,
+  legend,
 }: {
   id: string;
   title: string;
   hint: string;
   items: PendingItem[];
   emphasis?: boolean;
+  legend?: [string, string][];
 }): React.JSX.Element | null {
   if (items.length === 0) return null;
   return (
@@ -141,6 +158,19 @@ function Block({
         {title} <span className="ml-1 text-zinc-400 tabular-nums">{items.length}</span>
       </h2>
       <p className="mb-2 text-[11.5px] text-zinc-500">{hint}</p>
+      {legend && (
+        <dl
+          data-testid={`${id}-legend`}
+          className="mb-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[11.5px] text-zinc-500"
+        >
+          {legend.map(([mark, meaning]) => (
+            <div key={mark} className="contents">
+              <dt aria-hidden="true">{mark}</dt>
+              <dd>{meaning}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
       <ul className="space-y-2">
         {items.map((i) => (
           <Row key={i.id} item={i} />
@@ -234,6 +264,7 @@ export function DecideView(): React.JSX.Element {
           title="From your loops"
           hint="Blocked items, decisions and ready PRs reported by /choda-autopilot and /choda-burn-backlog. Dismiss once read."
           items={loops}
+          legend={LOOP_LEGEND}
         />
         <Block
           id="decide-block-improve"
