@@ -39,7 +39,7 @@ describe("preload bridge", () => {
   it("exposes exactly its fixed functions under window.choda", () => {
     const { exposed } = loadPreload();
     expect(Object.keys(exposed)).toEqual(["choda"]);
-    expect(Object.keys(exposed.choda).sort()).toEqual(["copySecret", "listSecrets", "openFolder", "openHtml", "revealSecret"]);
+    expect(Object.keys(exposed.choda).sort()).toEqual(["copySecret", "listSecretFiles", "listSecrets", "openFolder", "openHtml", "revealSecret"]);
     for (const fn of Object.values(exposed.choda)) expect(typeof fn).toBe("function");
   });
 
@@ -47,13 +47,15 @@ describe("preload bridge", () => {
     const { exposed, invoked } = loadPreload();
     await exposed.choda.openFolder("vault/x");
     await exposed.choda.openHtml("ws", "docs/r.html");
-    await exposed.choda.listSecrets();
+    await exposed.choda.listSecretFiles();
+    await exposed.choda.listSecrets("ws");
     await exposed.choda.copySecret("ws", "t.txt", "key");
     await exposed.choda.revealSecret("ws", "t.txt", "key");
     expect(invoked).toEqual([
       ["choda:open-folder", "vault/x"],
       ["choda:open-html", "ws", "docs/r.html"],
-      ["choda:list-secrets"],
+      ["choda:list-secret-files"],
+      ["choda:list-secrets", "ws"],
       ["choda:copy-secret", "ws", "t.txt", "key"],
       ["choda:reveal-secret", "ws", "t.txt", "key"],
     ]);

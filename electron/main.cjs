@@ -230,7 +230,8 @@ if (!app.requestSingleInstanceLock()) {
         listWorkspaces: workspaceLister({ apiPort, bridgeToken }),
         clipboard,
       });
-      ipcMain.handle("choda:list-secrets", () => secrets.list());
+      ipcMain.handle("choda:list-secret-files", () => secrets.listFiles());
+      ipcMain.handle("choda:list-secrets", (_event, workspaceId) => secrets.listEntries(workspaceId));
       ipcMain.handle("choda:copy-secret", (_event, workspaceId, file, key) =>
         secrets.copy(workspaceId, file, key)
       );
