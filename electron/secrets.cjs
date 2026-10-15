@@ -15,6 +15,11 @@
 //
 // A file is either KEY=VALUE lines (one entry per non-empty key, comments
 // skipped) or a single bare value (one entry for the whole file).
+//
+// Two calls keep the screen fast with many workspaces: `listFiles` only lists
+// folders (no file is opened), and `listEntries` reads ONE workspace's files
+// when its group is opened. Files over MAX_FILE_BYTES (data exports such as a
+// multi-MB Contentful dump) are not credentials and are never listed or read.
 
 const path = require("node:path");
 const fs = require("node:fs");
@@ -23,6 +28,9 @@ const { isInside } = require("./open-folder.cjs");
 const DIR_NAME = "sensitive_information";
 const KV_LINE = /^\s*([A-Za-z0-9_.-]+)\s*=\s*(.*?)\s*$/;
 const CLEAR_AFTER_MS = 45_000;
+const MAX_FILE_BYTES = 64 * 1024;
+// Binary formats cannot be copied as text; they are left out like large files.
+const BINARY_EXT = /\.(xlsx?|docx?|pptx?|pdf|png|jpe?g|gif|zip|7z|pfx|p12|der)$/i;
 
 /**
  * Split a secrets file into named values. `key` is "" for a single-value file.
@@ -49,6 +57,7 @@ function parseEntries(text) {
  *   clipboard: { writeText: (t: string) => void, readText: () => string },
  *   readdirSync?: typeof fs.readdirSync,
  *   readFileSync?: typeof fs.readFileSync,
+ *   statSync?: typeof fs.statSync,
  *   setTimer?: (fn: () => void, ms: number) => unknown,
  * }} deps
  */
@@ -57,46 +66,91 @@ function createSecretsHandlers({
   clipboard,
   readdirSync = fs.readdirSync,
   readFileSync = fs.readFileSync,
+  statSync = fs.statSync,
   setTimer = (fn, ms) => setTimeout(fn, ms).unref?.(),
 }) {
-  /** Files in a workspace's secrets dir, or [] when it has none. */
+  /** Small regular files in a workspace's secrets dir, or [] when it has none. */
   function filesIn(cwd) {
+    const dir = path.join(cwd, DIR_NAME);
+    let names;
     try {
-      return readdirSync(path.join(cwd, DIR_NAME), { withFileTypes: true })
-        .filter((d) => d.isFile() && !/\.template\./i.test(d.name))
-        .map((d) => d.name)
-        .sort();
+      names = readdirSync(dir, { withFileTypes: true })
+        .filter((d) => d.isFile() && !/\.template\./i.test(d.name) && !BINARY_EXT.test(d.name))
+        .map((d) => d.name);
     } catch {
       return [];
     }
+    return names
+      .filter((name) => {
+        try {
+          return statSync(path.join(dir, name)).size <= MAX_FILE_BYTES;
+        } catch {
+          return false;
+        }
+      })
+      .sort();
   }
 
-  /** @returns {Promise<{ ok: true, entries: { workspaceId: string, workspaceLabel: string, file: string, key: string }[] } | { ok: false, reason: string }>} */
-  async function list() {
-    let workspaces;
-    try {
-      workspaces = await listWorkspaces();
-    } catch {
-      return { ok: false, reason: "adapter unreachable" };
-    }
-    const entries = [];
-    // Several workspaces can share one cwd; the folder is listed once.
+  /** Active workspaces, one per distinct cwd (several can share a folder). */
+  async function activeWorkspaces() {
     const seen = new Set();
-    for (const ws of workspaces) {
+    const out = [];
+    for (const ws of await listWorkspaces()) {
       if (!ws || typeof ws.cwd !== "string" || ws.cwd.trim() === "" || ws.archivedAt) continue;
       const root = path.resolve(ws.cwd).toLowerCase();
       if (seen.has(root)) continue;
       seen.add(root);
-      for (const file of filesIn(ws.cwd)) {
-        let text;
-        try {
-          text = readFileSync(path.join(ws.cwd, DIR_NAME, file), "utf8");
-        } catch {
-          continue;
-        }
-        for (const { key } of parseEntries(text)) {
-          entries.push({ workspaceId: ws.id, workspaceLabel: ws.label || ws.id, file, key });
-        }
+      out.push(ws);
+    }
+    return out;
+  }
+
+  /**
+   * Folder listing only — no file is opened. Workspaces without secrets are left out.
+   *
+   * @returns {Promise<{ ok: true, workspaces: { workspaceId: string, workspaceLabel: string, files: string[] }[] } | { ok: false, reason: string }>}
+   */
+  async function listFiles() {
+    let workspaces;
+    try {
+      workspaces = await activeWorkspaces();
+    } catch {
+      return { ok: false, reason: "adapter unreachable" };
+    }
+    const out = [];
+    for (const ws of workspaces) {
+      const files = filesIn(ws.cwd);
+      if (files.length > 0) out.push({ workspaceId: ws.id, workspaceLabel: ws.label || ws.id, files });
+    }
+    return { ok: true, workspaces: out };
+  }
+
+  /**
+   * The names (file + key) inside ONE workspace's files. Values stay here.
+   *
+   * @returns {Promise<{ ok: true, entries: { workspaceId: string, workspaceLabel: string, file: string, key: string }[] } | { ok: false, reason: string }>}
+   */
+  async function listEntries(workspaceId) {
+    if (typeof workspaceId !== "string" || workspaceId.trim() === "") {
+      return { ok: false, reason: "invalid workspace" };
+    }
+    let ws;
+    try {
+      ws = (await activeWorkspaces()).find((w) => w.id === workspaceId);
+    } catch {
+      return { ok: false, reason: "adapter unreachable" };
+    }
+    if (!ws) return { ok: false, reason: "unknown workspace" };
+    const entries = [];
+    for (const file of filesIn(ws.cwd)) {
+      let text;
+      try {
+        text = readFileSync(path.join(ws.cwd, DIR_NAME, file), "utf8");
+      } catch {
+        continue;
+      }
+      for (const { key } of parseEntries(text)) {
+        entries.push({ workspaceId: ws.id, workspaceLabel: ws.label || ws.id, file, key });
       }
     }
     return { ok: true, entries };
@@ -131,6 +185,7 @@ function createSecretsHandlers({
 
     let text;
     try {
+      if (statSync(target).size > MAX_FILE_BYTES) return { ok: false, reason: "file too large" };
       text = readFileSync(target, "utf8");
     } catch {
       return { ok: false, reason: "not found" };
@@ -166,7 +221,7 @@ function createSecretsHandlers({
     return resolve(workspaceId, file, key);
   }
 
-  return { list, copy, reveal };
+  return { listFiles, listEntries, copy, reveal };
 }
 
 /**

@@ -52,25 +52,65 @@ describe("secrets handlers", () => {
   });
   afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  it("lists names only, never values, and skips templates and shared cwds", async () => {
+  it("lists files per workspace without opening them, skipping templates, large and binary files, and shared cwds", async () => {
     const cwd = makeWs("deck", {
       "token.txt": "tok-value",
       "azure.txt": "key=k-value\nendpoint=e-value",
       "azure.template.txt": "key=example",
+      "export.json": "x".repeat(64 * 1024 + 1),
+      "quote.xlsx": "PK",
     });
+    makeWs("empty", {});
+    const reads = [];
+    const h = createSecretsHandlers({
+      listWorkspaces: async () => [
+        { id: "deck", label: "Deck", cwd },
+        { id: "deck-2", label: "Same cwd", cwd },
+        { id: "gone", label: "Archived", cwd, archivedAt: "2026-01-01" },
+        { id: "empty", cwd: path.join(root, "empty") },
+      ],
+      clipboard: { writeText: () => {}, readText: () => "" },
+      readFileSync: (...args) => {
+        reads.push(args[0]);
+        return fs.readFileSync(...args);
+      },
+    });
+    const res = await h.listFiles();
+    expect(res).toEqual({
+      ok: true,
+      workspaces: [{ workspaceId: "deck", workspaceLabel: "Deck", files: ["azure.txt", "token.txt"] }],
+    });
+    expect(reads).toEqual([]);
+  });
+
+  it("lists one workspace's entry names, never values", async () => {
+    const cwd = makeWs("deck", {
+      "token.txt": "tok-value",
+      "azure.txt": "key=k-value\nendpoint=e-value",
+    });
+    const other = makeWs("other", { "x.txt": "other-value" });
     const h = handlers([
       { id: "deck", label: "Deck", cwd },
-      { id: "deck-2", label: "Same cwd", cwd },
-      { id: "gone", label: "Archived", cwd, archivedAt: "2026-01-01" },
+      { id: "other", cwd: other },
     ]);
-    const res = await h.list();
-    expect(res.ok).toBe(true);
-    expect(res.entries).toEqual([
-      { workspaceId: "deck", workspaceLabel: "Deck", file: "azure.txt", key: "key" },
-      { workspaceId: "deck", workspaceLabel: "Deck", file: "azure.txt", key: "endpoint" },
-      { workspaceId: "deck", workspaceLabel: "Deck", file: "token.txt", key: "" },
-    ]);
+    const res = await h.listEntries("deck");
+    expect(res).toEqual({
+      ok: true,
+      entries: [
+        { workspaceId: "deck", workspaceLabel: "Deck", file: "azure.txt", key: "key" },
+        { workspaceId: "deck", workspaceLabel: "Deck", file: "azure.txt", key: "endpoint" },
+        { workspaceId: "deck", workspaceLabel: "Deck", file: "token.txt", key: "" },
+      ],
+    });
     expect(JSON.stringify(res)).not.toMatch(/value/);
+    expect(await h.listEntries("nope")).toEqual({ ok: false, reason: "unknown workspace" });
+  });
+
+  it("refuses to copy or reveal a file over the size limit", async () => {
+    const cwd = makeWs("deck", { "big.txt": "x".repeat(64 * 1024 + 1) });
+    const h = handlers([{ id: "deck", cwd }]);
+    expect(await h.copy("deck", "big.txt", "")).toEqual({ ok: false, reason: "file too large" });
+    expect(await h.reveal("deck", "big.txt", "")).toEqual({ ok: false, reason: "file too large" });
   });
 
   it("copies the value to the clipboard and clears it later if unchanged", async () => {

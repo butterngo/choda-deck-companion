@@ -41,12 +41,21 @@ contextBridge.exposeInMainWorld("choda", {
     ipcRenderer.invoke("choda:open-html", workspaceId, relativePath),
 
   /**
-   * List the credentials in every workspace's `sensitive_information/` — names
-   * only (workspace, file, key), no values.
+   * Which workspaces have credentials, and the file names in each. A folder
+   * listing only — no file is opened, no value is included.
    *
+   * @returns {Promise<{ ok: boolean, reason?: string, workspaces?: { workspaceId: string, workspaceLabel: string, files: string[] }[] }>}
+   */
+  listSecretFiles: () => ipcRenderer.invoke("choda:list-secret-files"),
+
+  /**
+   * The entry names (file + key) inside one workspace's credential files —
+   * read when its group is opened. No values.
+   *
+   * @param {string} workspaceId
    * @returns {Promise<{ ok: boolean, reason?: string, entries?: { workspaceId: string, workspaceLabel: string, file: string, key: string }[] }>}
    */
-  listSecrets: () => ipcRenderer.invoke("choda:list-secrets"),
+  listSecrets: (workspaceId) => ipcRenderer.invoke("choda:list-secrets", workspaceId),
 
   /**
    * Copy one credential to the clipboard. The main process reads the value and

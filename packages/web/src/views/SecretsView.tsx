@@ -5,9 +5,15 @@
 // value on the clipboard without it ever reaching this page, and the eye icon
 // fetches one value on demand, shows it for REVEAL_SECONDS and drops it.
 //
+// Opening the page reads no file: it lists folders only (which workspaces have
+// secrets, and their file names), and pinned rows render from the pin itself.
+// A workspace group starts collapsed and reads its files the first time it is
+// opened. Search matches workspace and file names straight away and opens the
+// groups that match; key names match once a group has loaded.
+//
 // Pins are a per-machine convenience, so they live in localStorage.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { EmptyState } from "../components/state/EmptyState";
 import { ErrorState } from "../components/state/ErrorState";
 import { Skeleton } from "../components/state/Skeleton";
@@ -20,8 +26,17 @@ export interface SecretEntry {
   key: string;
 }
 
+export interface WorkspaceFiles {
+  workspaceId: string;
+  workspaceLabel: string;
+  files: string[];
+}
+
 interface SecretsBridge {
-  listSecrets: () => Promise<{ ok: boolean; reason?: string; entries?: SecretEntry[] }>;
+  listSecretFiles: () => Promise<{ ok: boolean; reason?: string; workspaces?: WorkspaceFiles[] }>;
+  listSecrets: (
+    workspaceId: string
+  ) => Promise<{ ok: boolean; reason?: string; entries?: SecretEntry[] }>;
   copySecret: (
     workspaceId: string,
     file: string,
@@ -38,7 +53,8 @@ interface SecretsBridge {
 function bridge(): SecretsBridge | null {
   const w = window as unknown as { choda?: Partial<SecretsBridge> };
   const c = w.choda;
-  return typeof c?.listSecrets === "function" &&
+  return typeof c?.listSecretFiles === "function" &&
+    typeof c.listSecrets === "function" &&
     typeof c.copySecret === "function" &&
     typeof c.revealSecret === "function"
     ? (c as SecretsBridge)
@@ -50,6 +66,24 @@ const REVEAL_SECONDS = 10;
 
 export function secretId(e: SecretEntry): string {
   return `${e.workspaceId}|${e.file}|${e.key}`;
+}
+
+/** A pin carries everything a row needs, so pinned rows render without a read. */
+function entryFromId(id: string, labels: ReadonlyMap<string, string>): SecretEntry | null {
+  const first = id.indexOf("|");
+  const last = id.lastIndexOf("|");
+  if (first <= 0 || last === first) return null;
+  const workspaceId = id.slice(0, first);
+  return {
+    workspaceId,
+    workspaceLabel: labels.get(workspaceId) ?? workspaceId,
+    file: id.slice(first + 1, last),
+    key: id.slice(last + 1),
+  };
+}
+
+function matches(e: SecretEntry, q: string): boolean {
+  return !q || `${e.workspaceLabel} ${e.file} ${e.key}`.toLowerCase().includes(q);
 }
 
 function displayName(e: SecretEntry): string {
@@ -75,6 +109,7 @@ function writePins(pins: string[]): void {
 }
 
 type Revealed = Record<string, { value: string; left: number }>;
+type GroupState = SecretEntry[] | "loading" | { error: string };
 
 function SecretRow({
   entry,
@@ -193,27 +228,70 @@ function GroupHeading({ children, count }: { children: React.ReactNode; count: n
 
 export function SecretsView(): React.JSX.Element {
   const b = bridge();
-  const [entries, setEntries] = useState<SecretEntry[] | null>(null);
+  const [workspaces, setWorkspaces] = useState<WorkspaceFiles[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [groups, setGroups] = useState<Record<string, GroupState>>({});
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [pins, setPins] = useState<string[]>(readPins);
   const [query, setQuery] = useState("");
   const [revealed, setRevealed] = useState<Revealed>({});
   const [notice, setNotice] = useState<{ text: string; tone: "ok" | "error" } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  // Groups already asked for, so a re-render or a search keystroke never reads twice.
+  const requested = useRef(new Set<string>());
 
+  // `b` is window.choda, fixed for the page's lifetime.
   const load = useCallback(() => {
     if (!b) return;
     setLoadError(null);
-    b.listSecrets()
+    setWorkspaces(null);
+    setGroups({});
+    requested.current.clear();
+    b.listSecretFiles()
       .then((r) => {
-        if (r.ok && r.entries) setEntries(r.entries);
+        if (r.ok && r.workspaces) setWorkspaces(r.workspaces);
         else setLoadError(r.reason ?? "could not list secrets");
       })
       .catch(() => setLoadError("could not list secrets"));
-    // `b` is window.choda, fixed for the page's lifetime.
   }, []);
 
   useEffect(load, [load]);
+
+  const loadGroup = useCallback((workspaceId: string) => {
+    if (!b || requested.current.has(workspaceId)) return;
+    requested.current.add(workspaceId);
+    setGroups((prev) => ({ ...prev, [workspaceId]: "loading" }));
+    b.listSecrets(workspaceId)
+      .then((r) =>
+        setGroups((prev) => ({
+          ...prev,
+          [workspaceId]: r.ok && r.entries ? r.entries : { error: r.reason ?? "could not load" },
+        }))
+      )
+      .catch(() => setGroups((prev) => ({ ...prev, [workspaceId]: { error: "could not load" } })));
+  }, []);
+
+  const toggleGroup = (workspaceId: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(workspaceId)) next.delete(workspaceId);
+      else next.add(workspaceId);
+      return next;
+    });
+    loadGroup(workspaceId);
+  };
+
+  const q = query.trim().toLowerCase();
+
+  // A search opens every group whose workspace or file names match, so load those.
+  useEffect(() => {
+    if (!q || !workspaces) return;
+    for (const w of workspaces) {
+      if (w.workspaceLabel.toLowerCase().includes(q) || w.files.some((f) => f.toLowerCase().includes(q))) {
+        loadGroup(w.workspaceId);
+      }
+    }
+  }, [q, workspaces, loadGroup]);
 
   // One ticker for every revealed value: count down, drop at zero.
   const anyRevealed = Object.keys(revealed).length > 0;
@@ -293,27 +371,18 @@ export function SecretsView(): React.JSX.Element {
     return () => clearTimeout(t);
   }, [notice]);
 
-  const q = query.trim().toLowerCase();
-  const visible = useMemo(
-    () =>
-      (entries ?? []).filter(
-        (e) => !q || `${e.workspaceLabel} ${e.file} ${e.key}`.toLowerCase().includes(q)
-      ),
-    [entries, q]
-  );
+  const labels = new Map((workspaces ?? []).map((w) => [w.workspaceId, w.workspaceLabel]));
   const pinned = pins
-    .map((id) => visible.find((e) => secretId(e) === id))
-    .filter((e): e is SecretEntry => e !== undefined);
-  const groups = useMemo(() => {
-    const byWs = new Map<string, SecretEntry[]>();
-    for (const e of visible) {
-      if (pins.includes(secretId(e))) continue;
-      const list = byWs.get(e.workspaceLabel) ?? [];
-      list.push(e);
-      byWs.set(e.workspaceLabel, list);
-    }
-    return [...byWs.entries()];
-  }, [visible, pins]);
+    .map((id) => entryFromId(id, labels))
+    .filter((e): e is SecretEntry => e !== null)
+    // A pin whose file is gone from the listing is stale; hide it rather than
+    // offer a Copy that can only fail.
+    .filter(
+      (e) =>
+        workspaces === null ||
+        workspaces.some((w) => w.workspaceId === e.workspaceId && w.files.includes(e.file))
+    )
+    .filter((e) => matches(e, q));
 
   function rowFor(e: SecretEntry, showWorkspace: boolean): React.JSX.Element {
     const id = secretId(e);
@@ -342,16 +411,17 @@ export function SecretsView(): React.JSX.Element {
       );
     }
     if (loadError) return <ErrorState variant="failed" subject="secrets" description={loadError} />;
-    if (entries === null) return <Skeleton shape="list" label="Loading secrets…" />;
-    if (entries.length === 0) {
+    if (workspaces === null) return <Skeleton shape="list" label="Loading secrets…" />;
+    if (workspaces.length === 0) {
       return (
         <EmptyState
           icon="ti-key"
           title="No secrets found"
-          description="No workspace has filled files in its sensitive_information/ folder."
+          description="No workspace has files in its sensitive_information/ folder."
         />
       );
     }
+    let shownGroups = 0;
     return (
       <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
         <section aria-label="Pinned secrets">
@@ -369,15 +439,60 @@ export function SecretsView(): React.JSX.Element {
             )}
           </div>
         </section>
-        {groups.map(([ws, list]) => (
-          <section key={ws} aria-label={`${ws} secrets`}>
-            <GroupHeading count={list.length}>{ws}</GroupHeading>
-            <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden">
-              {list.map((e) => rowFor(e, false))}
-            </div>
-          </section>
-        ))}
-        {q && visible.length === 0 && (
+        <div className="space-y-1">
+          {workspaces.map((w) => {
+            const state = groups[w.workspaceId];
+            const entries = Array.isArray(state) ? state : null;
+            const nameHit =
+              !q ||
+              w.workspaceLabel.toLowerCase().includes(q) ||
+              w.files.some((f) => f.toLowerCase().includes(q));
+            const keyHit = !!q && entries !== null && entries.some((e) => matches(e, q));
+            if (!nameHit && !keyHit) return null;
+            shownGroups++;
+            const open = q ? true : expanded.has(w.workspaceId);
+            const items = entries?.filter((e) => !pins.includes(secretId(e)) && matches(e, q)) ?? [];
+            return (
+              <section key={w.workspaceId} aria-label={`${w.workspaceLabel} secrets`}>
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  disabled={!!q}
+                  onClick={() => toggleGroup(w.workspaceId)}
+                  className="flex w-full items-center gap-1.5 rounded-md px-1 py-1.5 text-left text-[11px] font-medium uppercase tracking-wide text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-100"
+                >
+                  <i
+                    className={`ti ti-chevron-down text-zinc-400 transition-transform ${open ? "" : "-rotate-90"}`}
+                    aria-hidden="true"
+                  />
+                  {w.workspaceLabel}
+                  <span className="font-normal normal-case tracking-normal tabular-nums text-zinc-400">
+                    {w.files.length} {w.files.length === 1 ? "file" : "files"}
+                    {entries ? ` · ${entries.length} entries` : ""}
+                  </span>
+                </button>
+                {open && (
+                  <div className="mt-1 mb-3 border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden">
+                    {state === undefined || state === "loading" ? (
+                      <p className="px-3 py-3 text-xs text-zinc-400">Loading…</p>
+                    ) : !entries ? (
+                      <p className="px-3 py-3 text-xs text-amber-700 dark:text-amber-400">
+                        Could not load: {(state as { error: string }).error}
+                      </p>
+                    ) : items.length > 0 ? (
+                      items.map((e) => rowFor(e, false))
+                    ) : (
+                      <p className="px-3 py-3 text-center text-xs text-zinc-400">
+                        {q ? "No entry here matches." : entries.length > 0 ? "Everything here is pinned." : "These files have no filled values."}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </div>
+        {q && shownGroups === 0 && pinned.length === 0 && (
           <p className="text-center text-xs text-zinc-400">Nothing matches “{query.trim()}”.</p>
         )}
       </div>
@@ -392,7 +507,7 @@ export function SecretsView(): React.JSX.Element {
           from each workspace’s <code className="font-mono">sensitive_information/</code> · hidden until you show one
         </span>
       </div>
-      {b && entries !== null && entries.length > 0 && (
+      {b && workspaces !== null && workspaces.length > 0 && (
         <div className="flex gap-2 mb-4">
           <label className="flex-1 flex items-center gap-2 h-8 px-2.5 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 focus-within:border-blue-500">
             <i className="ti ti-search text-zinc-400" aria-hidden="true" />
