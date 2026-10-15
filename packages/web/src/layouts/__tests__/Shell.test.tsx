@@ -162,6 +162,10 @@ describe("TASK-1830 — the sidebar does not grow", () => {
     // that what automated sources file be the most visible thing in the app,
     // as the FIRST sidebar entry. That request supersedes "no more menu" for
     // this one destination; any other addition still reddens this test.
+    //
+    // /secrets — the eighth, also deliberate: Butter asked (2026-10-14) for
+    // quick access to sensitive_information/ credentials ON the companion and
+    // approved the mockup with it under System.
     nav("/projects");
     const links = screen.getAllByRole("link");
     expect(links.map((l) => l.getAttribute("href")).sort()).toEqual([
@@ -170,6 +174,7 @@ describe("TASK-1830 — the sidebar does not grow", () => {
       "/graph",
       "/knowledge",
       "/projects",
+      "/secrets",
       "/sync",
       "/vault",
     ]);
