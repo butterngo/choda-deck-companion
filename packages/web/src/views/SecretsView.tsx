@@ -159,12 +159,8 @@ function SecretRow({
         </div>
       </div>
       {revealed ? (
-        <span
-          data-testid="secret-value"
-          className="font-mono text-xs max-w-[280px] truncate select-all px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
-        >
-          {revealed.value}
-          <span className="ml-1.5 select-none text-[10.5px] text-zinc-400">{revealed.left}s</span>
+        <span className="text-[11px] tabular-nums text-blue-600 dark:text-blue-400">
+          hides in {revealed.left}s
         </span>
       ) : (
         <span className="hidden sm:inline font-mono text-xs tracking-widest text-zinc-400" aria-hidden="true">
@@ -213,6 +209,22 @@ function SecretRow({
           <i className={`ti ${pinned ? "ti-pinned-filled" : "ti-pin"}`} aria-hidden="true" />
         </button>
       </div>
+      {revealed && (
+        // Full width, every line, wrapped — a whole-file entry (e.g. a few
+        // "PAM: url user/pass" lines) must read like the Files tab, not as one
+        // truncated chip.
+        <div
+          data-testid="secret-value"
+          className="col-span-full overflow-x-auto rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 py-1.5 font-mono text-xs"
+        >
+          {revealed.value.split(/\r?\n/).map((line, i) => (
+            <div key={i} className="flex">
+              <span className="w-9 flex-none select-none pr-3 text-right tabular-nums text-zinc-400">{i + 1}</span>
+              <span className="min-w-0 whitespace-pre-wrap break-all pr-3 text-zinc-900 dark:text-zinc-100">{line}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

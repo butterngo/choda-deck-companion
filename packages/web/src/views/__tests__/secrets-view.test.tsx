@@ -24,7 +24,10 @@ function stubBridge(over: Record<string, unknown> = {}) {
     listSecretFiles: vi.fn(async () => ({ ok: true, workspaces: WORKSPACES })),
     listSecrets: vi.fn(async (ws: string) => ({ ok: true, entries: ENTRIES[ws] ?? [] })),
     copySecret: vi.fn(async () => ({ ok: true, clearsInSeconds: 45 })),
-    revealSecret: vi.fn(async () => ({ ok: true, value: "s3cr3t" })),
+    revealSecret: vi.fn(async () => ({
+      ok: true,
+      value: "PAM: https://host user/s3cr3t\nRancher: https://r user/pw2",
+    })),
     ...over,
   };
   vi.stubGlobal("choda", api);
@@ -131,7 +134,12 @@ describe("SecretsView", () => {
       fireEvent.click(eye);
     });
     expect(api.revealSecret).toHaveBeenCalledWith("deck", "sync-password.txt", "");
-    expect(screen.getByTestId("secret-value").textContent).toContain("s3cr3t");
+    // Every line in full, one row each — not a single truncated chip.
+    const value = screen.getByTestId("secret-value");
+    expect(value.textContent).toContain("PAM: https://host user/s3cr3t");
+    expect(value.textContent).toContain("Rancher: https://r user/pw2");
+    expect(value.className).not.toMatch(/truncate/);
+    expect(value.children).toHaveLength(2);
     await act(async () => {
       vi.advanceTimersByTime(10_000);
     });
