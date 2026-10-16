@@ -3,7 +3,7 @@
 // server (see static-proxy-server.cjs for why), and opens one window. No
 // changes to the adapter (choda-deck repo) or packages/web's own source.
 
-const { app, BrowserWindow, clipboard, dialog, Menu, Tray, Notification, nativeImage, session, desktopCapturer, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, Menu, Tray, Notification, nativeImage, session, desktopCapturer, ipcMain, shell, nativeTheme } = require("electron");
 const path = require("node:path");
 const { resolveAdapterEntry, resolveDataDir, resolveNodePath, resolveModelDir, resolveBridgeToken, spawnAdapter, writePortFile, clearPortFile, watchAdapter } = require("./adapter-launcher.cjs");
 const { createStaticProxyServer } = require("./static-proxy-server.cjs");
@@ -14,6 +14,7 @@ const { createOpenFolderHandler } = require("./open-folder.cjs");
 const { createOpenHtmlHandler, workspaceCwdResolver } = require("./open-html.cjs");
 const { createSecretsHandlers, workspaceLister } = require("./secrets.cjs");
 const { createAttentionReminder, fileStore } = require("./attention-reminder.cjs");
+const { createThemeHandler, fileStore: themeFileStore } = require("./theme.cjs");
 const fs = require("node:fs");
 
 // PNG works for the window + tray; packaged builds also bake the .ico into the
@@ -169,12 +170,21 @@ if (!app.requestSingleInstanceLock()) {
     const uiServer = createStaticProxyServer({ staticDir, apiPort, bridgeToken });
     uiServer.listen(0, "127.0.0.1", () => {
       const { port: uiPort } = uiServer.address();
+      // TASK-2482 — apply the theme chosen in the sidebar foot BEFORE the window
+      // exists, so the title bar and the background behind the first paint
+      // already match it. Without this a dark choice opens on a white flash.
+      const theme = createThemeHandler({
+        nativeTheme,
+        store: themeFileStore(fs, path.join(app.getPath("userData"), "theme.json")),
+      });
+      const backgroundColor = theme.applyStored();
       console.log(`[electron] serving UI on http://127.0.0.1:${uiPort} (adapter on 127.0.0.1:${apiPort})`);
       const win = new BrowserWindow({
         width: 1280,
         height: 800,
         show: false, // show maximized once ready, to avoid a 1280×800 flash
         icon: appIcon,
+        backgroundColor,
         webPreferences: {
           // NFR Security — no devtools/remote debugging surface in production.
           devTools: !app.isPackaged,
@@ -238,6 +248,8 @@ if (!app.requestSingleInstanceLock()) {
       ipcMain.handle("choda:reveal-secret", (_event, workspaceId, file, key) =>
         secrets.reveal(workspaceId, file, key)
       );
+      // TASK-2482 — the renderer names one of three modes; theme.cjs refuses the rest.
+      ipcMain.handle("choda:set-theme", (_event, mode) => theme.set(mode));
 
       win.loadURL(`http://127.0.0.1:${uiPort}/`);
       createTray();

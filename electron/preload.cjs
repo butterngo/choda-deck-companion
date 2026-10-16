@@ -5,7 +5,7 @@
 // is the safest possible state and the one to leave as intact as possible.
 //
 // So this exposes a FIXED set of functions and nothing else — openFolder
-// (TASK-2050), openHtml (TASK-2145) and the secrets pair, one channel each. No ipcRenderer, no `require`,
+// (TASK-2050), openHtml (TASK-2145), the secrets pair and setTheme (TASK-2482), one channel each. No ipcRenderer, no `require`,
 // no generic invoke — a renderer that could call an arbitrary channel would
 // have the whole main process, and the whole point of the guard in
 // open-folder.cjs is that the renderer is not trusted.
@@ -81,4 +81,14 @@ contextBridge.exposeInMainWorld("choda", {
    */
   revealSecret: (workspaceId, file, key) =>
     ipcRenderer.invoke("choda:reveal-secret", workspaceId, file, key),
+
+  /**
+   * TASK-2482 — make the title bar and window background follow the theme
+   * chosen in the sidebar foot. Main accepts exactly "system", "light" or
+   * "dark" and refuses anything else.
+   *
+   * @param {"system" | "light" | "dark"} mode
+   * @returns {Promise<{ ok: boolean, reason?: string }>}
+   */
+  setTheme: (mode) => ipcRenderer.invoke("choda:set-theme", mode),
 });
