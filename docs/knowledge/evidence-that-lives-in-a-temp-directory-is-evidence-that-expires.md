@@ -6,9 +6,9 @@ workspaceId: choda-deck-companion
 scope: project
 refs:
   - path: scripts/proof-loopback.cjs
-    commitSha: fd8ce2f3ca8a1586bde9df2598beb8038e780667
+    commitSha: f1b2862b9de9ff4cdfa9b128827d7e30efe0e914
 createdAt: 2026-09-16
-lastVerifiedAt: 2026-09-28
+lastVerifiedAt: 2026-10-05
 ---
 
 **Trigger:** a script is the *only* thing standing behind a claim — an acceptance
