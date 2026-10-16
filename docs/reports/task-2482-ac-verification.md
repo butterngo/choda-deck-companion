@@ -13,7 +13,7 @@ Date: 2026-10-16. Branch `feat/task-2482-theme-switch-sidebar`.
 
 ## Real-Electron smoke (AC-1 … AC-7)
 
-`task-2482/smoke-theme.cjs` drives the real `electron/main.cjs`, preload and
+[`scripts/proof-theme.cjs`](../../scripts/proof-theme.cjs) drives the real `electron/main.cjs`, preload and
 built web UI through Playwright's `_electron`, flips the real Windows app theme
 (`AppsUseLightTheme` + a `WM_SETTINGCHANGE "ImmersiveColorSet"` broadcast) and
 restores it, and samples the native title bar's pixel colour from the screen.
@@ -47,10 +47,11 @@ here; noted as a follow-up.
 
 ## Harness notes
 
-- Run from a scratch copy of `task-2482/`, with a copy of the database under
-  `data/database/`. `wrapper/` sets its own `userData` so the dev instance does
-  not collide with an installed Companion's single-instance lock (both default
-  to `%APPDATA%\choda-deck-companion`).
+- `SMOKE_SCRATCH=<dir> node scripts/proof-theme.cjs`, where `<dir>` holds a
+  copy of the database under `data/database/`. `scripts/proof-theme/wrapper-main.cjs`
+  gives the dev instance its own `userData`, so it does not collide with an
+  installed Companion's single-instance lock (both default to
+  `%APPDATA%\choda-deck-companion`).
 - The sibling `choda-deck` checkout's `better-sqlite3` is built for Node and
   fails under Electron (`NODE_MODULE_VERSION 137` vs `132`), so the harness
   points `CHODA_ADAPTER_ENTRY` at the last packaged build's vendored adapter.
