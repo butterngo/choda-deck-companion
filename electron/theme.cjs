@@ -7,9 +7,12 @@
 //
 // The renderer sends one of three fixed modes over one fixed channel
 // (preload.cjs `setTheme`); anything else is refused, never coerced. The choice
-// is also written to a small file in userData, because at the next launch the
-// BrowserWindow is created before the page has run — and its backgroundColor
-// is what shows until the first paint.
+// is written to a small file in userData, and THAT file is the source of truth
+// in the packaged app, not localStorage: the UI is served from 127.0.0.1 on a
+// fresh port every launch, so each launch is a new origin with an empty
+// localStorage. The page reads the mode back through preload `getTheme` before
+// first paint. The file also gives the BrowserWindow its backgroundColor, which
+// is what shows until that first paint.
 
 const MODES = ["system", "light", "dark"];
 
@@ -27,6 +30,11 @@ function createThemeHandler({ nativeTheme, store }) {
       const stored = store.get();
       nativeTheme.themeSource = isMode(stored) ? stored : "system";
       return nativeTheme.shouldUseDarkColors ? BACKGROUND.dark : BACKGROUND.light;
+    },
+
+    /** The mode main is applying now — what the page boots from (preload getTheme). */
+    current() {
+      return isMode(nativeTheme.themeSource) ? nativeTheme.themeSource : "system";
     },
 
     /** The IPC handler body: validate, apply, persist. */

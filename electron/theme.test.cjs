@@ -41,6 +41,14 @@ describe("theme handler", () => {
     }
   );
 
+  it("current() reports the applied mode for the page to boot from", () => {
+    const h = harness({ stored: "dark" });
+    h.theme.applyStored();
+    expect(h.theme.current()).toBe("dark");
+    h.theme.set("system");
+    expect(h.theme.current()).toBe("system");
+  });
+
   it("starts from the stored mode and returns the matching background", () => {
     const h = harness({ stored: "dark", osDark: false });
     expect(h.theme.applyStored()).toBe(BACKGROUND.dark);

@@ -90,15 +90,29 @@ describe("useTheme", () => {
     expect(isDark()).toBe(true);
   });
 
-  it("tells main the mode through the bridge, mapping Auto to system", () => {
+  it("tells main a choice through the bridge, mapping Auto to system", () => {
     mockOs(false);
     const setTheme = vi.fn().mockResolvedValue({ ok: true });
-    (window as unknown as { choda: unknown }).choda = { setTheme };
+    (window as unknown as { choda: unknown }).choda = { setTheme, getTheme: () => "system" };
     const { result } = renderHook(() => useTheme());
-    expect(setTheme).toHaveBeenLastCalledWith("system");
 
     act(() => result.current.setMode("dark"));
     expect(setTheme).toHaveBeenLastCalledWith("dark");
+    act(() => result.current.setMode("auto"));
+    expect(setTheme).toHaveBeenLastCalledWith("system");
+  });
+
+  it("in the packaged app, boots from main, not from a stale localStorage", () => {
+    // The packaged UI's origin changes every launch, so its localStorage is
+    // empty or stale; main's stored mode must win and must not be echoed back.
+    mockOs(false);
+    localStorage.setItem("theme", "light");
+    const setTheme = vi.fn().mockResolvedValue({ ok: true });
+    (window as unknown as { choda: unknown }).choda = { setTheme, getTheme: () => "dark" };
+    const { result } = renderHook(() => useTheme());
+    expect(result.current.mode).toBe("dark");
+    expect(isDark()).toBe(true);
+    expect(setTheme).not.toHaveBeenCalled();
   });
 
   it("cycles Auto → Light → Dark → Auto", () => {
