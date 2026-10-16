@@ -20,6 +20,7 @@ import { useHealth } from "../hooks/use-health";
 import { useSidebar } from "../hooks/use-sidebar";
 import { StatusBar } from "../components/StatusBar";
 import { SidebarNav } from "../components/nav/SidebarNav";
+import { ThemeSwitch } from "../components/nav/ThemeSwitch";
 import { usePending } from "../hooks/use-pending";
 import { RecorderProvider } from "../hooks/use-recorder";
 import { RecordingIndicator } from "../components/RecordingIndicator";
@@ -106,6 +107,11 @@ export function Shell(): React.JSX.Element {
                 Capture
               </span>
             </NavLink>
+          </div>
+          {/* TASK-2482 — below Search and Capture. `sidebar.collapsed` already
+              folds in the viewport, so the rail gets the one-button form. */}
+          <div className="px-1.5 rail:px-2.5 rail:group-data-[collapsed=true]/shell:px-1.5 pb-2.5 flex flex-col">
+            <ThemeSwitch collapsed={sidebar.collapsed} />
           </div>
         </div>
       </aside>
