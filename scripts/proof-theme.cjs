@@ -1,14 +1,28 @@
-// TASK-2482 smoke: drives the real Electron app (main.cjs + preload + built web)
-// against an isolated DB copy. Flips the real Windows app theme and restores it.
+// TASK-2482 — proof that the theme switch works in the real Electron app
+// (main.cjs + preload + built web UI), not just under jsdom. Results and the
+// defect it found: docs/reports/task-2482-ac-verification.md.
+//
+// It FLIPS THE REAL WINDOWS APP THEME (and restores Light at the end), and
+// samples the title bar's pixel colour from the screen, so the window must be
+// visible. Usage, after `pnpm run build` and with a packaged build in release/:
+//
+//   SMOKE_SCRATCH=<empty dir with data/database/choda-deck.db copied in> //     node scripts/proof-theme.cjs
+//
+// It lives in scripts/ rather than electron/ for the same reason as
+// proof-loopback.cjs: electron/** ships in the installer.
+// Callbacks passed to page.evaluate run in the renderer, not here.
+/* global document, window, localStorage, matchMedia, MutationObserver */
 const path = require("node:path");
 const fs = require("node:fs");
 const { execFileSync } = require("node:child_process");
-const REPO = "C:/dev/choda-deck-companion";
-const { _electron } = require(path.join(REPO, "node_modules/.pnpm/playwright-core@1.64.0/node_modules/playwright-core"));
-const S = __dirname;
+const REPO = path.resolve(__dirname, "..");
+const { _electron } = require(require.resolve("@playwright/test", { paths: [path.join(REPO, "packages/web")] }));
+const HERE = path.join(__dirname, "proof-theme");
+const S = process.env.SMOKE_SCRATCH;
+if (!S) throw new Error("set SMOKE_SCRATCH to a scratch dir holding data/database/choda-deck.db");
 
 const ps = (file, ...args) =>
-  execFileSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(S, file), ...args], { encoding: "utf8" }).trim();
+  execFileSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(HERE, file), ...args], { encoding: "utf8" }).trim();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];
 const check = (name, ok, detail) => { results.push({ name, ok, detail }); console.log(`${ok ? "PASS" : "FAIL"}  ${name}  ${JSON.stringify(detail)}`); };
@@ -22,11 +36,14 @@ async function launch() {
 async function launchOnce() {
   const app = await _electron.launch({
     executablePath: path.join(REPO, "node_modules/electron/dist/electron.exe"),
-    args: [path.join(S, "wrapper")],
+    // The wrapper gives this instance its own userData: an installed Companion
+    // uses the same default dir, and its single-instance lock would quit us.
+    args: [path.join(HERE, "wrapper-main.cjs")],
     cwd: REPO,
     env: {
       ...process.env,
       CHODA_DATA_DIR: path.join(S, "data"),
+      SMOKE_USERDATA: path.join(S, "userdata"),
       // The sibling choda-deck checkout's better-sqlite3 is built for Node, not
       // Electron; the last packaged build's vendored adapter is built for Electron.
       CHODA_ADAPTER_ENTRY: path.join(REPO, "release/win-unpacked/resources/adapter/companion-server.cjs"),
@@ -78,7 +95,7 @@ async function pick(page, mode) {
 (async () => {
   const osBefore = ps("os-theme.ps1", "-Mode", "light"); // start from a known OS state
   const userData = path.join(S, "userdata");
-  try { fs.rmSync(path.join(userData, "theme.json")); } catch {}
+  try { fs.rmSync(path.join(userData, "theme.json")); } catch { /* fresh profile already */ }
 
   // 1. Fresh profile: Auto, follows OS (light)
   let { app, page, early } = await launch();
@@ -156,4 +173,4 @@ async function pick(page, mode) {
   console.log(`restored ${ps("os-theme.ps1", "-Mode", "light")} (was light before: ${osBefore})`);
   console.log(`\n${results.filter((r) => r.ok).length}/${results.length} passed`);
   process.exit(results.every((r) => r.ok) ? 0 : 1);
-})().catch((e) => { console.error(e); try { ps("os-theme.ps1", "-Mode", "light"); } catch {} process.exit(2); });
+})().catch((e) => { console.error(e); try { ps("os-theme.ps1", "-Mode", "light"); } catch { /* best effort restore */ } process.exit(2); });
