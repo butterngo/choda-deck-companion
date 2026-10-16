@@ -6,13 +6,13 @@ workspaceId: choda-deck-companion
 scope: project
 refs:
   - path: packages/web/src/lib/srcdoc-base.ts
-    commitSha: fd8ce2f3ca8a1586bde9df2598beb8038e780667
+    commitSha: f1b2862b9de9ff4cdfa9b128827d7e30efe0e914
   - path: packages/web/src/components/HtmlDocView.tsx
-    commitSha: fd8ce2f3ca8a1586bde9df2598beb8038e780667
+    commitSha: f1b2862b9de9ff4cdfa9b128827d7e30efe0e914
   - path: packages/web/src/lib/report-images.ts
-    commitSha: fd8ce2f3ca8a1586bde9df2598beb8038e780667
+    commitSha: f1b2862b9de9ff4cdfa9b128827d7e30efe0e914
 createdAt: 2026-09-25
-lastVerifiedAt: 2026-09-28
+lastVerifiedAt: 2026-10-05
 ---
 
 **Trigger:** an HTML report rendered in the Docs pane (`<iframe sandbox="" srcdoc>`) has an in-page link (`<a href="#x">`, a table of contents, a CSS `:target` zoom) or a relative `src`, and it behaves differently in the app than when the file is opened in a browser.
