@@ -1,0 +1,53 @@
+{
+  "mode": "manual",
+  "url": "http://localhost:5173",
+  "pages": [
+    "/#/sync",
+    "/#/projects",
+    "/#/activity"
+  ],
+  "flows": [
+    {
+      "name": "search-to-task",
+      "steps": "Open Search, type a query, see the task hit, open the task",
+      "spec": "packages/web/e2e/search-to-task.spec.ts"
+    }
+  ],
+  "criteria": [
+    {
+      "name": "Test pass rate",
+      "by": "auto",
+      "measure": "test",
+      "target": "100%"
+    },
+    {
+      "name": "/projects load (LCP)",
+      "by": "auto",
+      "measure": "lcp:/#/projects",
+      "target": "< 1500 ms"
+    },
+    {
+      "name": "Console errors",
+      "by": "auto",
+      "measure": "console:/#/projects",
+      "target": 0
+    },
+    {
+      "name": "UI scannable",
+      "by": "agent",
+      "measure": "Can the projects page be scanned at a glance: clear hierarchy, no clutter, status readable without hovering",
+      "target": "≥ 4/5"
+    },
+    {
+      "name": "Search → open task flow",
+      "by": "auto",
+      "measure": "flow:search-to-task",
+      "target": "pass, ≤ 4 steps"
+    }
+  ],
+  "model": "sonnet",
+  "maxProposals": 3,
+  "stopAfterFlat": 3,
+  "startCmd": "pnpm dev",
+  "testCmd": "pnpm test"
+}
