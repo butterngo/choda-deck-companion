@@ -5,7 +5,7 @@
 // is the safest possible state and the one to leave as intact as possible.
 //
 // So this exposes a FIXED set of functions and nothing else — openFolder
-// (TASK-2050), openHtml (TASK-2145), the secrets pair and setTheme (TASK-2482), one channel each. No ipcRenderer, no `require`,
+// (TASK-2050), openHtml (TASK-2145), the secrets pair and setTheme/getTheme (TASK-2482), one channel each. No ipcRenderer, no `require`,
 // no generic invoke — a renderer that could call an arbitrary channel would
 // have the whole main process, and the whole point of the guard in
 // open-folder.cjs is that the renderer is not trusted.
@@ -91,4 +91,13 @@ contextBridge.exposeInMainWorld("choda", {
    * @returns {Promise<{ ok: boolean, reason?: string }>}
    */
   setTheme: (mode) => ipcRenderer.invoke("choda:set-theme", mode),
+
+  /**
+   * TASK-2482 — the theme main is applying, read synchronously so the
+   * index.html boot script can use it before first paint. localStorage cannot
+   * carry it in the packaged app: the UI's origin changes every launch.
+   *
+   * @returns {"system" | "light" | "dark"}
+   */
+  getTheme: () => ipcRenderer.sendSync("choda:get-theme"),
 });

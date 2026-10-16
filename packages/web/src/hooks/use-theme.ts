@@ -1,17 +1,17 @@
 // TASK-2482 — the theme chosen in the sidebar foot: Auto, Light or Dark.
 //
-// The storage contract is the one packages/web/index.html already reads before
-// first paint: `localStorage.theme` is "light" or "dark", and an ABSENT key
-// means Auto (follow the OS). Keeping that contract is what makes a restart open
-// in the chosen theme with no flash — the boot script applies it before React
-// has loaded.
+// Where the choice lives depends on the shell, and packages/web/index.html's
+// boot script reads it the same way before first paint:
+//
+//   packaged app — main owns it (preload `setTheme` / `getTheme`, a file in
+//     userData). localStorage cannot: the UI is served from 127.0.0.1 on a new
+//     port every launch, so every launch is a new origin with empty storage.
+//     Setting it there also makes the native title bar follow.
+//   browser shell — `localStorage.theme` is "light" or "dark", and an ABSENT
+//     key means Auto.
 //
 // In Auto a Windows theme change applies live through the
 // `prefers-color-scheme` media query. In Light or Dark the OS is ignored.
-//
-// In the packaged app the choice is also sent to main (preload `setTheme`) so
-// the native title bar follows. The browser shell has no bridge; the page
-// theme still works there.
 
 import { useCallback, useEffect, useState } from "react";
 
@@ -22,18 +22,24 @@ export const THEME_MODES: readonly ThemeMode[] = ["auto", "light", "dark"];
 const STORAGE_KEY = "theme";
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
+type NativeMode = "system" | "light" | "dark";
+
 interface ThemeBridge {
-  setTheme: (mode: "system" | "light" | "dark") => Promise<{ ok: boolean; reason?: string }>;
+  setTheme: (mode: NativeMode) => Promise<{ ok: boolean; reason?: string }>;
+  getTheme: () => NativeMode;
 }
 
 function bridge(): ThemeBridge | null {
   const w = window as unknown as { choda?: Partial<ThemeBridge> };
-  return typeof w.choda?.setTheme === "function" ? (w.choda as ThemeBridge) : null;
+  return typeof w.choda?.setTheme === "function" && typeof w.choda.getTheme === "function"
+    ? (w.choda as ThemeBridge)
+    : null;
 }
 
 function readStored(): ThemeMode {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const b = bridge();
+    const raw = b ? b.getTheme() : window.localStorage.getItem(STORAGE_KEY);
     return raw === "light" || raw === "dark" ? raw : "auto";
   } catch {
     return "auto";
@@ -75,12 +81,8 @@ export interface ThemeState {
 export function useTheme(): ThemeState {
   const [mode, setModeState] = useState<ThemeMode>(readStored);
 
-  // Re-apply on mount and on every change. Also tells main once at startup, so
-  // a userData file that drifted from localStorage (a dev run, a wiped profile)
-  // is corrected rather than trusted.
   useEffect(() => {
     apply(mode);
-    syncNative(mode);
   }, [mode]);
 
   useEffect(() => {
@@ -91,8 +93,11 @@ export function useTheme(): ThemeState {
     return () => mq.removeEventListener("change", onChange);
   }, [mode]);
 
+  // Main is told only on a user choice, never on mount: at mount the mode was
+  // just READ from main, and echoing it back is how a stale value would win.
   const setMode = useCallback((next: ThemeMode) => {
     persist(next);
+    syncNative(next);
     setModeState(next);
   }, []);
 

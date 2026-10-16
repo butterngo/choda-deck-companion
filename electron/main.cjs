@@ -250,6 +250,9 @@ if (!app.requestSingleInstanceLock()) {
       );
       // TASK-2482 — the renderer names one of three modes; theme.cjs refuses the rest.
       ipcMain.handle("choda:set-theme", (_event, mode) => theme.set(mode));
+      ipcMain.on("choda:get-theme", (event) => {
+        event.returnValue = theme.current();
+      });
 
       win.loadURL(`http://127.0.0.1:${uiPort}/`);
       createTray();

@@ -5,11 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Companion · choda-deck</title>
 
-  <!-- Theme boot — apply 'dark' class before paint to avoid FOUC. -->
+  <!-- Theme boot — apply 'dark' class before paint to avoid FOUC.
+       TASK-2482: in the packaged app the mode comes from main (preload
+       getTheme), because the UI's origin — and so its localStorage — changes
+       every launch. localStorage is the browser shell's store. -->
   <script>
     (function () {
       var stored = null;
-      try { stored = localStorage.getItem('theme'); } catch (e) {}
+      try {
+        if (window.choda && typeof window.choda.getTheme === 'function') {
+          var mode = window.choda.getTheme();
+          stored = mode === 'light' || mode === 'dark' ? mode : null;
+        } else {
+          stored = localStorage.getItem('theme');
+        }
+      } catch (e) {}
       var systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
       var dark = stored === 'dark' || (stored !== 'light' && systemDark);
       if (dark) document.documentElement.classList.add('dark');

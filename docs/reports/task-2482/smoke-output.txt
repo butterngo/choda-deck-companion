@@ -1,0 +1,14 @@
+PASS  AC-1 fresh profile: Auto checked, light  {"autoChecked":"true","dark":false,"stored":null,"mq":false,"checked":"Auto","themeSource":"system","darkColors":false}
+PASS  smoke-1 title bar light in Auto+OS light  {"color":"#f2f4ed","at":[427,24]}
+PASS  AC-2 Dark applied + stored  {"dark":true,"stored":"dark","mq":true,"checked":"Dark","themeSource":"dark","darkColors":true}
+PASS  AC-5 title bar dark after choosing Dark  {"color":"#20211e","at":[427,24]}
+PASS  AC-5 main refuses an unknown mode  {"refused":{"ok":false,"reason":"unknown theme mode"},"themeSource":"dark"}
+PASS  AC-3 restart: window bg dark from creation, Dark kept and checked  {"early":{"bg":"#18181B","themeSource":"dark","darkColors":true},"persisted":{"mode":"dark"},"dark":true,"stored":null,"mq":true,"checked":"Theme: Dark. Switch to Auto","themeSource":"dark","darkColors":true}
+PASS  AC-3 boot script applies dark before the app's first script  {"atModule":true}
+PASS  AC-2 Auto removes key, applies OS (light)  {"dark":false,"stored":null,"mq":false,"checked":"Auto","themeSource":"system","darkColors":false}
+PASS  AC-4 Auto: Windows → dark flips app live  {"dark":true,"stored":null,"mq":true,"checked":"Auto","themeSource":"system","darkColors":true,"tb":{"color":"#20211e","at":[427,24]}}
+PASS  AC-4 Auto: Windows → light flips back  {"dark":false,"stored":null,"mq":false,"checked":"Auto","themeSource":"system","darkColors":false,"tb":{"color":"#f2f4ed","at":[427,24]}}
+PASS  AC-4 Light: Windows → dark is ignored  {"dark":false,"stored":"light","mq":false,"checked":"Light","themeSource":"light","darkColors":false,"tb":{"color":"#f2f4ed","at":[427,24]}}
+PASS  AC-7 rail cycles Light → Dark → Auto → Light  ["Theme: Light. Switch to Dark","Theme: Dark. Switch to Auto","Theme: Auto. Switch to Light","Theme: Light. Switch to Dark"]
+restored os=light (was light before: os=light)
+12/12 passed
