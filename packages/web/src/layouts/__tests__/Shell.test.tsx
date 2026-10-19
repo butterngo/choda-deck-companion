@@ -148,7 +148,7 @@ describe("Shell icon rail (AC-7)", () => {
 });
 
 describe("TASK-1830 — the sidebar does not grow", () => {
-  it("still carries exactly eight destinations", () => {
+  it("carries exactly the approved destinations", () => {
     // Butter's constraint was "i don't want to introduce more menu". The Setup
     // surface is a workspace TAB, so pinning the exact destination set is what
     // proves the constraint was met rather than merely intended.
@@ -166,6 +166,10 @@ describe("TASK-1830 — the sidebar does not grow", () => {
     // /secrets — the eighth, also deliberate: Butter asked (2026-10-14) for
     // quick access to sensitive_information/ credentials ON the companion and
     // approved the mockup with it under System.
+    //
+    // /runs — the ninth, also deliberate (TASK-2532): Butter asked (2026-10-19)
+    // to see what /choda-autopilot and /choda-burn-backlog runs did "trên
+    // companion", and approved the mockup with Runs right under the decide entry.
     nav("/projects");
     const links = screen.getAllByRole("link");
     expect(links.map((l) => l.getAttribute("href")).sort()).toEqual([
@@ -174,6 +178,7 @@ describe("TASK-1830 — the sidebar does not grow", () => {
       "/graph",
       "/knowledge",
       "/projects",
+      "/runs",
       "/secrets",
       "/sync",
       "/vault",

@@ -16,6 +16,7 @@ import { ProjectsView } from "./views/ProjectsView";
 import { WorkspaceView } from "./views/WorkspaceView";
 import { ActivityView } from "./views/ActivityView";
 import { DecideView } from "./views/DecideView";
+import { RunsView } from "./views/RunsView";
 import { LandingRedirect } from "./views/LandingRedirect";
 import { SecretsView } from "./views/SecretsView";
 
@@ -30,6 +31,8 @@ export const routes: RouteObject[] = [
       // Butter, on Sync otherwise.
       { index: true, element: <LandingRedirect /> },
       { path: "decide", element: <DecideView /> },
+      // TASK-2532 — what each loop run finished, tested and left for Butter.
+      { path: "runs", element: <RunsView /> },
       { path: "sync", element: <SyncView /> },
       // TASK-1765 — the top of the browse hierarchy: projects → workspaces →
       // docs and tasks. Before this, nothing enumerated projects at all.
