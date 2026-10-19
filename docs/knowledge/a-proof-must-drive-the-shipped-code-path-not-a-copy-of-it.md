@@ -6,11 +6,11 @@ workspaceId: choda-deck-companion
 scope: project
 refs:
   - path: electron/display-media.cjs
-    commitSha: f1b2862b9de9ff4cdfa9b128827d7e30efe0e914
+    commitSha: 79c7889231d889ab7e30dc9aebc855f0d881c346
   - path: scripts/proof-loopback.cjs
-    commitSha: f1b2862b9de9ff4cdfa9b128827d7e30efe0e914
+    commitSha: 79c7889231d889ab7e30dc9aebc855f0d881c346
 createdAt: 2026-09-16
-lastVerifiedAt: 2026-10-05
+lastVerifiedAt: 2026-10-19
 ---
 
 **Trigger:** you are writing a script or a test to prove something the shipped code
