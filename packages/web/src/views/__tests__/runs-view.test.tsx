@@ -217,6 +217,20 @@ describe("RunsView", () => {
     expect(empty.textContent).toContain("/choda-burn-backlog");
   });
 
+  // TASK-2538 — the flow block sits in a run that has items, and only there.
+  it("TASK-2538 AC-9: a run with two items renders a Flow heading", async () => {
+    serve({ runs: [run({ goal: goal("TASK-10"), items: [item({ id: "TASK-11" }), item({ id: "TASK-12", deps: ["TASK-11"] })] })], otherNotices: [] });
+    mount();
+    expect(await screen.findByRole("heading", { name: /^Flow/ })).toBeTruthy();
+  });
+
+  it("TASK-2538 AC-10: a run with no items renders no Flow heading", async () => {
+    serve({ runs: [run({ goal: goal("TASK-10"), items: [] })], otherNotices: [] });
+    mount();
+    await screen.findByTestId("run-TASK-10");
+    expect(screen.queryByRole("heading", { name: /^Flow/ })).toBeNull();
+  });
+
   it("AC-13: a rejected GET /runs shows the error state, not the empty state", async () => {
     serve("reject");
     mount();
