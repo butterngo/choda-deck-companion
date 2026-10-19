@@ -2316,3 +2316,39 @@ export interface RunsPayload {
 export function fetchRuns(signal?: AbortSignal): Promise<RunsPayload> {
   return getJson<RunsPayload>("/runs", signal);
 }
+
+// TASK-2537 — one task's title and body in Vietnamese, from choda-deck's
+// POST /tasks/translate (TASK-2536). Costs money, so it is reached from a button
+// only, never on open — the same rule as reviewTaskAc above.
+export interface TaskTranslation {
+  taskId: string;
+  title: string;
+  body: string;
+  sourceHash: string;
+  cached: boolean;
+  model: string;
+}
+
+/** A failed translation, carrying the status so the panel can tell "not set up" from "failed". */
+export class TranslateError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "TranslateError";
+  }
+}
+
+export async function translateTask(taskId: string): Promise<TaskTranslation> {
+  const res = await fetch(`${API_BASE}/tasks/translate`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ taskId }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new TranslateError(res.status, body.error ?? `translation failed: ${res.status}`);
+  }
+  return (await res.json()) as TaskTranslation;
+}
