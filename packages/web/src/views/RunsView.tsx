@@ -6,7 +6,7 @@
 // The decide screen shows a run's notices and forgets them on dismiss; this
 // screen joins them with the goal's items, commits, criteria and test lines
 // (GET /runs). An item row opens the task page, where the translate button is.
-// The dependency flow per run is TASK-2538.
+// The dependency flow per run is RunFlow (TASK-2538).
 
 import { useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
@@ -16,6 +16,7 @@ import { useRuns } from "../hooks/use-runs";
 import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { Skeleton } from "../components/state/Skeleton";
+import { RunFlow } from "../components/RunFlow";
 
 type Filter = "all" | "running" | "finished" | "halted";
 
@@ -204,6 +205,8 @@ function RunCard({ run }: { run: Run }): React.JSX.Element {
               </span>
             )}
           </div>
+          {/* TASK-2538 — the dependency flow, above the table it summarises. */}
+          <RunFlow items={run.items} />
           {run.items.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-[13px]">
