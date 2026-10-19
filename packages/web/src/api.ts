@@ -2266,3 +2266,53 @@ export interface AttentionSession {
 export async function fetchAttention(signal?: AbortSignal): Promise<AttentionSession[]> {
   return (await getJson<{ sessions: AttentionSession[] }>("/attention", signal)).sessions;
 }
+
+// TASK-2532 — one record per /choda-autopilot or /choda-burn-backlog run, from
+// choda-deck's GET /runs (TASK-2531, TASK-2535): the goal, its items with
+// commit / AC / tests, the run's lifecycle stage and every notice it filed,
+// dismissed ones included.
+export type RunState = "running" | "finished" | "halted" | "waiting-merge" | "idle";
+export type RunStage = "started" | "working" | "pr-opened" | "merged" | "done";
+
+export interface RunNotice {
+  id: string;
+  workspaceId: string | null;
+  kind: "started" | "finished" | "blocked" | "decision" | "ready" | "other";
+  title: string;
+  content: string;
+  createdAt: string;
+  /** raw = still on the decide screen; archived = dismissed there. */
+  status: string;
+}
+
+export interface RunItem {
+  id: string;
+  title: string;
+  status: string;
+  ac: { ticked: number; total: number; humanOpen: string[] };
+  commit: string | null;
+  tests: { passed: string[]; skipped: string[] } | null;
+  activeSince: string | null;
+  deps: string[];
+}
+
+export interface Run {
+  goal: { id: string; title: string; status: string; projectId: string };
+  project: { id: string; name: string };
+  state: RunState;
+  stage: RunStage;
+  failedAt: RunStage | null;
+  prUrls: string[];
+  items: RunItem[];
+  notices: RunNotice[];
+  lastActivityAt: string;
+}
+
+export interface RunsPayload {
+  runs: Run[];
+  otherNotices: RunNotice[];
+}
+
+export function fetchRuns(signal?: AbortSignal): Promise<RunsPayload> {
+  return getJson<RunsPayload>("/runs", signal);
+}

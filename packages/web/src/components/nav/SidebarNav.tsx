@@ -110,6 +110,9 @@ export function SidebarNav({ counts = {} }: { counts?: NavCounts }): React.JSX.E
             </span>
           )}
         </NavLink>
+        {/* TASK-2532 — right under the decide screen: the decide screen shows a
+            loop's notices, this one shows what the run actually did. */}
+        <Item to="/runs" icon="ti-player-play" label="Runs" />
       </div>
 
       <div className="mb-3.5 rail:group-data-[collapsed=true]/shell:mb-0 rail:group-data-[collapsed=true]/shell:pb-1.5 rail:group-data-[collapsed=true]/shell:mt-1.5 rail:group-data-[collapsed=true]/shell:border-b rail:group-data-[collapsed=true]/shell:border-zinc-200 dark:rail:group-data-[collapsed=true]/shell:border-zinc-800">
