@@ -8,7 +8,7 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import { HashRouter, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { HealthView } from "../../hooks/use-health";
-import type { Run, RunItem, RunsPayload } from "../../api";
+import type { Run, RunCommit, RunItem, RunsPayload, WorkspaceCommitDetail } from "../../api";
 import { SidebarNav } from "../../components/nav/SidebarNav";
 
 const outletValue: HealthView = {
@@ -167,13 +167,8 @@ describe("RunsView", () => {
     expect((await screen.findByTestId("run-item-TASK-13")).textContent).toContain("working since");
   });
 
-  it("AC-8: clicking an item row opens /tasks/<id> with from.to = /runs", async () => {
-    serve({ runs: [run({ goal: goal("TASK-10"), items: [item({ id: "TASK-11" })] })], otherNotices: [] });
-    mount();
-    fireEvent.click(await screen.findByTestId("run-item-TASK-11"));
-    await waitFor(() => expect(location.pathname).toBe("/tasks/TASK-11"));
-    expect((location.state as { from?: { to?: string } } | null)?.from?.to).toBe("/runs");
-  });
+  // TASK-2532 AC-8 (a row click opens the task page) was replaced by TASK-2563:
+  // the row now expands in place and the task page is the "Open task" link.
 
   it("AC-9: humanOpen criteria are listed under Waiting on you", async () => {
     serve({
@@ -236,5 +231,196 @@ describe("RunsView", () => {
     mount();
     expect(await screen.findByTestId("error-state")).toBeTruthy();
     expect(screen.queryByText(/\/choda-autopilot/)).toBeNull();
+  });
+});
+
+// TASK-2563 — an item row expands in place to its tests, commits, files and diff.
+describe("RunsView item expansion", () => {
+  const SHA = "abc1234def5678abc1234def5678abc1234def56";
+
+  function detail(over: Partial<WorkspaceCommitDetail> = {}): WorkspaceCommitDetail {
+    return {
+      sha: SHA,
+      shortSha: "abc1234",
+      authorDate: "2026-10-19T09:00:00+07:00",
+      subject: "feat: item (TASK-11)",
+      taskIds: ["TASK-11"],
+      body: "",
+      reachability: "branch-only",
+      files: [
+        {
+          path: "src/a.ts",
+          insertions: 3,
+          deletions: 1,
+          binary: false,
+          hunks: [
+            {
+              oldStart: 1,
+              oldLines: 1,
+              newStart: 1,
+              newLines: 3,
+              header: "",
+              lines: [
+                { kind: "del", text: "old", oldNo: 1, newNo: null },
+                { kind: "add", text: "[Fact]", oldNo: null, newNo: 1 },
+                { kind: "add", text: "public void A_b()", oldNo: null, newNo: 2 },
+                { kind: "add", text: "{ }", oldNo: null, newNo: 3 },
+              ],
+            },
+          ],
+        },
+      ],
+      ...over,
+    };
+  }
+
+  const commitOf = (sha = SHA): RunCommit => ({ sha, subject: "feat: item (TASK-11)", workspaceId: "w", sessionId: "S-1" });
+
+  let calls: string[] = [];
+  function serveAll(items: RunItem[], commit: WorkspaceCommitDetail | 404 = detail()): void {
+    calls = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes("/workspaces/")) {
+        if (commit === 404) return new Response(JSON.stringify({ error: "unknown commit" }), { status: 404 });
+        return new Response(JSON.stringify(commit), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      const payload: RunsPayload = { runs: [run({ goal: goal("TASK-10"), items })], otherNotices: [] };
+      return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+    });
+  }
+
+  async function expand(id = "TASK-11"): Promise<HTMLElement> {
+    fireEvent.click(await screen.findByTestId(`run-item-${id}`));
+    return screen.findByTestId(`run-item-detail-${id}`);
+  }
+
+  it("AC-1: a fixed-shape suite line shows the suite total in the row", async () => {
+    serveAll([item({ id: "TASK-11", tests: { passed: ["full suite: 760 passed, 1 skipped, 0 failed"], skipped: [] } })]);
+    mount();
+    expect((await screen.findByTestId("run-item-TASK-11")).textContent).toContain("760 passed");
+  });
+
+  it("AC-2: a free-text first line shows +N more in the row", async () => {
+    serveAll([item({ id: "TASK-11", tests: { passed: ["ServiceActorTests 4/4", "dotnet build: 0 errors"], skipped: [] } })]);
+    mount();
+    expect((await screen.findByTestId("run-item-TASK-11")).textContent).toContain("+1 more");
+  });
+
+  it("AC-3: clicking the row sets aria-expanded to true", async () => {
+    serveAll([item({ id: "TASK-11" })]);
+    mount();
+    const row = await screen.findByTestId("run-item-TASK-11");
+    fireEvent.click(row);
+    expect(row.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("AC-4: clicking the row leaves the pathname at /runs", async () => {
+    serveAll([item({ id: "TASK-11" })]);
+    mount();
+    await expand();
+    expect(location.pathname).toBe("/runs");
+  });
+
+  it("AC-5: the expansion prefixes a skipped line with Skipped:", async () => {
+    serveAll([item({ id: "TASK-11", tests: { passed: ["a"], skipped: ["lint: no lint step in CI"] } })]);
+    mount();
+    expect((await expand()).textContent).toContain("Skipped: lint: no lint step in CI");
+  });
+
+  it("AC-6: the expansion shows every passed line", async () => {
+    serveAll([item({ id: "TASK-11", tests: { passed: ["line one", "line two", "line three"], skipped: [] } })]);
+    mount();
+    const tests = within(await expand()).getByRole("region", { name: "Tests" });
+    for (const l of ["line one", "line two", "line three"]) expect(tests.textContent).toContain(l);
+  });
+
+  it("AC-7: the test case added by the commit is listed by name", async () => {
+    serveAll([item({ id: "TASK-11", commits: [commitOf()] })]);
+    mount();
+    const box = within(await expand()).getByRole("region", { name: "Test cases added" });
+    await waitFor(() => expect(box.textContent).toContain("A b"));
+  });
+
+  it("AC-8: the Test cases added heading shows the count 1", async () => {
+    serveAll([item({ id: "TASK-11", commits: [commitOf()] })]);
+    mount();
+    const box = within(await expand()).getByRole("region", { name: "Test cases added" });
+    await waitFor(() => expect(within(box).getByTestId("count").textContent).toBe("1"));
+  });
+
+  it("AC-9: the changed file shows +3", async () => {
+    serveAll([item({ id: "TASK-11", commits: [commitOf()] })]);
+    mount();
+    await expand();
+    expect((await screen.findByTestId("run-file-src/a.ts")).textContent).toContain("+3");
+  });
+
+  it("AC-10: the changed file shows −1", async () => {
+    serveAll([item({ id: "TASK-11", commits: [commitOf()] })]);
+    mount();
+    await expand();
+    expect((await screen.findByTestId("run-file-src/a.ts")).textContent).toContain("−1");
+  });
+
+  it("AC-11: clicking the file renders its added lines", async () => {
+    serveAll([item({ id: "TASK-11", commits: [commitOf()] })]);
+    mount();
+    await expand();
+    fireEvent.click(await screen.findByTestId("run-file-src/a.ts"));
+    expect(screen.getAllByTestId("diff-line-add").length).toBeGreaterThan(0);
+  });
+
+  it("AC-12: a webUrl renders a link to it", async () => {
+    serveAll([item({ id: "TASK-11", commits: [commitOf()] })], detail({ webUrl: "https://github.com/o/r/commit/abc" }));
+    mount();
+    await expand();
+    const link = await screen.findByRole("link", { name: /View on GitHub/ });
+    expect(link.getAttribute("href")).toBe("https://github.com/o/r/commit/abc");
+  });
+
+  it("AC-13: no webUrl renders no GitHub link", async () => {
+    serveAll([item({ id: "TASK-11", commits: [commitOf()] })]);
+    mount();
+    await expand();
+    await screen.findByTestId("run-file-src/a.ts");
+    const github = screen.queryAllByRole("link").filter((a) => a.getAttribute("href")?.startsWith("https://github.com"));
+    expect(github).toEqual([]);
+  });
+
+  it("AC-14: an item without commits falls back to its commit", async () => {
+    serveAll([item({ id: "TASK-11", commit: "7061794 feat: x" })]);
+    mount();
+    const commits = within(await expand()).getByRole("region", { name: "Commits" });
+    expect(commits.textContent).toContain("7061794");
+  });
+
+  it("AC-15: a commit that answers 404 is not readable on this machine", async () => {
+    serveAll([item({ id: "TASK-11", commits: [commitOf()] })], 404);
+    mount();
+    const box = await expand();
+    await waitFor(() => expect(box.textContent).toContain("Commit not readable on this machine"));
+  });
+
+  it("AC-16: a collapsed row requests no commit", async () => {
+    serveAll([item({ id: "TASK-11", commits: [commitOf()] })]);
+    mount();
+    await screen.findByTestId("run-item-TASK-11");
+    expect(calls.filter((u) => u.includes("/workspaces/"))).toEqual([]);
+  });
+
+  it("AC-17: Open task goes to /tasks/<id>", async () => {
+    serveAll([item({ id: "TASK-11" })]);
+    mount();
+    fireEvent.click(within(await expand()).getByRole("link", { name: /Open task/ }));
+    await waitFor(() => expect(location.pathname).toBe("/tasks/TASK-11"));
+  });
+
+  it("AC-18: Open task carries from.to = /runs", async () => {
+    serveAll([item({ id: "TASK-11" })]);
+    mount();
+    fireEvent.click(within(await expand()).getByRole("link", { name: /Open task/ }));
+    await waitFor(() => expect((location.state as { from?: { to?: string } } | null)?.from?.to).toBe("/runs"));
   });
 });

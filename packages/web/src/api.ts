@@ -1050,6 +1050,11 @@ export interface WorkspaceCommitDetail extends WorkspaceCommit {
   body: string;
   files: CommitFileStat[];
   reachability: CommitReachability;
+  /**
+   * TASK-2560 — the commit on GitHub. Absent from an adapter older than that
+   * task (the vendored bundle lags a release); null for a non-GitHub origin.
+   */
+  webUrl?: string | null;
 }
 
 /**
@@ -2291,9 +2296,22 @@ export interface RunItem {
   status: string;
   ac: { ticked: number; total: number; humanOpen: string[] };
   commit: string | null;
+  /**
+   * TASK-2560 — every commit of every session on the item, newest first, each
+   * with the workspace it lives in. Absent from an older adapter, where only
+   * `commit` is served.
+   */
+  commits?: RunCommit[];
   tests: { passed: string[]; skipped: string[] } | null;
   activeSince: string | null;
   deps: string[];
+}
+
+export interface RunCommit {
+  sha: string;
+  subject: string;
+  workspaceId: string | null;
+  sessionId: string;
 }
 
 export interface Run {
