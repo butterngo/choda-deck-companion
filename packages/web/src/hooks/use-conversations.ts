@@ -45,6 +45,9 @@ export function useConversation(id: string | null): ConversationDetailView {
     queryKey: ["conversations", "detail", id],
     queryFn: ({ signal }) => fetchConversation(id as string, signal),
     enabled: id !== null,
+    // TASK-2556 — poll like the list: a signoff or decision made elsewhere (MCP,
+    // another session) otherwise left the pane `open` until a reload.
+    refetchInterval: HEALTH_POLL_MS,
     staleTime: 0,
   });
   return {
