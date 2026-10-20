@@ -36,6 +36,8 @@ export interface ConversationDetailView {
   detail: ConversationDetail | undefined;
   isLoading: boolean;
   isError: boolean;
+  /** TASK-2550 — re-read the thread after a decide or signoff. */
+  refetch: () => void;
 }
 
 export function useConversation(id: string | null): ConversationDetailView {
@@ -49,5 +51,6 @@ export function useConversation(id: string | null): ConversationDetailView {
     detail: q.data,
     isLoading: q.isLoading,
     isError: q.isError,
+    refetch: () => void q.refetch(),
   };
 }
