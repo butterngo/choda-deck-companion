@@ -17,6 +17,7 @@
 
 import type { ConversationDetail as ConversationDetailData } from "../api";
 import { CaptureMarkdown } from "./CaptureMarkdown";
+import { ConversationActions } from "./ConversationActions";
 import { extractPosition, stripPositionLine } from "../lib/conversation-kind";
 import { relativeTime } from "../lib/relative-time";
 
@@ -56,11 +57,15 @@ function initials(name: string): string {
 export function ConversationDetail({
   detail,
   onClose,
+  onChanged,
 }: {
   detail: ConversationDetailData;
   /** Dismisses the thread and returns the pane to its empty state. This closes
-   *  the reader, not the conversation — thread status is not writable here. */
+   *  the reader, not the conversation — the thread itself is settled through
+   *  ConversationActions (TASK-2550). */
   onClose?: () => void;
+  /** TASK-2550 — called after a decide or signoff so the caller re-reads the thread. */
+  onChanged?: () => void;
 }): React.JSX.Element {
   const { conversation, messages, participants } = detail;
 
@@ -96,6 +101,9 @@ export function ConversationDetail({
         <span>· {conversation.projectId}</span>
         {participants.length > 0 && <span>· {participants.map((p) => p.name).join(", ")}</span>}
       </div>
+
+      {/* TASK-2550 — record the decision and sign off, on an open thread only. */}
+      <ConversationActions conversation={conversation} participants={participants} onChanged={onChanged} />
 
       {/* The outcome leads. Reading eleven turns to find out what was decided
           is the failure this fixes. */}

@@ -2352,3 +2352,18 @@ export async function translateTask(taskId: string): Promise<TaskTranslation> {
   }
   return (await res.json()) as TaskTranslation;
 }
+
+// TASK-2550 — the two writes that settle a conversation: record its decision
+// (POST /conversations/:id/decide, TASK-2541) and sign off as one participant
+// (POST /conversations/:id/signoff, TASK-2549). A thread folds to `decided`
+// only once it has a decision and every participant has signed off.
+export function decideConversation(id: string, decision: string): Promise<{ conversation: ConversationSummary }> {
+  return postJson(`/conversations/${encodeURIComponent(id)}/decide`, { decision });
+}
+
+export function signoffConversation(
+  id: string,
+  name: string,
+): Promise<{ conversation: ConversationSummary; signedOff: string[]; decided: boolean }> {
+  return postJson(`/conversations/${encodeURIComponent(id)}/signoff`, { name });
+}

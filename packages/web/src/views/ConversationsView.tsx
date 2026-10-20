@@ -72,6 +72,10 @@ export function ConversationsView(): React.JSX.Element {
             <ConversationDetail
               detail={detail.detail}
               onClose={() => setSelectedId(null)}
+              onChanged={() => {
+                detail.refetch();
+                list.refetch();
+              }}
             />
           )}
         </div>
