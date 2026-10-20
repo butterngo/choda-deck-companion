@@ -39,8 +39,11 @@ export function ConversationActions({
 
   if (conversation.status !== "open") return null;
 
-  const canSign =
-    participants.some((p) => p.name === OWNER) && !conversation.signedOff.includes(OWNER);
+  // Threads store the owner as either "Butter" or "butter" (TASK-2553), and the
+  // fold compares names exactly, so match without case and sign with the
+  // participant's own spelling.
+  const owner = participants.find((p) => p.name.toLowerCase() === OWNER.toLowerCase())?.name;
+  const canSign = owner !== undefined && !conversation.signedOff.includes(owner);
 
   async function run(kind: "decide" | "signoff", call: () => Promise<unknown>): Promise<void> {
     setPending(kind);
@@ -86,7 +89,7 @@ export function ConversationActions({
             type="button"
             className={btn}
             disabled={pending !== null}
-            onClick={() => void run("signoff", () => signoffConversation(conversation.id, OWNER))}
+            onClick={() => void run("signoff", () => signoffConversation(conversation.id, owner))}
           >
             {pending === "signoff" ? "Signing off…" : `Sign off as ${OWNER}`}
           </button>

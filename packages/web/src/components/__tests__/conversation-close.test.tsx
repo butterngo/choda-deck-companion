@@ -130,3 +130,26 @@ describe("settling a conversation from the pane", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("not a participant: Butter");
   });
 });
+
+// TASK-2553 — some threads store the owner as lowercase "butter".
+describe("an owner stored as lowercase butter", () => {
+  it("shows Sign off as Butter for participants butter and claude", () => {
+    serve();
+    render(<ConversationDetail detail={thread({}, ["butter", "claude"])} />);
+    expect(screen.getByRole("button", { name: "Sign off as Butter" })).toBeTruthy();
+  });
+
+  it("signs off with the stored spelling {name: butter}, once", async () => {
+    serve();
+    render(<ConversationDetail detail={thread({}, ["butter", "claude"])} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sign off as Butter" }));
+    await waitFor(() => expect(posts("/conversations/CONV-7/signoff")).toHaveLength(1));
+    expect(posts("/conversations/CONV-7/signoff")[0]?.body).toEqual({ name: "butter" });
+  });
+
+  it("shows no Sign off button once butter has signed", () => {
+    serve();
+    render(<ConversationDetail detail={thread({ signedOff: ["butter"] }, ["butter", "claude"])} />);
+    expect(screen.queryByRole("button", { name: "Sign off as Butter" })).toBeNull();
+  });
+});
