@@ -5,12 +5,21 @@
 //
 // The decide screen shows a run's notices and forgets them on dismiss; this
 // screen joins them with the goal's items, commits, criteria and test lines
-// (GET /runs). An item row opens the task page, where the translate button is.
-// The dependency flow per run is RunFlow (TASK-2538).
+// (GET /runs). The dependency flow per run is RunFlow (TASK-2538).
+//
+// TASK-2563 — an item row expands in place to its test lines, the test cases
+// its commits added, and each commit's files and diff (Butter, 2026-10-20:
+// "chưa thể hiện được cái test", "thấy được commit và code change"). Mockup:
+// https://claude.ai/artifact/MZcAdez2hWLewKveSrBhsS. The task page, where the
+// translate button is, is one link inside the expansion.
 
 import { useState } from "react";
-import { useNavigate, useOutletContext } from "react-router-dom";
-import type { Run, RunItem, RunNotice, RunStage, RunState } from "../api";
+import { Link, useOutletContext } from "react-router-dom";
+import { useQueries } from "@tanstack/react-query";
+import { fetchWorkspaceCommit } from "../api";
+import type { Run, RunCommit, RunItem, RunNotice, RunStage, RunState, WorkspaceCommitDetail } from "../api";
+import { addedTestCases, parseSuiteLine } from "../lib/run-tests";
+import { FileDiff } from "../components/FileDiff";
 import type { HealthView } from "../hooks/use-health";
 import { useRuns } from "../hooks/use-runs";
 import { ErrorState } from "../components/state/ErrorState";
@@ -98,44 +107,308 @@ function Stepper({ run }: { run: Run }): React.JSX.Element {
   );
 }
 
-function ItemRow({ item }: { item: RunItem }): React.JSX.Element {
-  const navigate = useNavigate();
-  const open = (): void => {
-    void navigate(`/tasks/${encodeURIComponent(item.id)}`, { state: { from: { to: "/runs", label: "Runs" } } });
-  };
+/**
+ * TASK-2563 — the table's Tests cell. The suite total is shown only when the
+ * first line has the fixed shape the loops write (TASK-2561); any other first
+ * line is shown as written, with a count of the lines behind it.
+ */
+function TestsSummary({ tests }: { tests: RunItem["tests"] }): React.JSX.Element | null {
+  const first = tests?.passed[0];
+  if (first === undefined) return null;
+  const suite = parseSuiteLine(first);
+  if (suite) {
+    return (
+      <span>
+        {suite.passed} passed
+        {suite.failed > 0 && <span className="text-rose-700 dark:text-rose-400"> · {suite.failed} failed</span>}
+      </span>
+    );
+  }
+  const more = (tests?.passed.length ?? 1) - 1;
+  return (
+    <span>
+      {first}
+      {more > 0 && <span className="text-zinc-400"> +{more} more</span>}
+    </span>
+  );
+}
+
+/**
+ * The item's commits. An adapter older than TASK-2560 serves only `commit`,
+ * with no repo, so that one commit is kept and marked as unreadable rather
+ * than dropped.
+ */
+function itemCommits(item: RunItem): RunCommit[] {
+  if (item.commits) return item.commits;
+  if (!item.commit) return [];
+  const space = item.commit.indexOf(" ");
+  return [
+    {
+      sha: space === -1 ? item.commit : item.commit.slice(0, space),
+      subject: space === -1 ? "" : item.commit.slice(space + 1),
+      workspaceId: null,
+      sessionId: "",
+    },
+  ];
+}
+
+function SectionLabel({ children, count }: { children: React.ReactNode; count?: number }): React.JSX.Element {
+  return (
+    <h5 className="flex items-baseline gap-2 text-[11px] font-medium uppercase tracking-wide text-zinc-400">
+      {children}
+      {count !== undefined && <span data-testid="count" className="tabular-nums normal-case">{count}</span>}
+    </h5>
+  );
+}
+
+function CommitEntry({
+  commit,
+  detail,
+}: {
+  commit: RunCommit;
+  detail: { data?: WorkspaceCommitDetail; isLoading: boolean; isError: boolean };
+}): React.JSX.Element {
+  const [openFile, setOpenFile] = useState<string | null>(null);
+  const short = commit.sha.slice(0, 7);
+
+  if (commit.workspaceId === null || detail.isError) {
+    return (
+      <div className="flex flex-col gap-0.5 px-3 py-2 text-[12.5px]">
+        <span className="font-mono text-xs text-zinc-500">{short}</span>
+        <span className="text-zinc-500">Commit not readable on this machine</span>
+      </div>
+    );
+  }
+  if (detail.isLoading || !detail.data) {
+    return (
+      <div className="px-3 py-2">
+        <span className="font-mono text-xs text-zinc-500">{short}</span>
+        <Skeleton shape="list" label="Loading commit…" />
+      </div>
+    );
+  }
+
+  const c = detail.data;
+  const plus = c.files.reduce((n, f) => n + (f.insertions ?? 0), 0);
+  const minus = c.files.reduce((n, f) => n + (f.deletions ?? 0), 0);
+  const selected = c.files.find((f) => f.path === openFile) ?? null;
+  return (
+    <div className="flex flex-col">
+      <div className="flex flex-col gap-0.5 px-3 py-2">
+        <div className="flex flex-wrap items-baseline gap-2">
+          <span className="font-mono text-xs text-zinc-500">{c.shortSha || short}</span>
+          <span className="min-w-0">{c.subject}</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 text-xs text-zinc-400">
+          <span>
+            {c.files.length} file{c.files.length === 1 ? "" : "s"} ·{" "}
+            <span className="text-emerald-600 dark:text-emerald-400">+{plus}</span>{" "}
+            <span className="text-rose-600 dark:text-rose-400">−{minus}</span>
+          </span>
+          {c.webUrl && (
+            <a href={c.webUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline">
+              <i className="ti ti-external-link" aria-hidden="true" />
+              View on GitHub
+            </a>
+          )}
+        </div>
+      </div>
+      <ul className="border-t border-zinc-100 dark:border-zinc-800">
+        {c.files.map((f) => (
+          <li key={f.path}>
+            <button
+              type="button"
+              data-testid={`run-file-${f.path}`}
+              aria-pressed={openFile === f.path}
+              onClick={() => setOpenFile((p) => (p === f.path ? null : f.path))}
+              className={`flex w-full items-center gap-2 px-3 py-1 text-left font-mono text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${
+                openFile === f.path ? "bg-zinc-100 dark:bg-zinc-800" : ""
+              }`}
+            >
+              <span className="min-w-0 flex-1 truncate">{f.path}</span>
+              {f.binary ? (
+                <span className="text-[11px] text-zinc-400">binary</span>
+              ) : (
+                <span className="tabular-nums">
+                  <span className="text-emerald-600 dark:text-emerald-400">+{f.insertions}</span>{" "}
+                  <span className="text-rose-600 dark:text-rose-400">−{f.deletions}</span>
+                </span>
+              )}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {selected && (
+        <div className="max-h-96 overflow-y-auto border-t border-zinc-200 dark:border-zinc-800 p-2">
+          <FileDiff file={selected} onOpen={setOpenFile} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * TASK-2563 — the expansion under an item row: what was tested, what the
+ * commits added as tests, and what they changed. Commits load only while the
+ * row is open, through the same query key as useWorkspaceCommit, so a commit
+ * read here is not read again on the workspace page.
+ */
+function ItemDetail({ item }: { item: RunItem }): React.JSX.Element {
+  const commits = itemCommits(item);
+  const details = useQueries({
+    queries: commits.map((c) => ({
+      queryKey: ["workspace-commit", c.workspaceId, c.sha],
+      queryFn: ({ signal }: { signal: AbortSignal }) => fetchWorkspaceCommit(c.workspaceId as string, c.sha, signal),
+      enabled: c.workspaceId !== null,
+      staleTime: Infinity,
+      retry: false,
+    })),
+  });
+  const loaded = details.flatMap((d) => (d.data ? [d.data] : []));
+  const loading = details.some((d) => d.isLoading);
+  const added = addedTestCases(loaded.flatMap((d) => d.files));
+  const byPath = new Map<string, string[]>();
+  for (const t of added) byPath.set(t.path, [...(byPath.get(t.path) ?? []), t.name]);
+
+  return (
+    <div data-testid={`run-item-detail-${item.id}`} className="grid gap-3 px-3 py-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
+      <section aria-label="Tests" className="flex min-w-0 flex-col gap-3 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-3">
+        <div className="flex flex-col gap-1">
+          <SectionLabel>Ran</SectionLabel>
+          {item.tests && (item.tests.passed.length > 0 || item.tests.skipped.length > 0) ? (
+            <ul className="flex flex-col gap-0.5 text-[12.5px]">
+              {item.tests.passed.map((l) => (
+                <li key={`p-${l}`} className="flex gap-1.5">
+                  <i className="ti ti-check text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                  <span>{l}</span>
+                </li>
+              ))}
+              {item.tests.skipped.map((l) => (
+                <li key={`s-${l}`} className="flex gap-1.5 text-zinc-500">
+                  <i className="ti ti-minus text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                  <span>Skipped: {l}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[12.5px] text-zinc-400">No test results recorded</p>
+          )}
+        </div>
+        <section aria-label="Test cases added" className="flex flex-col gap-1">
+          <SectionLabel count={loading ? undefined : added.length}>Test cases added</SectionLabel>
+          {loading ? (
+            <Skeleton shape="list" label="Reading the diff…" />
+          ) : commits.length === 0 ? (
+            <p className="text-[12.5px] text-zinc-400">No commit recorded</p>
+          ) : loaded.length === 0 ? (
+            <p className="text-[12.5px] text-zinc-400">Unavailable — no commit could be read on this machine</p>
+          ) : (
+            [...byPath].map(([path, names]) => (
+              <div key={path} className="flex flex-col gap-0.5">
+                <span className="font-mono text-xs text-zinc-600 dark:text-zinc-300">{path}</span>
+                <ul className="flex flex-col gap-0.5 text-[12.5px] text-zinc-600 dark:text-zinc-300">
+                  {names.map((n, k) => (
+                    <li key={`${n}-${k}`} className="flex gap-1.5">
+                      <i className="ti ti-check text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                      <span>{n}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))
+          )}
+        </section>
+      </section>
+
+      <section aria-label="Commits" className="flex min-w-0 flex-col rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
+        <div className="border-b border-zinc-200 dark:border-zinc-800 px-3 py-2">
+          <SectionLabel count={commits.length}>Commits</SectionLabel>
+        </div>
+        {commits.length === 0 ? (
+          <p className="px-3 py-2 text-[12.5px] text-zinc-400">No commit recorded</p>
+        ) : (
+          commits.map((c, k) => (
+            <div key={c.sha} className={k > 0 ? "border-t border-zinc-200 dark:border-zinc-800" : ""}>
+              <CommitEntry
+                commit={c}
+                detail={{ data: details[k]?.data, isLoading: details[k]?.isLoading ?? false, isError: details[k]?.isError ?? false }}
+              />
+            </div>
+          ))
+        )}
+      </section>
+
+      <div className="md:col-span-2">
+        <Link
+          to={`/tasks/${encodeURIComponent(item.id)}`}
+          state={{ from: { to: "/runs", label: "Runs" } }}
+          className="inline-flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-300 underline"
+        >
+          <i className="ti ti-clipboard-check" aria-hidden="true" />
+          Open task
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function ItemRow({
+  item,
+  open,
+  onToggle,
+}: {
+  item: RunItem;
+  open: boolean;
+  onToggle: () => void;
+}): React.JSX.Element {
   const status = item.activeSince ? "In progress" : isDone(item) ? "Implemented" : item.status === "TODO" || item.status === "READY" ? "Waiting" : item.status;
   return (
-    <tr
-      data-testid={`run-item-${item.id}`}
-      tabIndex={0}
-      onClick={open}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") open();
-      }}
-      className="cursor-pointer border-t border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 align-top"
-    >
-      <td className="px-3 py-1.5 whitespace-nowrap text-zinc-600 dark:text-zinc-300">{status}</td>
-      <td className="px-3 py-1.5 whitespace-nowrap font-mono text-xs text-zinc-500">{item.id}</td>
-      <td className="px-3 py-1.5 min-w-[14rem]">{item.title}</td>
-      <td data-col="commit" className="px-3 py-1.5 whitespace-nowrap font-mono text-xs text-zinc-500">
-        {item.commit ? item.commit.split(" ")[0] : "—"}
-      </td>
-      <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">
-        {item.ac.ticked}/{item.ac.total}
-      </td>
-      <td className="px-3 py-1.5 min-w-[12rem] text-zinc-600 dark:text-zinc-300">
-        {item.activeSince ? (
-          <span className="text-blue-700 dark:text-blue-300">working since {hhmm(item.activeSince)}</span>
-        ) : (
-          item.tests?.passed[0] ?? ""
-        )}
-        {item.tests?.skipped.map((s) => (
-          <span key={s} className="block text-[11.5px] text-zinc-400">
-            skipped: {s}
-          </span>
-        ))}
-      </td>
-    </tr>
+    <>
+      <tr
+        data-testid={`run-item-${item.id}`}
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={onToggle}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onToggle();
+        }}
+        className={`cursor-pointer border-t border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 align-top ${
+          open ? "bg-zinc-50 dark:bg-zinc-800/50" : ""
+        }`}
+      >
+        <td className="px-3 py-1.5 whitespace-nowrap text-zinc-600 dark:text-zinc-300">
+          <i className={`ti ti-chevron-right mr-1 text-zinc-400 transition-transform ${open ? "rotate-90" : ""}`} aria-hidden="true" />
+          {status}
+        </td>
+        <td className="px-3 py-1.5 whitespace-nowrap font-mono text-xs text-zinc-500">{item.id}</td>
+        <td className="px-3 py-1.5 min-w-[14rem]">{item.title}</td>
+        <td data-col="commit" className="px-3 py-1.5 whitespace-nowrap font-mono text-xs text-zinc-500">
+          {item.commit ? item.commit.split(" ")[0] : "—"}
+        </td>
+        <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">
+          {item.ac.ticked}/{item.ac.total}
+        </td>
+        <td className="px-3 py-1.5 min-w-[12rem] text-zinc-600 dark:text-zinc-300">
+          {item.activeSince ? (
+            <span className="text-blue-700 dark:text-blue-300">working since {hhmm(item.activeSince)}</span>
+          ) : (
+            <TestsSummary tests={item.tests} />
+          )}
+          {item.tests?.skipped.map((s) => (
+            <span key={s} className="block text-[11.5px] text-zinc-400">
+              skipped: {s}
+            </span>
+          ))}
+        </td>
+      </tr>
+      {open && (
+        <tr className="bg-zinc-50 dark:bg-zinc-900/60">
+          <td colSpan={6} className="p-0">
+            <ItemDetail item={item} />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
@@ -160,6 +433,8 @@ function Timeline({ notices }: { notices: RunNotice[] }): React.JSX.Element {
 
 function RunCard({ run }: { run: Run }): React.JSX.Element {
   const [open, setOpen] = useState(run.state === "running");
+  // TASK-2563 — one item open at a time per run.
+  const [openItem, setOpenItem] = useState<string | null>(null);
   const pill = STATE_PILL[run.state];
   const done = run.items.filter(isDone).length;
   const human = run.items.flatMap((i) => i.ac.humanOpen.map((c) => `${i.id} · ${c}`));
@@ -222,7 +497,12 @@ function RunCard({ run }: { run: Run }): React.JSX.Element {
                 </thead>
                 <tbody>
                   {run.items.map((i) => (
-                    <ItemRow key={i.id} item={i} />
+                    <ItemRow
+                      key={i.id}
+                      item={i}
+                      open={openItem === i.id}
+                      onToggle={() => setOpenItem((cur) => (cur === i.id ? null : i.id))}
+                    />
                   ))}
                 </tbody>
               </table>
