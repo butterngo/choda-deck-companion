@@ -8,7 +8,7 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import { HashRouter, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { HealthView } from "../../hooks/use-health";
-import type { Run, RunCommit, RunItem, RunsPayload, WorkspaceCommitDetail } from "../../api";
+import type { Run, RunAc, RunCommit, RunItem, RunsPayload, WorkspaceCommitDetail } from "../../api";
 import { SidebarNav } from "../../components/nav/SidebarNav";
 
 const outletValue: HealthView = {
@@ -20,6 +20,11 @@ const outletValue: HealthView = {
 vi.mock("react-router-dom", async (orig) => ({
   ...(await orig<typeof import("react-router-dom")>()),
   useOutletContext: () => outletValue,
+}));
+
+// TASK-2598 — jsdom cannot draw mermaid; the Sequence tab only has to hand the code to MermaidBlock.
+vi.mock("../../components/MermaidBlock", () => ({
+  MermaidBlock: ({ code }: { code: string }) => <div data-testid="mermaid-block">{code}</div>,
 }));
 
 const { RunsView } = await import("../RunsView");
@@ -491,5 +496,112 @@ describe("RunsView feature and tabs", () => {
     expect(screen.queryByTestId("run-item-TASK-11")).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "Items" }));
     expect(await screen.findByTestId("run-item-TASK-11")).toBeTruthy();
+  });
+});
+
+// TASK-2598 — the item expansion's Sequence / Test cases / Commits & diff sub-tabs.
+describe("RunsView item criteria", () => {
+  const ac = (over: Partial<RunAc> & { index: number }): RunAc => ({
+    text: `Criterion ${over.index} — test`,
+    tag: "test",
+    checked: true,
+    method: "test",
+    ref: null,
+    evidence: null,
+    state: "covered",
+    ...over,
+  });
+
+  const withCriteria = (over: Partial<RunItem> = {}): RunItem =>
+    item({
+      id: "TASK-11",
+      acs: [
+        ac({ index: 0, ref: "ApprovalResultTests.A_b" }),
+        ac({ index: 1, checked: false, method: null, state: "open" }),
+      ],
+      sequence: null,
+      coverage: { covered: 1, weak: 0, open: 1, human: 0, total: 2 },
+      ...over,
+    });
+
+  function serveItem(i: RunItem): void {
+    serve({ runs: [run({ goal: goal("TASK-10"), items: [i] })], otherNotices: [] });
+  }
+
+  async function expand(): Promise<HTMLElement> {
+    await mountItems();
+    fireEvent.click(await screen.findByTestId("run-item-TASK-11"));
+    return screen.findByTestId("run-item-detail-TASK-11");
+  }
+
+  function subTab(detail: HTMLElement, name: string): void {
+    fireEvent.click(within(detail).getByRole("tab", { name }));
+  }
+
+  it("AC-0: an expanded item shows Sequence, Test cases and Commits & diff, with Test cases selected", async () => {
+    serveItem(withCriteria());
+    const detail = await expand();
+    const tabs = within(within(detail).getByRole("tablist", { name: "Item views" })).getAllByRole("tab");
+    expect(tabs.map((t) => t.textContent)).toEqual(["Sequence", "Test cases", "Commits & diff"]);
+    expect(within(detail).getByRole("tab", { name: "Test cases" }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it('AC-1: sequence { na: "docs only" } shows "No diagram — docs only" under Sequence', async () => {
+    serveItem(withCriteria({ sequence: { na: "docs only" } }));
+    const detail = await expand();
+    subTab(detail, "Sequence");
+    expect(within(detail).getByText("No diagram — docs only")).toBeTruthy();
+  });
+
+  it("AC-2: a mermaid sequence renders a MermaidBlock under Sequence", async () => {
+    serveItem(withCriteria({ sequence: { mermaid: "sequenceDiagram\n A->>B: x" } }));
+    const detail = await expand();
+    expect(within(detail).queryByTestId("mermaid-block")).toBeNull();
+    subTab(detail, "Sequence");
+    expect(within(detail).getByTestId("mermaid-block").textContent).toContain("A->>B: x");
+  });
+
+  it('AC-3: an open criterion renders a chip reading "open"', async () => {
+    serveItem(withCriteria());
+    const detail = await expand();
+    expect(within(within(detail).getByTestId("run-ac-1")).getByTestId("run-ac-state").textContent).toBe("open");
+  });
+
+  it("AC-4: a criterion's ref shows in its row", async () => {
+    serveItem(withCriteria());
+    const detail = await expand();
+    expect(within(detail).getByTestId("run-ac-0").textContent).toContain("ApprovalResultTests.A_b");
+  });
+
+  it("AC-5: coverage 3/4 with one open shows 3/4 in the AC cell, in rose", async () => {
+    serveItem(withCriteria({ coverage: { covered: 3, weak: 0, open: 1, human: 0, total: 4 } }));
+    await mountItems();
+    const cell = (await screen.findByTestId("run-item-TASK-11")).querySelector('[data-col="ac"]') as HTMLElement;
+    expect(cell.textContent).toBe("3/4");
+    expect(cell.className).toContain("text-rose-700");
+  });
+
+  it("an item with every criterion covered keeps the AC cell neutral", async () => {
+    serveItem(withCriteria({ coverage: { covered: 4, weak: 0, open: 0, human: 0, total: 4 } }));
+    await mountItems();
+    const cell = (await screen.findByTestId("run-item-TASK-11")).querySelector('[data-col="ac"]') as HTMLElement;
+    expect(cell.textContent).toBe("4/4");
+    expect(cell.className).not.toContain("text-rose-700");
+  });
+
+  it("AC-6: an item without acs shows the expansion without the sub-tab bar", async () => {
+    serveItem(item({ id: "TASK-11" }));
+    const detail = await expand();
+    expect(within(detail).queryByRole("tablist", { name: "Item views" })).toBeNull();
+    expect(within(detail).getByRole("region", { name: "Commits" })).toBeTruthy();
+  });
+
+  it("Commits & diff holds the existing tests and commits blocks", async () => {
+    serveItem(withCriteria());
+    const detail = await expand();
+    expect(within(detail).queryByRole("region", { name: "Commits" })).toBeNull();
+    subTab(detail, "Commits & diff");
+    expect(within(detail).getByRole("region", { name: "Commits" })).toBeTruthy();
+    expect(within(detail).getByRole("region", { name: "Tests" })).toBeTruthy();
   });
 });

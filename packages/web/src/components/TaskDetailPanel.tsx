@@ -131,7 +131,8 @@ export function TaskDetailPanel({ task }: { task: TaskDetail }): React.JSX.Eleme
           markdown as literal text. Rendered now, with artifact refs resolved. */}
       {body && (
         <div className="rounded-md bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-2 text-xs leading-relaxed">
-          <CaptureMarkdown>{body}</CaptureMarkdown>
+          {/* TASK-2598 — a task's `## Sequence` fence is drawn, not shown as source. */}
+          <CaptureMarkdown diagrams>{body}</CaptureMarkdown>
         </div>
       )}
     </div>

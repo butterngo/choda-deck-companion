@@ -15,10 +15,10 @@
 //   reader trying to audit a decision.
 //
 //   `diagrams` is OPT-IN and defaults off. mermaid unpacks to 84 MB against a
-//   196 MB installer, so only the docs pane asks for it; task bodies, knowledge
-//   detail and conversation threads keep rendering a mermaid fence as a code
-//   block. Even when enabled the module is only imported once a fence actually
-//   appears — see MermaidBlock.
+//   196 MB installer, so only the docs pane and the task page (TASK-2598: a
+//   plan's `## Sequence` diagram) ask for it; knowledge detail and conversation
+//   threads keep rendering a mermaid fence as a code block. Even when enabled
+//   the module is only imported once a fence actually appears — see MermaidBlock.
 
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -42,7 +42,7 @@ export function CaptureMarkdown({
   editFence,
 }: {
   children: string;
-  /** Render ```mermaid fences as diagrams. Off everywhere but the docs pane. */
+  /** Render ```mermaid fences as diagrams. On in the docs pane and the task page only. */
   diagrams?: boolean;
   /**
    * Put an Edit button on each diagram that can be identified.
