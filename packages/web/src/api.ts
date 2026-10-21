@@ -2324,6 +2324,19 @@ export interface Run {
   items: RunItem[];
   notices: RunNotice[];
   lastActivityAt: string;
+  /**
+   * TASK-2590 — the feature the goal realizes. Absent from an adapter older
+   * than that task (the vendored bundle lags a release); null when the goal is
+   * linked to no feature.
+   */
+  feature?: RunFeature | null;
+}
+
+export interface RunFeature {
+  slug: string;
+  title: string;
+  why: string | null;
+  missing: boolean;
 }
 
 export interface RunsPayload {
