@@ -78,6 +78,12 @@ function mount(): void {
   );
 }
 
+/** TASK-2592 — the item table now lives under the run card's Items tab. */
+async function mountItems(): Promise<void> {
+  mount();
+  fireEvent.click(await screen.findByRole("tab", { name: "Items" }));
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -143,7 +149,7 @@ describe("RunsView", () => {
       ],
       otherNotices: [],
     });
-    mount();
+    await mountItems();
     const row = await screen.findByTestId("run-item-TASK-11");
     expect(row.textContent).toContain("7061794");
     expect(row.textContent).toContain("2/4");
@@ -153,7 +159,7 @@ describe("RunsView", () => {
 
   it("AC-6: an item with no commit shows a dash in its commit cell", async () => {
     serve({ runs: [run({ goal: goal("TASK-10"), items: [item({ id: "TASK-12" })] })], otherNotices: [] });
-    mount();
+    await mountItems();
     const row = await screen.findByTestId("run-item-TASK-12");
     expect(row.querySelector('[data-col="commit"]')?.textContent).toBe("—");
   });
@@ -163,7 +169,7 @@ describe("RunsView", () => {
       runs: [run({ goal: goal("TASK-10"), items: [item({ id: "TASK-13", status: "IN-PROGRESS", activeSince: "2026-10-19T10:29:00Z" })] })],
       otherNotices: [],
     });
-    mount();
+    await mountItems();
     expect((await screen.findByTestId("run-item-TASK-13")).textContent).toContain("working since");
   });
 
@@ -180,14 +186,14 @@ describe("RunsView", () => {
       ],
       otherNotices: [],
     });
-    mount();
+    await mountItems();
     const waiting = await screen.findByRole("region", { name: "Waiting on you" });
     expect(waiting.textContent).toContain("AC-4: check it — human");
   });
 
   it("AC-10: a run with no humanOpen criteria shows Nothing under Waiting on you", async () => {
     serve({ runs: [run({ goal: goal("TASK-10"), items: [item({ id: "TASK-11" })] })], otherNotices: [] });
-    mount();
+    await mountItems();
     const waiting = await screen.findByRole("region", { name: "Waiting on you" });
     expect(waiting.textContent).toContain("Nothing");
   });
@@ -215,7 +221,7 @@ describe("RunsView", () => {
   // TASK-2538 — the flow block sits in a run that has items, and only there.
   it("TASK-2538 AC-9: a run with two items renders a Flow heading", async () => {
     serve({ runs: [run({ goal: goal("TASK-10"), items: [item({ id: "TASK-11" }), item({ id: "TASK-12", deps: ["TASK-11"] })] })], otherNotices: [] });
-    mount();
+    await mountItems();
     expect(await screen.findByRole("heading", { name: /^Flow/ })).toBeTruthy();
   });
 
@@ -298,19 +304,19 @@ describe("RunsView item expansion", () => {
 
   it("AC-1: a fixed-shape suite line shows the suite total in the row", async () => {
     serveAll([item({ id: "TASK-11", tests: { passed: ["full suite: 760 passed, 1 skipped, 0 failed"], skipped: [] } })]);
-    mount();
+    await mountItems();
     expect((await screen.findByTestId("run-item-TASK-11")).textContent).toContain("760 passed");
   });
 
   it("AC-2: a free-text first line shows +N more in the row", async () => {
     serveAll([item({ id: "TASK-11", tests: { passed: ["ServiceActorTests 4/4", "dotnet build: 0 errors"], skipped: [] } })]);
-    mount();
+    await mountItems();
     expect((await screen.findByTestId("run-item-TASK-11")).textContent).toContain("+1 more");
   });
 
   it("AC-3: clicking the row sets aria-expanded to true", async () => {
     serveAll([item({ id: "TASK-11" })]);
-    mount();
+    await mountItems();
     const row = await screen.findByTestId("run-item-TASK-11");
     fireEvent.click(row);
     expect(row.getAttribute("aria-expanded")).toBe("true");
@@ -318,55 +324,55 @@ describe("RunsView item expansion", () => {
 
   it("AC-4: clicking the row leaves the pathname at /runs", async () => {
     serveAll([item({ id: "TASK-11" })]);
-    mount();
+    await mountItems();
     await expand();
     expect(location.pathname).toBe("/runs");
   });
 
   it("AC-5: the expansion prefixes a skipped line with Skipped:", async () => {
     serveAll([item({ id: "TASK-11", tests: { passed: ["a"], skipped: ["lint: no lint step in CI"] } })]);
-    mount();
+    await mountItems();
     expect((await expand()).textContent).toContain("Skipped: lint: no lint step in CI");
   });
 
   it("AC-6: the expansion shows every passed line", async () => {
     serveAll([item({ id: "TASK-11", tests: { passed: ["line one", "line two", "line three"], skipped: [] } })]);
-    mount();
+    await mountItems();
     const tests = within(await expand()).getByRole("region", { name: "Tests" });
     for (const l of ["line one", "line two", "line three"]) expect(tests.textContent).toContain(l);
   });
 
   it("AC-7: the test case added by the commit is listed by name", async () => {
     serveAll([item({ id: "TASK-11", commits: [commitOf()] })]);
-    mount();
+    await mountItems();
     const box = within(await expand()).getByRole("region", { name: "Test cases added" });
     await waitFor(() => expect(box.textContent).toContain("A b"));
   });
 
   it("AC-8: the Test cases added heading shows the count 1", async () => {
     serveAll([item({ id: "TASK-11", commits: [commitOf()] })]);
-    mount();
+    await mountItems();
     const box = within(await expand()).getByRole("region", { name: "Test cases added" });
     await waitFor(() => expect(within(box).getByTestId("count").textContent).toBe("1"));
   });
 
   it("AC-9: the changed file shows +3", async () => {
     serveAll([item({ id: "TASK-11", commits: [commitOf()] })]);
-    mount();
+    await mountItems();
     await expand();
     expect((await screen.findByTestId("run-file-src/a.ts")).textContent).toContain("+3");
   });
 
   it("AC-10: the changed file shows −1", async () => {
     serveAll([item({ id: "TASK-11", commits: [commitOf()] })]);
-    mount();
+    await mountItems();
     await expand();
     expect((await screen.findByTestId("run-file-src/a.ts")).textContent).toContain("−1");
   });
 
   it("AC-11: clicking the file renders its added lines", async () => {
     serveAll([item({ id: "TASK-11", commits: [commitOf()] })]);
-    mount();
+    await mountItems();
     await expand();
     fireEvent.click(await screen.findByTestId("run-file-src/a.ts"));
     expect(screen.getAllByTestId("diff-line-add").length).toBeGreaterThan(0);
@@ -374,7 +380,7 @@ describe("RunsView item expansion", () => {
 
   it("AC-12: a webUrl renders a link to it", async () => {
     serveAll([item({ id: "TASK-11", commits: [commitOf()] })], detail({ webUrl: "https://github.com/o/r/commit/abc" }));
-    mount();
+    await mountItems();
     await expand();
     const link = await screen.findByRole("link", { name: /View on GitHub/ });
     expect(link.getAttribute("href")).toBe("https://github.com/o/r/commit/abc");
@@ -382,7 +388,7 @@ describe("RunsView item expansion", () => {
 
   it("AC-13: no webUrl renders no GitHub link", async () => {
     serveAll([item({ id: "TASK-11", commits: [commitOf()] })]);
-    mount();
+    await mountItems();
     await expand();
     await screen.findByTestId("run-file-src/a.ts");
     const github = screen.queryAllByRole("link").filter((a) => a.getAttribute("href")?.startsWith("https://github.com"));
@@ -391,36 +397,99 @@ describe("RunsView item expansion", () => {
 
   it("AC-14: an item without commits falls back to its commit", async () => {
     serveAll([item({ id: "TASK-11", commit: "7061794 feat: x" })]);
-    mount();
+    await mountItems();
     const commits = within(await expand()).getByRole("region", { name: "Commits" });
     expect(commits.textContent).toContain("7061794");
   });
 
   it("AC-15: a commit that answers 404 is not readable on this machine", async () => {
     serveAll([item({ id: "TASK-11", commits: [commitOf()] })], 404);
-    mount();
+    await mountItems();
     const box = await expand();
     await waitFor(() => expect(box.textContent).toContain("Commit not readable on this machine"));
   });
 
   it("AC-16: a collapsed row requests no commit", async () => {
     serveAll([item({ id: "TASK-11", commits: [commitOf()] })]);
-    mount();
+    await mountItems();
     await screen.findByTestId("run-item-TASK-11");
     expect(calls.filter((u) => u.includes("/workspaces/"))).toEqual([]);
   });
 
   it("AC-17: Open task goes to /tasks/<id>", async () => {
     serveAll([item({ id: "TASK-11" })]);
-    mount();
+    await mountItems();
     fireEvent.click(within(await expand()).getByRole("link", { name: /Open task/ }));
     await waitFor(() => expect(location.pathname).toBe("/tasks/TASK-11"));
   });
 
   it("AC-18: Open task carries from.to = /runs", async () => {
     serveAll([item({ id: "TASK-11" })]);
-    mount();
+    await mountItems();
     fireEvent.click(within(await expand()).getByRole("link", { name: /Open task/ }));
     await waitFor(() => expect((location.state as { from?: { to?: string } } | null)?.from?.to).toBe("/runs"));
+  });
+});
+
+// TASK-2592 — the run's feature line, feature card and tab shell.
+describe("RunsView feature and tabs", () => {
+  const feat = { slug: "f", title: "BPA × WorkHub", why: "W", missing: false };
+
+  it("AC-1: a run with a feature shows its title in the card header", async () => {
+    serve({ runs: [run({ goal: goal("TASK-10"), feature: feat })], otherNotices: [] });
+    mount();
+    const card = await screen.findByTestId("run-TASK-10");
+    expect(within(card).getByTestId("run-feature-line").textContent).toContain("BPA × WorkHub");
+  });
+
+  it("AC-2: feature: null shows No feature in the card header", async () => {
+    serve({ runs: [run({ goal: goal("TASK-10"), feature: null })], otherNotices: [] });
+    mount();
+    expect((await screen.findByTestId("run-feature-line")).textContent).toContain("No feature");
+  });
+
+  it("AC-3: a missing feature shows Feature not found: <slug>", async () => {
+    serve({ runs: [run({ goal: goal("TASK-10"), feature: { slug: "gone", title: "gone", why: null, missing: true } })], otherNotices: [] });
+    mount();
+    expect((await screen.findByTestId("run-feature-line")).textContent).toContain("Feature not found: gone");
+  });
+
+  it("AC-4: a run without a feature field shows neither No feature nor Feature not found", async () => {
+    serve({ runs: [run({ goal: goal("TASK-10") })], otherNotices: [] });
+    mount();
+    const card = await screen.findByTestId("run-TASK-10");
+    expect(card.textContent).not.toContain("No feature");
+    expect(card.textContent).not.toContain("Feature not found");
+  });
+
+  it("AC-5: an open run shows Overview and Items tabs with Overview selected", async () => {
+    serve({ runs: [run({ goal: goal("TASK-10"), feature: feat })], otherNotices: [] });
+    mount();
+    const overview = await screen.findByRole("tab", { name: "Overview" });
+    expect(screen.getByRole("tab", { name: "Items" })).toBeTruthy();
+    expect(overview.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("AC-6: the Overview tab shows the feature's why text", async () => {
+    serve({ runs: [run({ goal: goal("TASK-10"), feature: { ...feat, why: "WorkHub drives BPA processes." } })], otherNotices: [] });
+    mount();
+    const card = await screen.findByRole("region", { name: "Feature" });
+    expect(card.textContent).toContain("WorkHub drives BPA processes.");
+  });
+
+  it("AC-7: Open feature links to #/knowledge?slug=f", async () => {
+    serve({ runs: [run({ goal: goal("TASK-10"), feature: feat })], otherNotices: [] });
+    mount();
+    const link = await screen.findByRole("link", { name: /Open feature/ });
+    expect(link.getAttribute("href")?.endsWith("#/knowledge?slug=f")).toBe(true);
+  });
+
+  it("AC-8: after clicking Items the item row is in the document", async () => {
+    serve({ runs: [run({ goal: goal("TASK-10"), items: [item({ id: "TASK-11" })] })], otherNotices: [] });
+    mount();
+    await screen.findByRole("tab", { name: "Overview" });
+    expect(screen.queryByTestId("run-item-TASK-11")).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Items" }));
+    expect(await screen.findByTestId("run-item-TASK-11")).toBeTruthy();
   });
 });

@@ -8,7 +8,7 @@
 // is just an input.
 
 import { useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useOutletContext, useSearchParams } from "react-router-dom";
 import type { HealthView } from "../hooks/use-health";
 import type { KnowledgeType } from "../api";
 import { useKnowledgeList, useKnowledgeEntry } from "../hooks/use-knowledge";
@@ -25,7 +25,11 @@ import { Skeleton } from "../components/state/Skeleton";
 export function KnowledgeView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
   const [selectedType, setSelectedType] = useState<KnowledgeType | null>(null);
-  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  // TASK-2592 — `#/knowledge?slug=<slug>` opens that entry. The Runs feature card
+  // links here, and so do the provenance links (TaskProvenance, CommitDetailPanel),
+  // which until now landed on the list with nothing selected.
+  const [searchParams] = useSearchParams();
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(() => searchParams.get("slug"));
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState("");
   const list = useKnowledgeList(selectedType);

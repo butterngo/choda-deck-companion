@@ -17,7 +17,7 @@ import { useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import { useQueries } from "@tanstack/react-query";
 import { fetchWorkspaceCommit } from "../api";
-import type { Run, RunCommit, RunItem, RunNotice, RunStage, RunState, WorkspaceCommitDetail } from "../api";
+import type { Run, RunCommit, RunFeature, RunItem, RunNotice, RunStage, RunState, WorkspaceCommitDetail } from "../api";
 import { addedTestCases, parseSuiteLine } from "../lib/run-tests";
 import { FileDiff } from "../components/FileDiff";
 import type { HealthView } from "../hooks/use-health";
@@ -458,28 +458,28 @@ function RunCard({ run }: { run: Run }): React.JSX.Element {
           {pill.label}
         </span>
         <span className="ml-auto text-xs text-zinc-400">{when(run.lastActivityAt)}</span>
+        <FeatureLine feature={run.feature} />
       </button>
       {open && (
-        <div className="flex flex-col gap-3 border-t border-zinc-200 dark:border-zinc-800 px-3 py-3">
-          <Stepper run={run} />
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
-            <span className="text-zinc-700 dark:text-zinc-200">
-              {done} of {run.items.length} done
-            </span>
-            {run.prUrls.length > 0 ? (
-              run.prUrls.map((u) => (
-                <a key={u} href={u} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline">
-                  <i className="ti ti-git-pull-request" aria-hidden="true" />
-                  {u.replace(/^https:\/\/github\.com\//, "")}
-                </a>
-              ))
-            ) : (
-              <span className="inline-flex items-center gap-1">
-                <i className="ti ti-git-pull-request" aria-hidden="true" />
-                PR not opened yet
-              </span>
-            )}
-          </div>
+        <RunTabs
+          runId={run.goal.id}
+          tabs={[
+            {
+              id: "overview",
+              label: "Overview",
+              content: (
+                <>
+                  {run.feature && !run.feature.missing && <FeatureCard feature={run.feature} />}
+                  <Stepper run={run} />
+                  <MetaLine run={run} done={done} />
+                </>
+              ),
+            },
+            {
+              id: "items",
+              label: "Items",
+              content: (
+                <>
           {/* TASK-2538 — the dependency flow, above the table it summarises. */}
           <RunFlow items={run.items} />
           {run.items.length > 0 && (
@@ -521,9 +521,140 @@ function RunCard({ run }: { run: Run }): React.JSX.Element {
             )}
           </section>
           <Timeline notices={run.notices} />
-        </div>
+                </>
+              ),
+            },
+          ]}
+        />
       )}
     </article>
+  );
+}
+
+/**
+ * TASK-2592 — the run's tabs. Later goals add tabs (Test report, Deploy
+ * checklist, Waiting on you) by passing more entries, so the shell owns only
+ * the selection, not what a tab holds. Only the selected panel is mounted.
+ */
+export interface RunTab {
+  id: string;
+  label: string;
+  content: React.ReactNode;
+}
+
+function RunTabs({ runId, tabs }: { runId: string; tabs: RunTab[] }): React.JSX.Element {
+  const [selected, setSelected] = useState(tabs[0]?.id ?? "");
+  const current = tabs.find((t) => t.id === selected) ?? tabs[0];
+  return (
+    <div className="border-t border-zinc-200 dark:border-zinc-800">
+      <div role="tablist" aria-label="Run views" className="flex gap-1 overflow-x-auto border-b border-zinc-200 dark:border-zinc-800 px-3">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`${runId}-tab-${t.id}`}
+            aria-selected={t.id === current?.id}
+            aria-controls={`${runId}-panel-${t.id}`}
+            onClick={() => setSelected(t.id)}
+            className={`whitespace-nowrap border-b-2 px-3 py-2 text-[13px] ${
+              t.id === current?.id
+                ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100 font-medium"
+                : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {current && (
+        <div
+          role="tabpanel"
+          id={`${runId}-panel-${current.id}`}
+          aria-labelledby={`${runId}-tab-${current.id}`}
+          className="flex flex-col gap-3 px-3 py-3"
+        >
+          {current.content}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * TASK-2592 — the goal's feature under its title. An adapter older than
+ * TASK-2590 sends no `feature` field at all, which is not the same as "no
+ * feature": it renders nothing rather than a claim the data cannot support.
+ */
+function FeatureLine({ feature }: { feature: RunFeature | null | undefined }): React.JSX.Element | null {
+  if (feature === undefined) return null;
+  if (feature === null) {
+    return (
+      <span data-testid="run-feature-line" className="flex w-full items-center gap-1.5 pl-6 text-[12.5px] text-zinc-400">
+        <i className="ti ti-puzzle" aria-hidden="true" />
+        No feature
+      </span>
+    );
+  }
+  if (feature.missing) {
+    return (
+      <span data-testid="run-feature-line" className="flex w-full items-center gap-1.5 pl-6 text-[12.5px] text-rose-700 dark:text-rose-400">
+        <i className="ti ti-alert-triangle" aria-hidden="true" />
+        Feature not found: {feature.slug}
+      </span>
+    );
+  }
+  return (
+    <span data-testid="run-feature-line" className="flex w-full min-w-0 items-center gap-1.5 pl-6 text-[12.5px] text-violet-700 dark:text-violet-300">
+      <i className="ti ti-puzzle" aria-hidden="true" />
+      <span className="truncate font-medium">{feature.title}</span>
+    </span>
+  );
+}
+
+function FeatureCard({ feature }: { feature: RunFeature }): React.JSX.Element {
+  return (
+    <section
+      aria-label="Feature"
+      className="flex max-w-3xl flex-col gap-1.5 rounded-md border border-violet-200 bg-violet-50 px-3 py-2.5 dark:border-violet-900 dark:bg-violet-950/30"
+    >
+      <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-violet-700 dark:text-violet-300">
+        <i className="ti ti-puzzle" aria-hidden="true" />
+        Feature
+      </span>
+      <h3 className="text-sm font-medium">{feature.title}</h3>
+      {feature.why && <p className="text-[13px] text-zinc-600 dark:text-zinc-300">{feature.why}</p>}
+      <a
+        href={`#/knowledge?slug=${encodeURIComponent(feature.slug)}`}
+        className="inline-flex w-fit items-center gap-1 text-xs font-medium text-violet-700 hover:underline dark:text-violet-300"
+      >
+        Open feature
+        <i className="ti ti-external-link" aria-hidden="true" />
+      </a>
+    </section>
+  );
+}
+
+function MetaLine({ run, done }: { run: Run; done: number }): React.JSX.Element {
+  return (
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
+            <span className="text-zinc-700 dark:text-zinc-200">
+              {done} of {run.items.length} done
+            </span>
+            {run.prUrls.length > 0 ? (
+              run.prUrls.map((u) => (
+                <a key={u} href={u} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline">
+                  <i className="ti ti-git-pull-request" aria-hidden="true" />
+                  {u.replace(/^https:\/\/github\.com\//, "")}
+                </a>
+              ))
+            ) : (
+              <span className="inline-flex items-center gap-1">
+                <i className="ti ti-git-pull-request" aria-hidden="true" />
+                PR not opened yet
+              </span>
+            )}
+          </div>
   );
 }
 
