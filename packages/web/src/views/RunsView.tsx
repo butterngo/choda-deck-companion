@@ -17,7 +17,21 @@ import { useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import { useQueries } from "@tanstack/react-query";
 import { fetchWorkspaceCommit } from "../api";
-import type { Run, RunCommit, RunFeature, RunItem, RunNotice, RunStage, RunState, WorkspaceCommitDetail } from "../api";
+import type {
+  Run,
+  RunAc,
+  RunAcState,
+  RunCommit,
+  RunCoverage,
+  RunFeature,
+  RunItem,
+  RunNotice,
+  RunSequence,
+  RunStage,
+  RunState,
+  WorkspaceCommitDetail,
+} from "../api";
+import { MermaidBlock } from "../components/MermaidBlock";
 import { addedTestCases, parseSuiteLine } from "../lib/run-tests";
 import { FileDiff } from "../components/FileDiff";
 import type { HealthView } from "../hooks/use-health";
@@ -253,7 +267,163 @@ function CommitEntry({
  * row is open, through the same query key as useWorkspaceCommit, so a commit
  * read here is not read again on the workspace page.
  */
+const AC_STATE: Record<RunAcState, string> = {
+  covered: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+  weak: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
+  open: "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300",
+  human: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
+};
+
+const METHOD_LABEL: Record<string, string> = { test: "Test", command: "Command", grep: "Grep", manual: "Manual" };
+
+/** TASK-2598 — the item's diagram, drawn; its source one click away. */
+function SequencePanel({ sequence }: { sequence: RunSequence | undefined }): React.JSX.Element {
+  if (sequence && "mermaid" in sequence) {
+    return (
+      <div className="flex flex-col gap-2">
+        <MermaidBlock code={sequence.mermaid} />
+        <details className="text-xs text-zinc-500">
+          <summary className="cursor-pointer">Source</summary>
+          <pre className="mt-1 overflow-x-auto rounded bg-zinc-100 dark:bg-zinc-900 p-2 font-mono">{sequence.mermaid}</pre>
+        </details>
+      </div>
+    );
+  }
+  return (
+    <p className="text-[12.5px] text-zinc-400">
+      {sequence && "na" in sequence ? `No diagram — ${sequence.na}` : "No diagram"}
+    </p>
+  );
+}
+
+/** TASK-2598 — every criterion beside what proved it (TASK-2597's rows). */
+function TestCasesPanel({ acs, coverage }: { acs: RunAc[]; coverage: RunCoverage | undefined }): React.JSX.Element {
+  return (
+    <section aria-label="Test cases" className="flex flex-col gap-2">
+      <div className="flex items-baseline gap-2">
+        <SectionLabel>Test cases</SectionLabel>
+        {coverage && (
+          <span data-testid="run-coverage" className="tabular-nums text-xs text-zinc-500">
+            {coverage.covered}/{coverage.total} covered
+          </span>
+        )}
+      </div>
+      {acs.length === 0 ? (
+        <p className="text-[12.5px] text-zinc-400">No acceptance criteria</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[12.5px]">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-wide text-zinc-400">
+                <th className="px-2 py-1 font-normal">#</th>
+                <th className="px-2 py-1 font-normal">Criterion</th>
+                <th className="px-2 py-1 font-normal">Expected</th>
+                <th className="px-2 py-1 font-normal">Proven by</th>
+                <th className="px-2 py-1 font-normal">Test / command</th>
+                <th className="px-2 py-1 font-normal">State</th>
+              </tr>
+            </thead>
+            <tbody>
+              {acs.map((a) => (
+                <tr key={a.index} data-testid={`run-ac-${a.index}`} className="border-t border-zinc-100 dark:border-zinc-800 align-top">
+                  <td className="px-2 py-1 tabular-nums text-zinc-400">{a.index}</td>
+                  <td className="px-2 py-1 min-w-[16rem]">{a.text}</td>
+                  <td className="px-2 py-1 whitespace-nowrap text-zinc-500">{a.tag ?? "—"}</td>
+                  <td className="px-2 py-1 whitespace-nowrap text-zinc-500">{a.method ? (METHOD_LABEL[a.method] ?? a.method) : "—"}</td>
+                  <td className="px-2 py-1 min-w-[12rem] break-all font-mono text-xs text-zinc-600 dark:text-zinc-300">{a.ref ?? "—"}</td>
+                  <td className="px-2 py-1">
+                    <span data-testid="run-ac-state" className={`rounded px-1.5 py-0.5 text-[11px] ${AC_STATE[a.state]}`}>
+                      {a.state}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+type ItemTab = "sequence" | "test-cases" | "commits";
+
+const ITEM_TABS: { id: ItemTab; label: string }[] = [
+  { id: "sequence", label: "Sequence" },
+  { id: "test-cases", label: "Test cases" },
+  { id: "commits", label: "Commits & diff" },
+];
+
+function TaskLink({ id }: { id: string }): React.JSX.Element {
+  return (
+    <Link
+      to={`/tasks/${encodeURIComponent(id)}`}
+      state={{ from: { to: "/runs", label: "Runs" } }}
+      className="inline-flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-300 underline"
+    >
+      <i className="ti ti-clipboard-check" aria-hidden="true" />
+      Open task
+    </Link>
+  );
+}
+
+/**
+ * TASK-2598 — with the adapter's criteria (TASK-2597) the expansion gains
+ * sub-tabs, Test cases first: what was proven is the question Butter asks of an
+ * item. Without them (an older vendored adapter) it stays as TASK-2563 drew it.
+ */
 function ItemDetail({ item }: { item: RunItem }): React.JSX.Element {
+  const [tab, setTab] = useState<ItemTab>("test-cases");
+  if (!item.acs) return <CommitsAndDiff item={item} testId={`run-item-detail-${item.id}`} withTaskLink />;
+  return (
+    <div data-testid={`run-item-detail-${item.id}`} className="flex flex-col">
+      <div role="tablist" aria-label="Item views" className="flex gap-1 border-b border-zinc-200 dark:border-zinc-800 px-3">
+        {ITEM_TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={t.id === tab}
+            onClick={() => setTab(t.id)}
+            className={`whitespace-nowrap border-b-2 px-2.5 py-1.5 text-[12.5px] ${
+              t.id === tab
+                ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100 font-medium"
+                : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" aria-label={ITEM_TABS.find((t) => t.id === tab)?.label}>
+        {tab === "sequence" && (
+          <div className="px-3 py-3">
+            <SequencePanel sequence={item.sequence} />
+          </div>
+        )}
+        {tab === "test-cases" && (
+          <div className="px-3 py-3">
+            <TestCasesPanel acs={item.acs} coverage={item.coverage} />
+          </div>
+        )}
+        {tab === "commits" && <CommitsAndDiff item={item} />}
+      </div>
+      <div className="px-3 pb-3">
+        <TaskLink id={item.id} />
+      </div>
+    </div>
+  );
+}
+
+function CommitsAndDiff({
+  item,
+  testId,
+  withTaskLink = false,
+}: {
+  item: RunItem;
+  testId?: string;
+  withTaskLink?: boolean;
+}): React.JSX.Element {
   const commits = itemCommits(item);
   const details = useQueries({
     queries: commits.map((c) => ({
@@ -271,7 +441,7 @@ function ItemDetail({ item }: { item: RunItem }): React.JSX.Element {
   for (const t of added) byPath.set(t.path, [...(byPath.get(t.path) ?? []), t.name]);
 
   return (
-    <div data-testid={`run-item-detail-${item.id}`} className="grid gap-3 px-3 py-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
+    <div data-testid={testId} className="grid gap-3 px-3 py-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
       <section aria-label="Tests" className="flex min-w-0 flex-col gap-3 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-3">
         <div className="flex flex-col gap-1">
           <SectionLabel>Ran</SectionLabel>
@@ -338,16 +508,11 @@ function ItemDetail({ item }: { item: RunItem }): React.JSX.Element {
         )}
       </section>
 
-      <div className="md:col-span-2">
-        <Link
-          to={`/tasks/${encodeURIComponent(item.id)}`}
-          state={{ from: { to: "/runs", label: "Runs" } }}
-          className="inline-flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-300 underline"
-        >
-          <i className="ti ti-clipboard-check" aria-hidden="true" />
-          Open task
-        </Link>
-      </div>
+      {withTaskLink && (
+        <div className="md:col-span-2">
+          <TaskLink id={item.id} />
+        </div>
+      )}
     </div>
   );
 }
@@ -385,9 +550,21 @@ function ItemRow({
         <td data-col="commit" className="px-3 py-1.5 whitespace-nowrap font-mono text-xs text-zinc-500">
           {item.commit ? item.commit.split(" ")[0] : "—"}
         </td>
-        <td className="px-3 py-1.5 whitespace-nowrap tabular-nums">
-          {item.ac.ticked}/{item.ac.total}
-        </td>
+        {item.coverage ? (
+          <td
+            data-col="ac"
+            className={`px-3 py-1.5 whitespace-nowrap tabular-nums ${
+              item.coverage.open > 0 ? "text-rose-700 dark:text-rose-400" : ""
+            }`}
+            title="Criteria proven by a check their tag allows"
+          >
+            {item.coverage.covered}/{item.coverage.total}
+          </td>
+        ) : (
+          <td data-col="ac" className="px-3 py-1.5 whitespace-nowrap tabular-nums">
+            {item.ac.ticked}/{item.ac.total}
+          </td>
+        )}
         <td className="px-3 py-1.5 min-w-[12rem] text-zinc-600 dark:text-zinc-300">
           {item.activeSince ? (
             <span className="text-blue-700 dark:text-blue-300">working since {hhmm(item.activeSince)}</span>

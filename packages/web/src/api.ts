@@ -2305,6 +2305,37 @@ export interface RunItem {
   tests: { passed: string[]; skipped: string[] } | null;
   activeSince: string | null;
   deps: string[];
+  /**
+   * TASK-2597 — each criterion with how it was proven, the item's sequence
+   * diagram and the coverage count. Absent from an adapter older than that
+   * task; the expansion then stays as it was.
+   */
+  acs?: RunAc[];
+  sequence?: RunSequence;
+  coverage?: RunCoverage;
+}
+
+export type RunAcState = "covered" | "weak" | "open" | "human";
+
+export interface RunAc {
+  index: number;
+  text: string;
+  tag: "test" | "command" | "grep" | "human" | null;
+  checked: boolean;
+  method: string | null;
+  ref: string | null;
+  evidence: string | null;
+  state: RunAcState;
+}
+
+export type RunSequence = { mermaid: string } | { na: string } | null;
+
+export interface RunCoverage {
+  covered: number;
+  weak: number;
+  open: number;
+  human: number;
+  total: number;
 }
 
 export interface RunCommit {
