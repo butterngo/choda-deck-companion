@@ -8,7 +8,7 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import { HashRouter, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { HealthView } from "../../hooks/use-health";
-import type { Run, RunAc, RunCommit, RunItem, RunsPayload, WorkspaceCommitDetail } from "../../api";
+import type { Run, RunAc, RunCommit, RunItem, RunReport, RunReportSummary, RunsPayload, WorkspaceCommitDetail } from "../../api";
 import { SidebarNav } from "../../components/nav/SidebarNav";
 
 const outletValue: HealthView = {
@@ -603,5 +603,145 @@ describe("RunsView item criteria", () => {
     subTab(detail, "Commits & diff");
     expect(within(detail).getByRole("region", { name: "Commits" })).toBeTruthy();
     expect(within(detail).getByRole("region", { name: "Tests" })).toBeTruthy();
+  });
+});
+
+// TASK-2602 — the Test report tab over run.report (TASK-2601).
+describe("RunsView test report", () => {
+  const SUMMARY: RunReportSummary = {
+    goal: "TASK-10",
+    generatedAt: "2026-10-22T00:00:00Z",
+    suite: { passed: 827, skipped: 1, failed: 0 },
+    testsAdded: 85,
+    unreadableCommits: [],
+    ac: { covered: 10, weak: 1, open: 0, human: 1, total: 12 },
+    smoke: null,
+    regression: [{ task: "TASK-2534", title: "An earlier run" }],
+  };
+  const check = (name: string, ok: boolean) => ({ name, call: `GET /${name}`, expect: "200", got: ok ? "200" : "500", ok });
+  const SIX = {
+    env: "qc" as const,
+    base: "https://test-api.ichiba.net/bpa/x",
+    build: "abc1234",
+    ranAt: "2026-10-22T01:00:00Z",
+    checks: [check("a", true), check("b", true), check("c", true), check("broken", false), check("d", true), check("e", true)],
+    data: ["zz_test_TASK-10_1"],
+  };
+  const REPORT_TEXT = "---\ngoal: \"TASK-10\"\n---\n\n# Test report — TASK-10\n";
+  let docCalls: string[] = [];
+
+  function serveReport(report: RunReport | null): void {
+    docCalls = [];
+    const payload: RunsPayload = { runs: [run({ goal: goal("TASK-10"), report })], otherNotices: [] };
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/workspace-docs/")) {
+        docCalls.push(url);
+        return new Response(REPORT_TEXT, { status: 200 });
+      }
+      return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+    });
+  }
+
+  const withSummary = (over: Partial<RunReportSummary>): RunReport => ({
+    path: "docs/reports/task-10-test-report.md",
+    workspaceId: "main",
+    summary: { ...SUMMARY, ...over },
+  });
+
+  async function openTab(): Promise<void> {
+    mount();
+    fireEvent.click(await screen.findByRole("tab", { name: "Test report" }));
+  }
+
+  it("AC-1: a run with report null shows no Test report tab", async () => {
+    serveReport(null);
+    mount();
+    await screen.findByRole("tab", { name: "Items" });
+    expect(screen.queryByRole("tab", { name: "Test report" })).toBeNull();
+  });
+
+  it("AC-2: a run with a report shows a Test report tab", async () => {
+    serveReport(withSummary({}));
+    mount();
+    expect(await screen.findByRole("tab", { name: "Test report" })).toBeTruthy();
+  });
+
+  it("AC-3: suite 827 passed shows 827 in the first tile", async () => {
+    serveReport(withSummary({}));
+    await openTab();
+    expect((await screen.findByTestId("report-tile-suite")).textContent).toContain("827");
+  });
+
+  it("AC-4: six smoke checks with one failure show 5/6 in the smoke tile", async () => {
+    serveReport(withSummary({ smoke: SIX }));
+    await openTab();
+    expect((await screen.findByTestId("report-tile-smoke")).textContent).toContain("5/6");
+  });
+
+  it("AC-5: the failed check is the first row of the smoke table", async () => {
+    serveReport(withSummary({ smoke: SIX }));
+    await openTab();
+    const rows = await screen.findAllByTestId("smoke-row");
+    expect(rows).toHaveLength(6);
+    expect(rows[0].textContent).toContain("broken");
+    expect(rows[0].textContent).toContain("fail");
+  });
+
+  it("AC-6: smoke n/a shows its reason", async () => {
+    serveReport(withSummary({ smoke: { na: "docs only" } }));
+    await openTab();
+    expect((await screen.findByTestId("report-tile-smoke")).textContent).toBe("Smoken/a — docs only");
+  });
+
+  it("AC-7: smoke null shows not run", async () => {
+    serveReport(withSummary({ smoke: null }));
+    await openTab();
+    expect((await screen.findByTestId("report-tile-smoke")).textContent).toContain("not run");
+  });
+
+  it("AC-8: Open full report fetches the file once and shows its text in a dialog", async () => {
+    serveReport(withSummary({}));
+    await openTab();
+    fireEvent.click(await screen.findByRole("button", { name: "Open full report" }));
+    const dialog = await screen.findByTestId("run-report-dialog");
+    expect((await within(dialog).findByTestId("run-report-text")).textContent).toBe(REPORT_TEXT);
+    expect(docCalls).toEqual([expect.stringContaining("/workspace-docs/main/docs/reports/task-10-test-report.md")]);
+    fireEvent.click(within(dialog).getByTestId("fullscreen-close"));
+    fireEvent.click(screen.getByRole("button", { name: "Open full report" }));
+    await screen.findByTestId("run-report-text");
+    expect(docCalls).toHaveLength(1);
+  });
+
+  it("AC-9: Copy calls navigator.clipboard.writeText with the file text", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    serveReport(withSummary({}));
+    await openTab();
+    fireEvent.click(await screen.findByRole("button", { name: "Open full report" }));
+    await screen.findByTestId("run-report-text");
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    expect(writeText).toHaveBeenCalledWith(REPORT_TEXT);
+    expect(await screen.findByRole("status")).toBeTruthy();
+  });
+
+  it("a denied clipboard selects the text and says so", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: vi.fn(async () => Promise.reject(new Error("denied"))) },
+      configurable: true,
+    });
+    serveReport(withSummary({}));
+    await openTab();
+    fireEvent.click(await screen.findByRole("button", { name: "Open full report" }));
+    await screen.findByTestId("run-report-text");
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    expect((await screen.findByRole("status")).textContent).toBe("Selected — press Ctrl+C");
+  });
+
+  it("AC-10: summary null shows Report unreadable", async () => {
+    serveReport({ path: "docs/reports/task-10-test-report.md", workspaceId: "main", summary: null });
+    await openTab();
+    expect(await screen.findByText("Report unreadable")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open full report" })).toBeTruthy();
   });
 });

@@ -13,10 +13,10 @@
 // https://claude.ai/artifact/MZcAdez2hWLewKveSrBhsS. The task page, where the
 // translate button is, is one link inside the expansion.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import { useQueries } from "@tanstack/react-query";
-import { fetchWorkspaceCommit } from "../api";
+import { fetchWorkspaceCommit, fetchWorkspaceDoc } from "../api";
 import type {
   Run,
   RunAc,
@@ -26,7 +26,9 @@ import type {
   RunFeature,
   RunItem,
   RunNotice,
+  RunReport,
   RunSequence,
+  RunSmoke,
   RunStage,
   RunState,
   WorkspaceCommitDetail,
@@ -40,6 +42,7 @@ import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { Skeleton } from "../components/state/Skeleton";
 import { RunFlow } from "../components/RunFlow";
+import { FullscreenOverlay } from "../components/FullscreenOverlay";
 
 type Filter = "all" | "running" | "finished" | "halted";
 
@@ -701,10 +704,242 @@ function RunCard({ run }: { run: Run }): React.JSX.Element {
                 </>
               ),
             },
+            ...(run.report
+              ? [{ id: "test-report", label: "Test report", content: <TestReportTab report={run.report} /> }]
+              : []),
           ]}
         />
       )}
     </article>
+  );
+}
+
+function Tile({ label, testId, children }: { label: string; testId: string; children: React.ReactNode }): React.JSX.Element {
+  return (
+    <div data-testid={testId} className="flex flex-col gap-0.5 rounded-md border border-zinc-200 dark:border-zinc-800 px-3 py-2">
+      <span className="text-[11px] uppercase tracking-wide text-zinc-400">{label}</span>
+      <div className="text-[13px] text-zinc-700 dark:text-zinc-200">{children}</div>
+    </div>
+  );
+}
+
+function SmokeTile({ smoke }: { smoke: RunSmoke | null }): React.JSX.Element {
+  if (smoke === null) return <span className="text-zinc-400">not run</span>;
+  if ("na" in smoke) return <span className="text-zinc-500">n/a — {smoke.na}</span>;
+  const passed = smoke.checks.filter((c) => c.ok).length;
+  const failed = passed < smoke.checks.length;
+  return (
+    <span>
+      <span className={`text-lg font-medium tabular-nums ${failed ? "text-rose-600 dark:text-rose-400" : ""}`}>
+        {passed}/{smoke.checks.length}
+      </span>{" "}
+      <span className="text-xs text-zinc-500">on {smoke.env}</span>
+    </span>
+  );
+}
+
+function SmokeTable({ smoke }: { smoke: Extract<RunSmoke, { checks: unknown }> }): React.JSX.Element {
+  // Failed checks first: they are why anyone opens this table.
+  const rows = [...smoke.checks].sort((a, b) => Number(a.ok) - Number(b.ok));
+  return (
+    <section aria-label="Smoke" className="flex flex-col gap-2">
+      <SectionLabel count={smoke.checks.length}>Smoke</SectionLabel>
+      <p className="text-xs text-zinc-500 break-all">
+        {smoke.base} · build {smoke.build} · {when(smoke.ranAt)}
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-[12.5px]">
+          <thead>
+            <tr className="text-left text-[11px] uppercase tracking-wide text-zinc-400">
+              <th className="px-2 py-1 font-normal">Check</th>
+              <th className="px-2 py-1 font-normal">Call</th>
+              <th className="px-2 py-1 font-normal">Expect</th>
+              <th className="px-2 py-1 font-normal">Got</th>
+              <th className="px-2 py-1 font-normal">Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((c, i) => (
+              <tr key={`${c.name}-${i}`} data-testid="smoke-row" className="border-t border-zinc-100 dark:border-zinc-800 align-top">
+                <td className="px-2 py-1">{c.name}</td>
+                <td className="px-2 py-1 break-all font-mono text-xs">{c.call}</td>
+                <td className="px-2 py-1 text-zinc-500">{c.expect}</td>
+                <td className="px-2 py-1 text-zinc-500">{c.got}</td>
+                <td className="px-2 py-1">
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-[11px] ${
+                      c.ok
+                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+                        : "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
+                    }`}
+                  >
+                    {c.ok ? "pass" : "fail"}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {smoke.data.length > 0 && (
+        <p className="text-xs text-zinc-500">
+          Test data created:{" "}
+          <span className="font-mono">{smoke.data.map((d) => (typeof d === "string" ? d : JSON.stringify(d))).join(", ")}</span>
+        </p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * TASK-2602 — "Open full report": the file text in a full-window reader with a
+ * Copy button. The file is fetched once, on the first click.
+ */
+function FullReport({ report }: { report: RunReport }): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [copyNote, setCopyNote] = useState<string | null>(null);
+  const pre = useRef<HTMLPreElement | null>(null);
+
+  async function openReport(): Promise<void> {
+    setOpen(true);
+    if (text !== null) return;
+    try {
+      setText((await fetchWorkspaceDoc(report.workspaceId, report.path)).text);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  function copy(): void {
+    if (text === null) return;
+    // writeText is called inside the click handler: the clipboard needs the user gesture.
+    navigator.clipboard.writeText(text).then(
+      () => setCopyNote("Copied"),
+      () => {
+        // A denied clipboard must not look like a copy. Select the text so Ctrl+C works.
+        const node = pre.current;
+        const selection = window.getSelection();
+        if (node && selection) {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+        setCopyNote("Selected — press Ctrl+C");
+      },
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => void openReport()}
+        className="inline-flex w-fit items-center gap-1.5 rounded border border-zinc-200 dark:border-zinc-700 px-2.5 py-1 text-[12.5px] text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900"
+      >
+        <i className="ti ti-file-text" aria-hidden="true" />
+        Open full report
+      </button>
+      {open && (
+        <FullscreenOverlay title={report.path} onClose={() => setOpen(false)} testId="run-report-dialog">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={copy}
+                disabled={text === null}
+                className="inline-flex items-center gap-1.5 rounded border border-zinc-200 dark:border-zinc-700 px-2.5 py-1 text-[12.5px] disabled:opacity-50"
+              >
+                <i className="ti ti-copy" aria-hidden="true" />
+                Copy
+              </button>
+              {copyNote && (
+                <span role="status" className="text-xs text-zinc-500">
+                  {copyNote}
+                </span>
+              )}
+            </div>
+            {error ? (
+              <p className="text-[12.5px] text-rose-600">Couldn't read the report: {error}</p>
+            ) : text === null ? (
+              <p className="text-[12.5px] text-zinc-400">Loading…</p>
+            ) : (
+              <pre ref={pre} data-testid="run-report-text" className="whitespace-pre-wrap break-words font-mono text-xs">
+                {text}
+              </pre>
+            )}
+          </div>
+        </FullscreenOverlay>
+      )}
+    </>
+  );
+}
+
+/** TASK-2602 — the run's test report (TASK-2600 writes it, TASK-2601 serves it). */
+function TestReportTab({ report }: { report: RunReport }): React.JSX.Element {
+  const s = report.summary;
+  if (s === null) {
+    return (
+      <>
+        <p className="text-[12.5px] text-zinc-500">Report unreadable</p>
+        <FullReport report={report} />
+      </>
+    );
+  }
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        <Tile label="Unit + integration" testId="report-tile-suite">
+          {s.suite ? (
+            <span>
+              <span className="text-lg font-medium tabular-nums">{s.suite.passed}</span>{" "}
+              <span className="text-xs text-zinc-500">
+                passed · {s.suite.skipped} skipped · {s.suite.failed} failed
+              </span>
+            </span>
+          ) : (
+            <span className="text-zinc-400">no suite line</span>
+          )}
+        </Tile>
+        <Tile label="Added by this run" testId="report-tile-added">
+          <span className="text-lg font-medium tabular-nums">{s.testsAdded}</span>{" "}
+          <span className="text-xs text-zinc-500">test cases</span>
+          {s.unreadableCommits.length > 0 && (
+            <span className="block text-xs text-amber-600">{s.unreadableCommits.length} commits unreadable here</span>
+          )}
+        </Tile>
+        <Tile label="AC covered" testId="report-tile-ac">
+          <span className="text-lg font-medium tabular-nums">
+            {s.ac.covered}/{s.ac.total}
+          </span>{" "}
+          <span className="text-xs text-zinc-500">
+            {s.ac.weak} weak · {s.ac.open} open
+          </span>
+        </Tile>
+        <Tile label="Smoke" testId="report-tile-smoke">
+          <SmokeTile smoke={s.smoke} />
+        </Tile>
+      </div>
+      {s.smoke && "checks" in s.smoke && <SmokeTable smoke={s.smoke} />}
+      <section aria-label="Regression" className="flex flex-col gap-1">
+        <SectionLabel count={s.regression.length}>Regression scope</SectionLabel>
+        {s.regression.length === 0 ? (
+          <p className="text-[12.5px] text-zinc-400">No other finished task realizes this feature</p>
+        ) : (
+          <ul className="text-[12.5px]">
+            {s.regression.map((r) => (
+              <li key={r.task} className="flex gap-2">
+                <TaskLink id={r.task} />
+                <span className="text-zinc-600 dark:text-zinc-300">{r.title}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <FullReport report={report} />
+    </>
   );
 }
 

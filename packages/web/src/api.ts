@@ -2361,6 +2361,43 @@ export interface Run {
    * linked to no feature.
    */
   feature?: RunFeature | null;
+  /**
+   * TASK-2601 — the goal's test report (`choda-deck run report`). Absent from an
+   * adapter older than that task; null when the goal has no report file.
+   */
+  report?: RunReport | null;
+}
+
+export interface RunSmokeCheck {
+  name: string;
+  call: string;
+  expect: string;
+  got: string;
+  ok: boolean;
+}
+
+export type RunSmoke =
+  | { env: "qc" | "local"; base: string; build: string; ranAt: string; checks: RunSmokeCheck[]; data: unknown[] }
+  | { na: string };
+
+/** The report file's frontmatter, as TASK-2600 writes it. */
+export interface RunReportSummary {
+  goal: string;
+  generatedAt: string;
+  suite: { passed: number; skipped: number; failed: number } | null;
+  testsAdded: number;
+  unreadableCommits: string[];
+  ac: RunCoverage;
+  smoke: RunSmoke | null;
+  regression: { task: string; title: string }[];
+}
+
+export interface RunReport {
+  /** Relative to the workspace cwd; read with fetchWorkspaceDoc(workspaceId, path). */
+  path: string;
+  workspaceId: string;
+  /** Null when the file's frontmatter does not parse. */
+  summary: RunReportSummary | null;
 }
 
 export interface RunFeature {
