@@ -2366,6 +2366,77 @@ export interface Run {
    * adapter older than that task; null when the goal has no report file.
    */
   report?: RunReport | null;
+  /**
+   * TASK-2607 — the goal's deploy checklist (`choda-deck deploy scan`). Absent
+   * from an older adapter; null when the goal has no checklist file.
+   */
+  deploy?: RunDeploy | null;
+}
+
+export type DeployPhase = "before" | "deploy" | "after";
+export type DeployEnv = "qc" | "prod";
+
+export interface DeployItem {
+  key: string;
+  phase: DeployPhase;
+  kind: "sql" | "migration" | "config" | "endpoint" | "manual";
+  title: string;
+  why: string;
+  workspaceId: string | null;
+  file?: string;
+  copy?: string;
+  /** Present on secret-looking config keys: where the value lives, or null = ask Butter. */
+  secret?: { file: string; field: string } | null;
+}
+
+export interface RunDeploy {
+  path: string;
+  workspaceId: string;
+  /** Null when the checklist's frontmatter does not parse. */
+  items: DeployItem[] | null;
+}
+
+export interface DeployCheckEntry {
+  doneBy: string;
+  doneAt: string;
+  note: string | null;
+}
+
+export type DeployChecks = Record<DeployEnv, Record<string, DeployCheckEntry>>;
+
+/** TASK-2605 — the ticks of a goal's checklist, per environment. */
+export async function fetchDeployChecks(goalId: string, signal?: AbortSignal): Promise<DeployChecks> {
+  const res = await fetch(`${API_BASE}/runs/${encodeURIComponent(goalId)}/deploy-checks`, { signal });
+  if (!res.ok) throw new Error(`GET deploy-checks failed: ${res.status}`);
+  return (await res.json()) as DeployChecks;
+}
+
+export async function setDeployCheck(
+  goalId: string,
+  body: { env: DeployEnv; itemKey: string; done: boolean },
+): Promise<DeployChecks> {
+  const res = await fetch(`${API_BASE}/runs/${encodeURIComponent(goalId)}/deploy-checks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`POST deploy-checks failed: ${res.status}`);
+  return (await res.json()) as DeployChecks;
+}
+
+/**
+ * TASK-2607 — a secret's value, for the clipboard only. The caller writes it to
+ * the clipboard and drops it: never into state, the DOM or a log.
+ */
+export async function fetchSecretForClipboard(ref: { workspaceId: string; file: string; field: string }): Promise<string> {
+  const res = await fetch(`${API_BASE}/secrets/copy`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(ref),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`POST /secrets/copy failed: ${res.status}`);
+  return ((await res.json()) as { value: string }).value;
 }
 
 export interface RunSmokeCheck {

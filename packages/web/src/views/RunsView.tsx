@@ -25,6 +25,7 @@ import type {
   RunCoverage,
   RunFeature,
   RunItem,
+  DeployEnv,
   RunNotice,
   RunReport,
   RunSequence,
@@ -43,6 +44,12 @@ import { EmptyState } from "../components/state/EmptyState";
 import { Skeleton } from "../components/state/Skeleton";
 import { RunFlow } from "../components/RunFlow";
 import { FullscreenOverlay } from "../components/FullscreenOverlay";
+import {
+  DeployChecklistTab,
+  WaitingOnYouTab,
+  useDeployChecks,
+  waitingItems,
+} from "../components/DeployChecklist";
 
 type Filter = "all" | "running" | "finished" | "halted";
 
@@ -618,6 +625,9 @@ function RunCard({ run }: { run: Run }): React.JSX.Element {
   const pill = STATE_PILL[run.state];
   const done = run.items.filter(isDone).length;
   const human = run.items.flatMap((i) => i.ac.humanOpen.map((c) => `${i.id} · ${c}`));
+  // TASK-2608 — one environment choice and one set of ticks for both deploy tabs.
+  const [env, setEnv] = useState<DeployEnv>("qc");
+  const deploy = useDeployChecks(run.goal.id, Boolean(run.deploy));
   return (
     <article
       data-testid={`run-${run.goal.id}`}
@@ -706,6 +716,36 @@ function RunCard({ run }: { run: Run }): React.JSX.Element {
             },
             ...(run.report
               ? [{ id: "test-report", label: "Test report", content: <TestReportTab report={run.report} /> }]
+              : []),
+            ...(run.deploy
+              ? [
+                  {
+                    id: "deploy",
+                    label: "Deploy checklist",
+                    content: (
+                      <DeployChecklistTab
+                        deploy={run.deploy}
+                        env={env}
+                        onEnv={setEnv}
+                        checks={deploy.checks}
+                        onToggle={deploy.toggle}
+                      />
+                    ),
+                  },
+                  {
+                    id: "waiting",
+                    label: `Waiting on you (${waitingItems(run.deploy.items ?? [], deploy.checks, env).length + human.length})`,
+                    content: (
+                      <WaitingOnYouTab
+                        deploy={run.deploy}
+                        env={env}
+                        onEnv={setEnv}
+                        checks={deploy.checks}
+                        humanOpen={human}
+                      />
+                    ),
+                  },
+                ]
               : []),
           ]}
         />

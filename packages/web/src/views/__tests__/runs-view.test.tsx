@@ -3,12 +3,12 @@
 // fetch is stubbed rather than the hook, so the real react-query path runs, as
 // in decide-view.test.tsx.
 
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { HashRouter, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { HealthView } from "../../hooks/use-health";
-import type { Run, RunAc, RunCommit, RunItem, RunReport, RunReportSummary, RunsPayload, WorkspaceCommitDetail } from "../../api";
+import type { DeployChecks, DeployItem, Run, RunAc, RunCommit, RunDeploy, RunItem, RunReport, RunReportSummary, RunsPayload, WorkspaceCommitDetail } from "../../api";
 import { SidebarNav } from "../../components/nav/SidebarNav";
 
 const outletValue: HealthView = {
@@ -743,5 +743,160 @@ describe("RunsView test report", () => {
     await openTab();
     expect(await screen.findByText("Report unreadable")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Open full report" })).toBeTruthy();
+  });
+});
+
+// TASK-2608 — the Deploy checklist and Waiting on you tabs over run.deploy
+// (TASK-2607), the ticks route (TASK-2605) and POST /secrets/copy.
+describe("RunsView deploy checklist", () => {
+  const ITEMS: DeployItem[] = [
+    { key: "sql:docs/deploy/sql/x-all.sql", phase: "before", kind: "sql", title: "Run x-all.sql", why: "Deploy SQL", workspaceId: null, file: "docs/deploy/sql/x-all.sql" },
+    { key: "config:ServiceAuth:Key", phase: "before", kind: "config", title: "Set ServiceAuth:Key", why: "Read by Program.cs", workspaceId: null, copy: 'ServiceAuth__Key: "<value>"', secret: { file: "sensitive_information/keys.txt", field: "platform" } },
+    { key: "manual:1", phase: "deploy", kind: "manual", title: "Turn the flag on", why: "From ## Deploy", workspaceId: null },
+    { key: "endpoint:GET /x", phase: "after", kind: "endpoint", title: "Check GET /x answers", why: "New route", workspaceId: null },
+  ];
+  const SQL = "-- all\nCREATE TABLE approval_results (id uuid);\n";
+  let posts: { url: string; body: unknown }[] = [];
+  let ticks: DeployChecks = { qc: {}, prod: {} };
+
+  function serveDeploy(deploy: RunDeploy | null, opts: { missingFile?: boolean; humanOpen?: string[] } = {}): void {
+    posts = [];
+    const items = [item({ id: "TASK-11", ac: { ticked: 0, total: 1, humanOpen: opts.humanOpen ?? [] } })];
+    const payload: RunsPayload = { runs: [run({ goal: goal("TASK-10"), items, deploy })], otherNotices: [] };
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const json = (v: unknown) => new Response(JSON.stringify(v), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.includes("/deploy-checks")) {
+        if (init?.method === "POST") {
+          const body = JSON.parse(String(init.body)) as { env: "qc" | "prod"; itemKey: string; done: boolean };
+          posts.push({ url, body });
+          if (body.done) ticks[body.env][body.itemKey] = { doneBy: "butter", doneAt: "t", note: null };
+          return json(ticks);
+        }
+        return json(ticks);
+      }
+      if (url.includes("/secrets/copy")) {
+        posts.push({ url, body: JSON.parse(String(init?.body)) });
+        return json({ value: "s3cr3t" });
+      }
+      if (url.includes("/workspace-docs/")) {
+        return opts.missingFile ? new Response("", { status: 404 }) : new Response(SQL, { status: 200 });
+      }
+      return json(payload);
+    });
+  }
+
+  const DEPLOY: RunDeploy = { path: "docs/reports/task-10-deploy-checklist.md", workspaceId: "main", items: ITEMS };
+
+  async function openDeploy(): Promise<void> {
+    mount();
+    fireEvent.click(await screen.findByRole("tab", { name: "Deploy checklist" }));
+  }
+
+  function spyClipboard(): ReturnType<typeof vi.fn> {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    return writeText;
+  }
+
+  beforeEach(() => {
+    ticks = { qc: {}, prod: {} };
+  });
+
+  it("AC-1: a run with deploy null shows neither tab", async () => {
+    serveDeploy(null);
+    mount();
+    await screen.findByRole("tab", { name: "Items" });
+    expect(screen.queryByRole("tab", { name: "Deploy checklist" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /Waiting on you/ })).toBeNull();
+  });
+
+  it("AC-2: items in phases before, deploy and after show the three group headings", async () => {
+    serveDeploy(DEPLOY);
+    await openDeploy();
+    expect(await screen.findByRole("heading", { name: "Before deploy" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Deploy" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "After deploy" })).toBeTruthy();
+  });
+
+  it("AC-3: ticking an item on QC posts { env: qc, itemKey, done: true }", async () => {
+    serveDeploy(DEPLOY);
+    await openDeploy();
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Done on QC: Run x-all.sql" }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0].url).toContain("/runs/TASK-10/deploy-checks");
+    expect(posts[0].body).toEqual({ env: "qc", itemKey: "sql:docs/deploy/sql/x-all.sql", done: true });
+  });
+
+  it("AC-4: on Production, an item with no QC tick shows not done on QC", async () => {
+    serveDeploy(DEPLOY);
+    await openDeploy();
+    fireEvent.click(await screen.findByRole("radio", { name: "Production" }));
+    expect(within(await screen.findByTestId("deploy-item-manual:1")).getByText("not done on QC")).toBeTruthy();
+  });
+
+  it("AC-5: on Production, an item with a QC tick does not show not done on QC", async () => {
+    ticks.qc["manual:1"] = { doneBy: "butter", doneAt: "t", note: null };
+    serveDeploy(DEPLOY);
+    await openDeploy();
+    fireEvent.click(await screen.findByRole("radio", { name: "Production" }));
+    const row = await screen.findByTestId("deploy-item-manual:1");
+    await waitFor(() => expect(within(row).queryByText("not done on QC")).toBeNull());
+    expect(within(screen.getByTestId("deploy-item-endpoint:GET /x")).getByText("not done on QC")).toBeTruthy();
+  });
+
+  it("AC-6: Open on a file item fetches the file and shows its text in a dialog", async () => {
+    serveDeploy(DEPLOY);
+    await openDeploy();
+    const row = await screen.findByTestId("deploy-item-sql:docs/deploy/sql/x-all.sql");
+    fireEvent.click(within(row).getByRole("button", { name: "Open" }));
+    const dialog = await screen.findByTestId("deploy-file-dialog");
+    expect((await within(dialog).findByTestId("deploy-file-text")).textContent).toBe(SQL);
+  });
+
+  it("AC-7: Copy in that dialog writes the full text to the clipboard", async () => {
+    const writeText = spyClipboard();
+    serveDeploy(DEPLOY);
+    await openDeploy();
+    fireEvent.click(within(await screen.findByTestId("deploy-item-sql:docs/deploy/sql/x-all.sql")).getByRole("button", { name: "Open" }));
+    const dialog = await screen.findByTestId("deploy-file-dialog");
+    await within(dialog).findByTestId("deploy-file-text");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Copy" }));
+    expect(writeText).toHaveBeenCalledWith(SQL);
+  });
+
+  it("AC-8: a 404 on Open shows file not found at and a disabled Copy", async () => {
+    serveDeploy(DEPLOY, { missingFile: true });
+    await openDeploy();
+    fireEvent.click(within(await screen.findByTestId("deploy-item-sql:docs/deploy/sql/x-all.sql")).getByRole("button", { name: "Open" }));
+    const dialog = await screen.findByTestId("deploy-file-dialog");
+    expect(await within(dialog).findByText("file not found at docs/deploy/sql/x-all.sql")).toBeTruthy();
+    expect((within(dialog).getByRole("button", { name: "Copy" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("AC-9: Copy value posts /secrets/copy and writes the value to the clipboard", async () => {
+    const writeText = spyClipboard();
+    serveDeploy(DEPLOY);
+    await openDeploy();
+    fireEvent.click(within(await screen.findByTestId("deploy-item-config:ServiceAuth:Key")).getByRole("button", { name: "Copy value" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("s3cr3t"));
+    expect(posts.find((p) => p.url.includes("/secrets/copy"))?.body).toEqual({ workspaceId: "main", file: "sensitive_information/keys.txt", field: "platform" });
+  });
+
+  it("AC-10: after Copy value the page text does not contain the value", async () => {
+    spyClipboard();
+    serveDeploy(DEPLOY);
+    await openDeploy();
+    fireEvent.click(within(await screen.findByTestId("deploy-item-config:ServiceAuth:Key")).getByRole("button", { name: "Copy value" }));
+    expect(await screen.findByText("Copied value of ServiceAuth:Key")).toBeTruthy();
+    expect(document.body.textContent).not.toContain("s3cr3t");
+  });
+
+  it("AC-11: the Waiting on you label counts unticked before/manual items plus human ACs", async () => {
+    ticks.qc["sql:docs/deploy/sql/x-all.sql"] = { doneBy: "butter", doneAt: "t", note: null };
+    serveDeploy(DEPLOY, { humanOpen: ["Butter checks it in the app — human"] });
+    mount();
+    // QC: config + manual unticked (the sql item is ticked, the endpoint is after) + 1 human AC = 3.
+    expect(await screen.findByRole("tab", { name: "Waiting on you (3)" })).toBeTruthy();
   });
 });
