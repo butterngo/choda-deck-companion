@@ -48,6 +48,14 @@ const COUNT_LABEL: [keyof OutstandingCounts, string][] = [
 ];
 
 const projectName = (id: string | null): string => id ?? "No project";
+
+/** How old the git half is (TASK-2705): "scanned just now" under a minute, else "scanned N min ago". */
+function scanAge(scannedAt: string, now = Date.now()): string {
+  const min = Math.floor((now - Date.parse(scannedAt)) / 60_000);
+  if (min < 1) return "scanned just now";
+  if (min < 60) return `scanned ${min} min ago`;
+  return `scanned ${Math.floor(min / 60)} h ago`;
+}
 const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
 
 function Section({
@@ -72,11 +80,12 @@ function Section({
 
 function Coverage({ coverage }: { coverage: DailyReport["coverage"] }): React.JSX.Element {
   const unscanned = coverage.workspaces.filter((w) => w.state !== "ok");
+  const age = coverage.scannedAt ? ` · ${scanAge(coverage.scannedAt)}` : "";
   if (unscanned.length === 0) {
     return (
       <p data-testid="today-coverage" className="text-[12.5px] text-zinc-600 dark:text-zinc-300">
         <i className="ti ti-circle-check mr-1.5 text-emerald-600" aria-hidden="true" />
-        All {coverage.total} workspaces scanned
+        All {coverage.total} workspaces scanned{age}
       </p>
     );
   }
@@ -91,7 +100,7 @@ function Coverage({ coverage }: { coverage: DailyReport["coverage"] }): React.JS
     >
       <p className="font-medium">
         <i className="ti ti-alert-triangle mr-1.5" aria-hidden="true" />
-        Coverage: {coverage.scanned} of {coverage.total} workspaces scanned
+        Coverage: {coverage.scanned} of {coverage.total} workspaces scanned{age}
       </p>
       <ul className="mt-1 space-y-0.5">
         {groups.map((g) => (
@@ -263,7 +272,7 @@ function Outstanding({ outstanding }: { outstanding: DailyReport["outstanding"] 
 
 export function TodayView(): React.JSX.Element {
   const health = useOutletContext<HealthView>();
-  const { report, isLoading, isError, answeredWithError, refetch, isFetching } = useDailyReport();
+  const { report, isLoading, isError, answeredWithError, rescan, isFetching } = useDailyReport();
 
   function body(): React.JSX.Element {
     // An unanswered request is "unreachable", never an empty day (ErrorState, ADR-028).
@@ -294,7 +303,7 @@ export function TodayView(): React.JSX.Element {
         </span>
         <button
           type="button"
-          onClick={refetch}
+          onClick={rescan}
           disabled={isFetching}
           className="ml-auto rounded-md border border-zinc-200 dark:border-zinc-700 px-2.5 py-1 text-[12.5px] hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50"
         >
