@@ -98,6 +98,9 @@ export function SidebarNav({ counts = {} }: { counts?: NavCounts }): React.JSX.E
           automated source filed must be the most visible thing in the app;
           the badge is loud (not the grey Count) and absent at zero. */}
       <div className="mb-3.5 rail:group-data-[collapsed=true]/shell:mb-0 rail:group-data-[collapsed=true]/shell:mt-1.5">
+        {/* TASK-2675 — Today is the landing page, so it heads the sidebar; the
+            decide screen keeps its loud badge directly below it. */}
+        <Item to="/today" icon="ti-calendar-check" label="Today" />
         <NavLink to="/decide" className={itemClass} data-testid="nav-decide">
           <i className="ti ti-bell text-zinc-400" aria-hidden="true" title="Needs your decision" />
           <span className="sr-only rail:not-sr-only rail:group-data-[collapsed=true]/shell:sr-only">Needs your decision</span>

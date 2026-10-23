@@ -2075,6 +2075,74 @@ export function fetchActivityDigests(signal?: AbortSignal): Promise<ActivityDige
   return getJson<ActivityDigest[]>("/activity/digests", signal);
 }
 
+// TASK-2675 — the Today screen, over GET /daily-report (choda-deck TASK-2673).
+// Mirrors src/adapters/companion/daily-report.ts and core/domain/daily/focus.ts
+// there; computed live by the adapter on every request.
+export type ScanState = "ok" | "missing" | "not-a-repo" | "failed";
+export type FocusTier = "session" | "in-progress" | "pinned" | "overdue" | "ready" | "due-soon" | "cold";
+
+export interface FocusEntry {
+  projectId: string;
+  tier: FocusTier;
+  focus: {
+    id: string;
+    title: string;
+    status: string;
+    priority: string | null;
+    dueDate: string | null;
+    blockedBy: string[];
+  } | null;
+  also: { id: string; title: string; priority: string | null }[];
+  awaitingClose: { id: string; title: string }[];
+  resume: { sessionId: string; resumePoint: string; looseEnds: string[] } | null;
+  workspace: { id: string; cwd: string } | null;
+}
+
+export interface OutstandingCounts {
+  implementedNotDone: number;
+  inProgressNoSession: number;
+  staleSessions: number;
+  overdue: number;
+  rawInbox: number;
+  dirtyWorkspaces: number;
+  unmergedBranches: number;
+  openPrs: number;
+  unscannedWorkspaces: number;
+}
+
+export interface OutstandingItem {
+  kind: string;
+  id: string;
+  title: string;
+  at: string | null;
+  workspaceId: string | null;
+}
+
+export interface DailyReport {
+  date: string;
+  generatedAt: string;
+  yesterday: {
+    date: string;
+    statusChanges: { taskId: string; projectId: string | null; title: string | null; from: string; to: string; at: string }[];
+    sessionsEnded: { sessionId: string; taskId: string | null; projectId: string; endedAt: string; resumePoint: string | null }[];
+    totals: { toDone: number; toImplemented: number; sessionsEnded: number };
+  };
+  today: { date: string; focus: FocusEntry[] };
+  outstanding: {
+    totals: OutstandingCounts;
+    projects: { projectId: string | null; counts: OutstandingCounts; oldestAt: string | null; items: OutstandingItem[] }[];
+  };
+  coverage: {
+    total: number;
+    scanned: number;
+    workspaces: { id: string; projectId: string; cwd: string; state: ScanState; reason: string | null; prs: "ok" | "unknown" }[];
+  };
+}
+
+export function fetchDailyReport(signal?: AbortSignal): Promise<DailyReport> {
+  return getJson<DailyReport>("/daily-report", signal);
+}
+
 // TASK-2359 — the improve loop (TASK-2352), served by the adapter's /improve/:ws
 // routes (choda-deck TASK-2357). Mirrors of src/core/domain/improve/* there:
 // the config (improve-config.ts) and the scorecard `choda-deck improve measure`

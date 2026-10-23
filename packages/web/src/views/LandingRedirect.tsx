@@ -1,14 +1,12 @@
-// TASK-2381 — where `#/` goes. With anything pending from an automated source
-// the app opens on the decide screen, so Butter sees it before anything else;
-// otherwise it opens on Sync, as before. An unreachable adapter is not
-// "nothing pending" — it falls back to Sync, whose screen says so.
+// TASK-2381 — where `#/` goes.
+//
+// TASK-2675 replaced the old choice (decide screen when something was pending,
+// else Sync): the app now always opens on Today, which shows yesterday, every
+// project's focus and what is outstanding. Pending decisions are still the first
+// thing below it in the sidebar, with their red badge.
 
 import { Navigate } from "react-router-dom";
-import { usePending } from "../hooks/use-pending";
-import { Skeleton } from "../components/state/Skeleton";
 
 export function LandingRedirect(): React.JSX.Element {
-  const { items, isLoading, isError } = usePending();
-  if (isLoading) return <Skeleton shape="list" label="Opening…" />;
-  return <Navigate to={!isError && items.length > 0 ? "/decide" : "/sync"} replace />;
+  return <Navigate to="/today" replace />;
 }
