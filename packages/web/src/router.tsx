@@ -16,6 +16,7 @@ import { ProjectsView } from "./views/ProjectsView";
 import { WorkspaceView } from "./views/WorkspaceView";
 import { ActivityView } from "./views/ActivityView";
 import { DecideView } from "./views/DecideView";
+import { TodayView } from "./views/TodayView";
 import { RunsView } from "./views/RunsView";
 import { LandingRedirect } from "./views/LandingRedirect";
 import { SecretsView } from "./views/SecretsView";
@@ -30,6 +31,7 @@ export const routes: RouteObject[] = [
       // TASK-2381 — open on the decide screen when something is waiting on
       // Butter, on Sync otherwise.
       { index: true, element: <LandingRedirect /> },
+      { path: "today", element: <TodayView /> },
       { path: "decide", element: <DecideView /> },
       // TASK-2532 — what each loop run finished, tested and left for Butter.
       { path: "runs", element: <RunsView /> },

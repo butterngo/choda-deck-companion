@@ -22,9 +22,34 @@ vi.mock("../layouts/Shell", () => ({
 
 const { routes } = await import("../router");
 
+// TASK-2675 — the landing page is Today, so every mount below also loads
+// GET /daily-report; it gets a well-formed empty report.
+const ZERO = {
+  implementedNotDone: 0,
+  inProgressNoSession: 0,
+  staleSessions: 0,
+  overdue: 0,
+  rawInbox: 0,
+  dirtyWorkspaces: 0,
+  unmergedBranches: 0,
+  openPrs: 0,
+  unscannedWorkspaces: 0,
+};
+const REPORT = {
+  date: "2026-10-23",
+  generatedAt: "2026-10-23T03:00:00.000Z",
+  yesterday: { date: "2026-10-22", statusChanges: [], sessionsEnded: [], totals: { toDone: 0, toImplemented: 0, sessionsEnded: 0 } },
+  today: { date: "2026-10-23", focus: [] },
+  outstanding: { totals: ZERO, projects: [] },
+  coverage: { total: 0, scanned: 0, workspaces: [] },
+};
+
 function serve(items: unknown[], status = 200): void {
   vi.stubGlobal("fetch", async (input: RequestInfo) => {
     const url = String(input);
+    if (url.includes("/daily-report")) {
+      return new Response(JSON.stringify(REPORT), { status: 200, headers: { "content-type": "application/json" } });
+    }
     const body = url.includes("/inbox/pending") ? { items } : url.endsWith("/attention") ? { sessions: [] } : [];
     return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   });
@@ -76,24 +101,26 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("landing (TASK-2381 AC-4)", () => {
-  it("opens on #/decide when something is pending", async () => {
+// TASK-2675 replaced TASK-2381 AC-4's landing rule (decide when something was
+// pending, else sync): the app always opens on Today.
+describe("landing (TASK-2675 AC-6)", () => {
+  it("#/ lands on /today when something is pending", async () => {
     serve([ITEM]);
     const router = open("/");
-    await waitFor(() => expect(router.state.location.pathname).toBe("/decide"));
-    expect(await screen.findByRole("heading", { level: 1, name: "Needs your decision" })).toBeTruthy();
+    await waitFor(() => expect(router.state.location.pathname).toBe("/today"));
+    expect(await screen.findByRole("heading", { level: 1, name: "Today" })).toBeTruthy();
   });
 
-  it("opens on #/sync when nothing is pending", async () => {
+  it("#/ lands on /today when nothing is pending", async () => {
     serve([]);
     const router = open("/");
-    await waitFor(() => expect(router.state.location.pathname).toBe("/sync"));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/today"));
   });
 
-  it("opens on #/sync when the pending list cannot be read", async () => {
+  it("#/ lands on /today even when the pending list cannot be read", async () => {
     serve([], 500);
     const router = open("/");
-    await waitFor(() => expect(router.state.location.pathname).toBe("/sync"));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/today"));
   });
 
   it("#/decide is a real route, not swallowed by the catch-all", async () => {
@@ -104,7 +131,9 @@ describe("landing (TASK-2381 AC-4)", () => {
   });
 });
 
-describe("sidebar entry (TASK-2381 AC-3)", () => {
+// TASK-2675 AC-7 put Today first; the decide entry (TASK-2381 AC-3) is now the
+// second link of the top group, directly under it, and keeps its badge.
+describe("sidebar entry (TASK-2381 AC-3, TASK-2675 AC-7)", () => {
   function nav(decide?: number) {
     render(
       <MemoryRouter>
@@ -113,10 +142,12 @@ describe("sidebar entry (TASK-2381 AC-3)", () => {
     );
   }
 
-  it("is the first link of the sidebar and shows the pending count", () => {
+  it("Today is the first link of the top group, decide the second with its pending count", () => {
     nav(3);
     const links = screen.getAllByRole("link");
-    expect(links[0]?.getAttribute("href")).toBe("/decide");
+    expect(links[0]?.getAttribute("href")).toBe("/today");
+    expect(links[0]?.textContent).toContain("Today");
+    expect(links[1]?.getAttribute("href")).toBe("/decide");
     expect(screen.getByTestId("nav-decide-badge").textContent).toBe("3");
   });
 
@@ -125,9 +156,11 @@ describe("sidebar entry (TASK-2381 AC-3)", () => {
     expect(screen.queryByTestId("nav-decide-badge")).toBeNull();
   });
 
-  it("CONTROL: no count supplied → no badge, entry still first", () => {
+  it("CONTROL: no count supplied → no badge, Today still first and decide second", () => {
     nav(undefined);
     expect(screen.queryByTestId("nav-decide-badge")).toBeNull();
-    expect(screen.getAllByRole("link")[0]?.getAttribute("href")).toBe("/decide");
+    const links = screen.getAllByRole("link");
+    expect(links[0]?.getAttribute("href")).toBe("/today");
+    expect(links[1]?.getAttribute("href")).toBe("/decide");
   });
 });

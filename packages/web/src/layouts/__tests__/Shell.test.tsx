@@ -170,6 +170,11 @@ describe("TASK-1830 — the sidebar does not grow", () => {
     // /runs — the ninth, also deliberate (TASK-2532): Butter asked (2026-10-19)
     // to see what /choda-autopilot and /choda-burn-backlog runs did "trên
     // companion", and approved the mockup with Runs right under the decide entry.
+    //
+    // /today — the tenth, also deliberate (TASK-2675, AC-7): Butter asked
+    // (2026-10-23) for a daily report on the companion — yesterday, every
+    // project's focus, what is outstanding — approved the mockup, and it became
+    // the landing page, first in the sidebar.
     nav("/projects");
     const links = screen.getAllByRole("link");
     expect(links.map((l) => l.getAttribute("href")).sort()).toEqual([
@@ -181,6 +186,7 @@ describe("TASK-1830 — the sidebar does not grow", () => {
       "/runs",
       "/secrets",
       "/sync",
+      "/today",
       "/vault",
     ]);
   });
