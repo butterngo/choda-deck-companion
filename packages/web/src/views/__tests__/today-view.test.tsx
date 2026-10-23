@@ -3,7 +3,7 @@
 // fetch is stubbed rather than the hook, so the real react-query path runs.
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { HealthView } from "../../hooks/use-health";
@@ -189,5 +189,82 @@ describe("TodayView", () => {
     expect(err.getAttribute("data-variant")).toBe("unreachable");
     expect(screen.queryByTestId("empty-state")).toBeNull();
     expect(screen.queryByTestId("today-outstanding")).toBeNull();
+  });
+});
+
+// TASK-2705 — Rescan asks the adapter for a fresh scan (choda-deck TASK-2704), and
+// the coverage strip says how old the git half is.
+describe("TodayView scan age and Rescan", () => {
+  const NOW = Date.parse("2026-10-23T03:10:00.000Z");
+  const ago = (ms: number): string => new Date(NOW - ms).toISOString();
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Serves `first` to a plain GET and `fresh` to ?fresh=1, recording every URL. */
+  function record(first: DailyReport, fresh: DailyReport): string[] {
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo) => {
+      const url = String(input);
+      urls.push(url);
+      const body = url.includes("fresh=1") ? fresh : first;
+      return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    return urls;
+  }
+
+  const withScan = (scannedAt: string, over: Partial<DailyReport["coverage"]> = {}): DailyReport =>
+    makeReport({ coverage: { total: 30, scanned: 30, scannedAt, workspaces: [ws("a", "ok")], ...over } });
+
+  it("AC-1: opening the view requests /daily-report without a fresh parameter", async () => {
+    const urls = record(withScan(ago(0)), withScan(ago(0)));
+    mount();
+    await screen.findByTestId("today-coverage");
+    const daily = urls.filter((u) => u.includes("/daily-report"));
+    expect(daily).toHaveLength(1);
+    expect(daily[0]).not.toContain("fresh");
+  });
+
+  it("AC-2: Rescan requests ?fresh=1 and the view shows the report it returned", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    const urls = record(withScan(ago(3 * 60_000)), withScan(ago(0), { total: 31, scanned: 31 }));
+    mount();
+    expect((await screen.findByTestId("today-coverage")).textContent).toContain("All 30 workspaces scanned · scanned 3 min ago");
+    fireEvent.click(screen.getByRole("button", { name: /rescan/i }));
+    await waitFor(() =>
+      expect(screen.getByTestId("today-coverage").textContent).toContain("All 31 workspaces scanned · scanned just now"),
+    );
+    expect(urls.filter((u) => u.includes("/daily-report?fresh=1"))).toHaveLength(1);
+  });
+
+  it("AC-3: 3 minutes old reads 'scanned 3 min ago'; 20 seconds old reads 'scanned just now'", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    record(withScan(ago(3 * 60_000)), withScan(ago(0)));
+    mount();
+    expect((await screen.findByTestId("today-coverage")).textContent).toContain("scanned 3 min ago");
+
+    vi.unstubAllGlobals();
+    document.body.innerHTML = "";
+    record(withScan(ago(20_000)), withScan(ago(0)));
+    mount();
+    const strip = (await screen.findByTestId("today-coverage")).textContent ?? "";
+    expect(strip).toContain("scanned just now");
+    expect(strip).not.toContain("min ago");
+  });
+
+  it("AC-4: the age shows in the unscanned form too", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    record(
+      withScan(ago(3 * 60_000), { scanned: 29, workspaces: [ws("gone", "missing"), ws("fine", "ok")] }),
+      withScan(ago(0)),
+    );
+    mount();
+    const strip = (await screen.findByTestId("today-coverage")).textContent ?? "";
+    expect(strip).toContain("Coverage: 29 of 30 workspaces scanned · scanned 3 min ago");
+    expect(strip).toContain("gone");
   });
 });

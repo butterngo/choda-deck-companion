@@ -2135,12 +2135,15 @@ export interface DailyReport {
   coverage: {
     total: number;
     scanned: number;
+    /** ISO time of the git scan these numbers come from (TASK-2704). Absent from an older adapter. */
+    scannedAt?: string;
     workspaces: { id: string; projectId: string; cwd: string; state: ScanState; reason: string | null; prs: "ok" | "unknown" }[];
   };
 }
 
-export function fetchDailyReport(signal?: AbortSignal): Promise<DailyReport> {
-  return getJson<DailyReport>("/daily-report", signal);
+/** `fresh` asks the adapter to scan git now instead of serving its cached scan (TASK-2705). */
+export function fetchDailyReport(signal?: AbortSignal, opts: { fresh?: boolean } = {}): Promise<DailyReport> {
+  return getJson<DailyReport>(opts.fresh ? "/daily-report?fresh=1" : "/daily-report", signal);
 }
 
 // TASK-2359 — the improve loop (TASK-2352), served by the adapter's /improve/:ws
