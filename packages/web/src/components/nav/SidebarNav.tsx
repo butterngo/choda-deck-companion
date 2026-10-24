@@ -130,6 +130,8 @@ export function SidebarNav({ counts = {} }: { counts?: NavCounts }): React.JSX.E
           label="Conversations"
           count={counts.conversations}
         />
+        {/* TASK-2736 — ask about your own work data; reads only, costs per Send. */}
+        <Item to="/assistant" icon="ti-message-chatbot" label="Assistant" />
       </div>
 
       <div className="mb-3.5 rail:group-data-[collapsed=true]/shell:mb-0 rail:group-data-[collapsed=true]/shell:pb-1.5 rail:group-data-[collapsed=true]/shell:mt-1.5 rail:group-data-[collapsed=true]/shell:border-b rail:group-data-[collapsed=true]/shell:border-zinc-200 dark:rail:group-data-[collapsed=true]/shell:border-zinc-800">

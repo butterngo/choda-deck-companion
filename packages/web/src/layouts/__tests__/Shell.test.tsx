@@ -178,6 +178,7 @@ describe("TASK-1830 — the sidebar does not grow", () => {
     nav("/projects");
     const links = screen.getAllByRole("link");
     expect(links.map((l) => l.getAttribute("href")).sort()).toEqual([
+      "/assistant",
       "/conversations",
       "/decide",
       "/graph",

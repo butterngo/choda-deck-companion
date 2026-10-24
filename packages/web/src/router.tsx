@@ -20,6 +20,7 @@ import { TodayView } from "./views/TodayView";
 import { RunsView } from "./views/RunsView";
 import { LandingRedirect } from "./views/LandingRedirect";
 import { SecretsView } from "./views/SecretsView";
+import { AssistantView } from "./views/AssistantView";
 
 // Exported so a test can mount the REAL route table in a memory router — the
 // only way to prove a path is not swallowed by the catch-all below.
@@ -47,6 +48,8 @@ export const routes: RouteObject[] = [
       { path: "search", element: <SearchView /> },
       { path: "capture", element: <CaptureView /> },
       { path: "conversations", element: <ConversationsView /> },
+      // TASK-2736 — the chat assistant; linked from the sidebar's Work group.
+      { path: "assistant", element: <AssistantView /> },
       { path: "vault", element: <VaultView /> },
       // TASK-1748 — a task is a place you can link to, from a workspace, Search
       // or Graph. The graph's own drawer is unchanged.
