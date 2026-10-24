@@ -175,3 +175,31 @@ describe("AC-12 — the glossary is remembered per project", () => {
     await waitFor(() => expect((screen.getByLabelText("Glossary") as HTMLTextAreaElement).value).toBe(""));
   });
 });
+
+describe("TASK-2736 — saving a reviewed note carries the structured note for the assistant", () => {
+  it("Save note sends note.decisions equal to the draft's note.decisions", async () => {
+    const decisions = [{ text: "Chốt UI", atMs: 194000 }];
+    draftReply = {
+      note: { tldr: "t", decisions, actions: [], questions: [], requests: [], numbers: [], topics: [] },
+      markdown: "# Chị Kate\n\n## Quyết định\n| D1 | Chốt UI | ▶ 03:14 |\n",
+      dropped: [],
+    };
+    renderPanel();
+    await fillAndChoose();
+    fireEvent.click(screen.getByRole("button", { name: /draft note/i }));
+    await screen.findByLabelText("Note draft");
+    expect(puts()).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: /save note/i }));
+    await screen.findByTestId("save-message");
+    const body = puts()[0].body as { note?: { decisions: unknown } };
+    expect(body.note?.decisions).toEqual(decisions);
+  });
+
+  it("Save transcript sends no note", async () => {
+    renderPanel();
+    await fillAndChoose();
+    fireEvent.click(screen.getByRole("button", { name: /save transcript/i }));
+    await screen.findByTestId("save-message");
+    expect("note" in (puts()[0].body as object)).toBe(false);
+  });
+});

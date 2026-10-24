@@ -338,6 +338,12 @@ export function MeetingSave({
         files: [{ name, markdown }],
         alsoRepo,
         keepOutOfGit,
+        // TASK-2736 — the reviewed note, structured, so the chat assistant can
+        // read its decisions (the adapter keeps it as note.json). Drafting alone
+        // still stores nothing; only this save after review does.
+        ...(name === "note.md" && draft?.note && Array.isArray((draft.note as { decisions?: unknown }).decisions)
+          ? { note: draft.note }
+          : {}),
       });
       setWritten(written);
       setMessage(`Saved ${written.length} file${written.length === 1 ? "" : "s"}`);

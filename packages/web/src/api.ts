@@ -1969,6 +1969,8 @@ export interface SaveMeetingFilesRequest {
   files: Array<{ name: MeetingFileName; markdown: string }>;
   alsoRepo: boolean;
   keepOutOfGit: boolean;
+  /** TASK-2736 — the reviewed structured note; the adapter keeps it beside the meeting. */
+  note?: object;
 }
 
 export async function saveMeetingFiles(id: string, body: SaveMeetingFilesRequest): Promise<{ written: string[] }> {
@@ -2607,4 +2609,141 @@ export function signoffConversation(
   name: string,
 ): Promise<{ conversation: ConversationSummary; signedOff: string[]; decided: boolean }> {
   return postJson(`/conversations/${encodeURIComponent(id)}/signoff`, { name });
+}
+
+// ---------------------------------------------------------------------------
+// TASK-2736 — the chat assistant. Mirrors choda-deck src/adapters/companion
+// assistant-routes.ts (TASK-2733) and assistant-chat.ts (TASK-2735). Only
+// sendAssistantMessage spends money, and only the Send button calls it.
+
+export interface AssistantModel {
+  id: string;
+  model: string;
+}
+
+export interface AssistantChatSummary {
+  id: string;
+  title: string;
+  model: string | null;
+  tokensUsed: number;
+  tokenBudget: number;
+  updatedAt: string;
+}
+
+export interface AssistantChatMessage {
+  id: string;
+  role: "user" | "assistant" | "tool";
+  content: string | null;
+  toolName: string | null;
+  model: string | null;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  tokensEstimated: boolean;
+  createdAt: string;
+}
+
+export interface AssistantReply {
+  reply: { content: string };
+  steps: Array<{ tool: string; ok: boolean; chars: number }>;
+  capped: boolean;
+  usage: { prompt: number; completion: number; estimated: boolean };
+  chat: { tokensUsed: number; tokenBudget: number };
+}
+
+/** The chat has used its token budget. Nothing was sent to the model. */
+export class AssistantBudgetError extends Error {
+  constructor(readonly tokensUsed: number, readonly tokenBudget: number) {
+    super("budget exhausted");
+    this.name = "AssistantBudgetError";
+  }
+}
+
+/** The model call failed; `kind` is the adapter's AiError kind. */
+export class AssistantProviderError extends Error {
+  constructor(readonly kind: string, readonly retryAfter: string | null) {
+    super(`assistant failed: ${kind}`);
+    this.name = "AssistantProviderError";
+  }
+}
+
+/**
+ * A 404 whose body is the router default means this adapter predates the
+ * assistant routes; any other 404 is the route's own answer.
+ */
+async function assistantNotFound(res: Response): Promise<Error> {
+  let error = "";
+  try {
+    error = ((await res.json()) as { error?: string }).error ?? "";
+  } catch {
+    error = "";
+  }
+  if (error.startsWith("unknown chat")) return new Error(error);
+  return new AdapterRouteMissingError("/assistant");
+}
+
+export async function fetchAssistantModels(
+  signal?: AbortSignal,
+): Promise<{ models: AssistantModel[]; selected: string }> {
+  const res = await fetch(`${API_BASE}/assistant/models`, { signal });
+  if (res.status === 404) throw await assistantNotFound(res);
+  if (!res.ok) throw new Error(`GET /assistant/models failed: ${res.status}`);
+  return (await res.json()) as { models: AssistantModel[]; selected: string };
+}
+
+export async function fetchAssistantChats(signal?: AbortSignal): Promise<AssistantChatSummary[]> {
+  const res = await fetch(`${API_BASE}/assistant/chats`, { signal });
+  if (res.status === 404) throw await assistantNotFound(res);
+  if (!res.ok) throw new Error(`GET /assistant/chats failed: ${res.status}`);
+  return (await res.json()) as AssistantChatSummary[];
+}
+
+export async function createAssistantChat(body: {
+  title?: string;
+  model?: string;
+  tokenBudget?: number;
+}): Promise<AssistantChatSummary> {
+  const res = await fetch(`${API_BASE}/assistant/chats`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 404) throw await assistantNotFound(res);
+  if (!res.ok) throw new Error(`POST /assistant/chats failed: ${res.status}`);
+  return (await res.json()) as AssistantChatSummary;
+}
+
+export async function fetchAssistantChat(
+  id: string,
+  signal?: AbortSignal,
+): Promise<{ chat: AssistantChatSummary; messages: AssistantChatMessage[] }> {
+  const res = await fetch(`${API_BASE}/assistant/chats/${encodeURIComponent(id)}`, { signal });
+  if (res.status === 404) throw await assistantNotFound(res);
+  if (!res.ok) throw new Error(`GET /assistant/chats/${id} failed: ${res.status}`);
+  return (await res.json()) as { chat: AssistantChatSummary; messages: AssistantChatMessage[] };
+}
+
+export async function sendAssistantMessage(
+  chatId: string,
+  content: string,
+  model?: string,
+): Promise<AssistantReply> {
+  const res = await fetch(`${API_BASE}/assistant/chats/${encodeURIComponent(chatId)}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ content, ...(model ? { model } : {}) }),
+  });
+  if (res.status === 404) throw await assistantNotFound(res);
+  if (res.status === 409) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string; tokensUsed?: number; tokenBudget?: number };
+    if (body.error === "budget exhausted") {
+      throw new AssistantBudgetError(body.tokensUsed ?? 0, body.tokenBudget ?? 0);
+    }
+    throw new Error("Another message in this chat is still running");
+  }
+  if (res.status === 502) {
+    const body = (await res.json().catch(() => ({}))) as { kind?: string };
+    throw new AssistantProviderError(body.kind ?? "api", res.headers.get("retry-after"));
+  }
+  if (!res.ok) throw new Error(`sending failed: ${res.status}`);
+  return (await res.json()) as AssistantReply;
 }
