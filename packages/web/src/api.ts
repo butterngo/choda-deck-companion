@@ -2639,6 +2639,8 @@ export interface AssistantChatMessage {
   promptTokens: number | null;
   completionTokens: number | null;
   tokensEstimated: boolean;
+  /** TASK-2757 — the reply was cut short by Stop or a dropped connection. */
+  interrupted?: boolean;
   createdAt: string;
 }
 
@@ -2722,28 +2724,98 @@ export async function fetchAssistantChat(
   return (await res.json()) as { chat: AssistantChatSummary; messages: AssistantChatMessage[] };
 }
 
+/** The adapter answered 503: its assistant service child is not running. */
+export class AssistantUnavailableError extends Error {
+  constructor() {
+    super("assistant service unavailable");
+    this.name = "AssistantUnavailableError";
+  }
+}
+
+/** What a streamed reply reports while it is still being written (TASK-2760). */
+export interface AssistantStreamHandlers {
+  onStep?: (step: { tool: string; ok: boolean; chars: number }) => void;
+  onDelta?: (text: string) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * TASK-2760 — one paid assistant request, read as server-sent events
+ * (`step`, `delta`, `done`, `error`) from the assistant service behind the
+ * adapter. A 200 JSON body is still accepted, so an adapter from before the
+ * service keeps working. Resolves with the `done` payload; an aborted request
+ * rejects with the abort error.
+ */
+export async function postAssistantStream(
+  path: string,
+  body: Record<string, unknown>,
+  handlers: AssistantStreamHandlers = {},
+): Promise<AssistantReply> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+    signal: handlers.signal,
+  });
+  if (res.status === 404) throw await assistantNotFound(res);
+  if (res.status === 503) throw new AssistantUnavailableError();
+  if (res.status === 409) {
+    const b = (await res.json().catch(() => ({}))) as { error?: string; tokensUsed?: number; tokenBudget?: number };
+    if (b.error === "budget exhausted") throw new AssistantBudgetError(b.tokensUsed ?? 0, b.tokenBudget ?? 0);
+    throw new Error("Another message in this chat is still running");
+  }
+  if (res.status === 502) {
+    const b = (await res.json().catch(() => ({}))) as { kind?: string };
+    throw new AssistantProviderError(b.kind ?? "api", res.headers.get("retry-after"));
+  }
+  if (!res.ok) {
+    const b = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(b.error ?? `sending failed: ${res.status}`);
+  }
+  if (!(res.headers.get("content-type") ?? "").startsWith("text/event-stream") || !res.body) {
+    return (await res.json()) as AssistantReply;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let done: AssistantReply | null = null;
+  const dispatch = (block: string): void => {
+    const event = /^event: (.+)$/m.exec(block)?.[1]?.trim();
+    const data = /^data: (.+)$/m.exec(block)?.[1];
+    if (!event || data === undefined) return;
+    const payload = JSON.parse(data) as Record<string, unknown>;
+    if (event === "step") handlers.onStep?.(payload as { tool: string; ok: boolean; chars: number });
+    else if (event === "delta") handlers.onDelta?.(String(payload.text ?? ""));
+    else if (event === "done") done = payload as unknown as AssistantReply;
+    else if (event === "error") {
+      throw new AssistantProviderError(String(payload.kind ?? "api"), (payload.retryAfter as string | undefined) ?? null);
+    }
+  };
+  for (;;) {
+    const { value, done: end } = await reader.read();
+    if (end) break;
+    buf += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+    let sep: number;
+    while ((sep = buf.indexOf("\n\n")) >= 0) {
+      dispatch(buf.slice(0, sep));
+      buf = buf.slice(sep + 2);
+    }
+  }
+  if (buf.trim() !== "") dispatch(buf);
+  if (done === null) throw new Error("the reply ended before it finished");
+  return done;
+}
+
 export async function sendAssistantMessage(
   chatId: string,
   content: string,
   model?: string,
+  handlers: AssistantStreamHandlers = {},
 ): Promise<AssistantReply> {
-  const res = await fetch(`${API_BASE}/assistant/chats/${encodeURIComponent(chatId)}/messages`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ content, ...(model ? { model } : {}) }),
-  });
-  if (res.status === 404) throw await assistantNotFound(res);
-  if (res.status === 409) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string; tokensUsed?: number; tokenBudget?: number };
-    if (body.error === "budget exhausted") {
-      throw new AssistantBudgetError(body.tokensUsed ?? 0, body.tokenBudget ?? 0);
-    }
-    throw new Error("Another message in this chat is still running");
-  }
-  if (res.status === 502) {
-    const body = (await res.json().catch(() => ({}))) as { kind?: string };
-    throw new AssistantProviderError(body.kind ?? "api", res.headers.get("retry-after"));
-  }
-  if (!res.ok) throw new Error(`sending failed: ${res.status}`);
-  return (await res.json()) as AssistantReply;
+  return postAssistantStream(
+    `/assistant/chats/${encodeURIComponent(chatId)}/messages`,
+    { content, ...(model ? { model } : {}) },
+    handlers,
+  );
 }
