@@ -24,9 +24,20 @@ import { fileURLToPath } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(here, '..')
-const chodaDeckRoot = path.resolve(repoRoot, '..', 'choda-deck')
+// CHODA_DECK_ROOT points at another checkout of choda-deck (a git worktree
+// does not sit beside this repo as `../choda-deck`).
+const chodaDeckRoot = process.env.CHODA_DECK_ROOT
+  ? path.resolve(process.env.CHODA_DECK_ROOT)
+  : path.resolve(repoRoot, '..', 'choda-deck')
 
 const adapterEntry = path.join(chodaDeckRoot, 'dist', 'companion-server.cjs')
+// TASK-2761 — the adapter spawns the assistant service from its own directory
+// (choda-deck src/adapters/companion/assistant-child.ts), so the bundle has to
+// sit beside companion-server.cjs in the installed app. Without it every
+// /assistant/* request answers 503 (gotcha a-new-adapter-route-is-invisible-to-
+// the-shipped-companion-and-the-only-signal-is).
+const ASSISTANT_FILE = 'assistant-server.cjs'
+const assistantEntry = path.join(chodaDeckRoot, 'dist', ASSISTANT_FILE)
 // better-sqlite3 (+ its own runtime dep chain bindings -> file-uri-to-path):
 // required for any DB access at all. sqlite-vec (+ its Windows native
 // package): required at module load time even when embeddings are disabled
@@ -160,12 +171,16 @@ if (!existsSync(adapterEntry)) {
     `adapter build not found at ${adapterEntry} — run "pnpm run build:companion" in ${chodaDeckRoot} first.`
   )
 }
+if (!existsSync(assistantEntry)) {
+  fail(`${ASSISTANT_FILE} not found at ${assistantEntry} — run "pnpm run build" in ${chodaDeckRoot} first.`)
+}
 
 rmSync(vendorDir, { recursive: true, force: true })
 mkdirSync(vendorDir, { recursive: true })
 mkdirSync(stagingNodeModules, { recursive: true })
 
 cpSync(adapterEntry, vendorEntry)
+cpSync(assistantEntry, path.join(vendorDir, ASSISTANT_FILE))
 // pnpm's node_modules is a tree of symlinks into its content-addressed store
 // (including each package's OWN nested deps, e.g. better-sqlite3's `bindings`)
 // — a plain recursive copy preserves those symlinks pointing at paths outside
@@ -235,7 +250,7 @@ rmSync(finalDepsDir, { recursive: true, force: true })
 renameSync(stagingNodeModules, finalDepsDir)
 
 console.log(
-  `[vendor-adapter] copied adapter + ${VENDORED_DEPS.join(', ')} + embedding stack ` +
+  `[vendor-adapter] copied adapter + ${ASSISTANT_FILE} + ${VENDORED_DEPS.join(', ')} + embedding stack ` +
     `(${Object.keys(EMBEDDING_DEPS).join(', ')}) + ${MODEL_ID} into ${vendorDir} ` +
     `(${NATIVE_MODULES_TO_REBUILD.join(', ')} rebuilt for Electron's ABI)`
 )
