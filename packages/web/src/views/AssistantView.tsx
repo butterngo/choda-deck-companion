@@ -547,6 +547,13 @@ export function AssistantView(): React.JSX.Element {
               value={input}
               disabled={sending || exhausted}
               onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter sends, Shift+Enter is a newline. An Enter that confirms an
+                // IME composition (Vietnamese Telex, Japanese) must not send.
+                if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+                e.preventDefault();
+                void send();
+              }}
               rows={2}
               placeholder="Ask anything, or about your work data…"
               className="flex-1 rounded-md border border-zinc-200 bg-transparent px-2.5 py-1.5 text-sm disabled:opacity-50 dark:border-zinc-800"
