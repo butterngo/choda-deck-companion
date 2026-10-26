@@ -2692,8 +2692,10 @@ export async function fetchAssistantModels(
   return (await res.json()) as { models: AssistantModel[]; selected: string };
 }
 
-export async function fetchAssistantChats(signal?: AbortSignal): Promise<AssistantChatSummary[]> {
-  const res = await fetch(`${API_BASE}/assistant/chats`, { signal });
+/** TASK-2762 — `query` keeps chats whose title or messages hold every word (the service filters). */
+export async function fetchAssistantChats(signal?: AbortSignal, query?: string): Promise<AssistantChatSummary[]> {
+  const q = query && query.trim() !== "" ? `?q=${encodeURIComponent(query.trim())}` : "";
+  const res = await fetch(`${API_BASE}/assistant/chats${q}`, { signal });
   if (res.status === 404) throw await assistantNotFound(res);
   if (!res.ok) throw new Error(`GET /assistant/chats failed: ${res.status}`);
   return (await res.json()) as AssistantChatSummary[];
@@ -2805,6 +2807,55 @@ export async function postAssistantStream(
   if (buf.trim() !== "") dispatch(buf);
   if (done === null) throw new Error("the reply ended before it finished");
   return done;
+}
+
+/** TASK-2762 — rename a chat. Free: no model call. */
+export async function renameAssistantChat(id: string, title: string): Promise<AssistantChatSummary> {
+  const res = await fetch(`${API_BASE}/assistant/chats/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  if (res.status === 404) throw await assistantNotFound(res);
+  if (res.status === 503) throw new AssistantUnavailableError();
+  if (!res.ok) {
+    const b = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(b.error ?? `rename failed: ${res.status}`);
+  }
+  return (await res.json()) as AssistantChatSummary;
+}
+
+/** TASK-2762 — delete a chat and its messages for good. Free: no model call. */
+export async function deleteAssistantChat(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/assistant/chats/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (res.status === 404) throw await assistantNotFound(res);
+  if (res.status === 503) throw new AssistantUnavailableError();
+  if (res.status === 409) throw new Error("A message in this chat is still running");
+  if (!res.ok) throw new Error(`delete failed: ${res.status}`);
+}
+
+/** TASK-2762 — answer the last question again; a new paid request, streamed like Send. */
+export async function regenerateAssistantReply(
+  chatId: string,
+  model?: string,
+  handlers: AssistantStreamHandlers = {},
+): Promise<AssistantReply> {
+  return postAssistantStream(`/assistant/chats/${encodeURIComponent(chatId)}/regenerate`, model ? { model } : {}, handlers);
+}
+
+/** TASK-2762 — replace a question, drop everything after it, and answer again. */
+export async function editAssistantMessage(
+  chatId: string,
+  messageId: string,
+  content: string,
+  model?: string,
+  handlers: AssistantStreamHandlers = {},
+): Promise<AssistantReply> {
+  return postAssistantStream(
+    `/assistant/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/edit`,
+    { content, ...(model ? { model } : {}) },
+    handlers,
+  );
 }
 
 export async function sendAssistantMessage(
