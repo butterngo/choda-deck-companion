@@ -108,6 +108,19 @@ describe("streaming", () => {
     await waitFor(() => expect((screen.getByLabelText("Message") as HTMLTextAreaElement).disabled).toBe(false));
   });
 
+  it("Enter sends the message; Shift+Enter and an IME-composing Enter do not", async () => {
+    render(<AssistantView />);
+    fireEvent.click(await screen.findByRole("button", { name: /Status/ }));
+    await screen.findByText("Ask your first question");
+    const box = screen.getByLabelText("Message");
+    fireEvent.change(box, { target: { value: "hi" } });
+    fireEvent.keyDown(box, { key: "Enter", shiftKey: true });
+    fireEvent.keyDown(box, { key: "Enter", isComposing: true });
+    expect(feed).toBeNull();
+    fireEvent.keyDown(box, { key: "Enter" });
+    await waitFor(() => expect(feed).not.toBeNull());
+  });
+
   it("AC-3: a step event shows a get_task chip before done", async () => {
     await ask();
     feed?.push("step", { tool: "get_task", ok: true, chars: 40 });
