@@ -139,7 +139,8 @@ export function MermaidBlock({
         className="overflow-x-auto"
         // mermaid renders with securityLevel 'strict', which strips scripts and
         // event handlers from the output. The input is a local .md file the user
-        // already owns, not remote content.
+        // already owns, or (TASK-2774) an Assistant reply: model output that can
+        // echo tool results, which is why strict must stay.
         dangerouslySetInnerHTML={{ __html: svg }}
       />
     </div>
