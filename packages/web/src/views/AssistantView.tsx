@@ -480,7 +480,7 @@ export function AssistantView(): React.JSX.Element {
                   className={`max-w-[90%] text-sm flex flex-col gap-1.5 ${faded ? "opacity-50" : ""}`}
                 >
                   <ToolChips tools={t.tools ?? []} />
-                  <AssistantMarkdown>{t.content}</AssistantMarkdown>
+                  <AssistantMarkdown diagrams>{t.content}</AssistantMarkdown>
                   {t.meta && (
                     <div className="flex items-center gap-1">
                       <p data-testid="assistant-cost" className="text-xs text-zinc-500 tabular-nums mr-1">
