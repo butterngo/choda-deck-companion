@@ -181,6 +181,9 @@ function CopyReply({ text }: { text: string }): React.JSX.Element {
   );
 }
 
+/** Within this many pixels of its bottom, the thread counts as "at the bottom". */
+const FOLLOW_SLACK = 80;
+
 export function AssistantView(): React.JSX.Element {
   const [models, setModels] = useState<AssistantModel[]>([]);
   const [model, setModel] = useState("");
@@ -196,6 +199,29 @@ export function AssistantView(): React.JSX.Element {
   const [exhausted, setExhausted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // TASK-2811 — the thread follows new content while the reader is at its
+  // bottom. One who scrolled up to read is left where they are; scrolling back
+  // down resumes following. A MutationObserver rather than an effect on
+  // turns/live, because a mermaid diagram grows the reply after React rendered.
+  const threadRef = useRef<HTMLDivElement | null>(null);
+  const pinnedRef = useRef(true);
+
+  useEffect(() => {
+    const el = threadRef.current;
+    if (!el) return;
+    const obs = new MutationObserver(() => {
+      if (pinnedRef.current) el.scrollTop = el.scrollHeight - el.clientHeight;
+    });
+    obs.observe(el, { childList: true, subtree: true, characterData: true });
+    return () => obs.disconnect();
+  }, []);
+
+  /** A question was asked or a chat opened: show the bottom, and follow it. */
+  function follow(): void {
+    pinnedRef.current = true;
+    const el = threadRef.current;
+    if (el) el.scrollTop = el.scrollHeight - el.clientHeight;
+  }
 
   const chat = chats.find((c) => c.id === chatId) ?? null;
 
@@ -232,6 +258,7 @@ export function AssistantView(): React.JSX.Element {
     setChatId(id);
     setError(null);
     setEditing(null);
+    follow();
     setTurns([]);
     try {
       const r = await fetchAssistantChat(id);
@@ -335,6 +362,7 @@ export function AssistantView(): React.JSX.Element {
     if (content === "" || sending) return;
     const target = chat ?? (await newChat());
     if (!target) return;
+    follow();
     setTurns((ts) => [...ts, { key: `pending-${ts.length}`, role: "user", content }]);
     setInput("");
     await stream(
@@ -351,6 +379,7 @@ export function AssistantView(): React.JSX.Element {
   async function regenerate(): Promise<void> {
     if (!chat || sending) return;
     const before = turns;
+    follow();
     // The old reply goes; the new one streams in its place.
     setTurns((ts) => (ts.at(-1)?.role === "assistant" ? ts.slice(0, -1) : ts));
     await stream(chat, (h) => regenerateAssistantReply(chat.id, model || undefined, h), () => setTurns(before));
@@ -365,6 +394,7 @@ export function AssistantView(): React.JSX.Element {
     if (text === "" || !edited || !messageId) return;
     const before = turns;
     setEditing(null);
+    follow();
     setTurns((ts) => [...ts.slice(0, at), { ...edited, content: text }]);
     await stream(chat, (h) => editAssistantMessage(chat.id, messageId, text, model || undefined, h), () => setTurns(before));
   }
@@ -407,7 +437,15 @@ export function AssistantView(): React.JSX.Element {
             </select>
           </label>
 
-          <div data-testid="assistant-thread" className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3">
+          <div
+            ref={threadRef}
+            data-testid="assistant-thread"
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_SLACK;
+            }}
+            className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3"
+          >
             {turns.length === 0 && !error && !live && (
               <EmptyState
                 icon="ti-message-chatbot"
