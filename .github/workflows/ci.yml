@@ -1,0 +1,36 @@
+name: CI
+
+# The previous workflow was deleted on 2026-06-20 (09e1a6d) after the clean-slate
+# reset removed the shared/server/notifier packages it built; from then until
+# this file nothing checked a PR. These are the repo's own gate scripts, the
+# same ones run locally before a merge.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    # The app ships for Windows only (electron-builder --win).
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run lint
+      - run: pnpm run typecheck
+      - run: pnpm run test
+      - run: pnpm run build
