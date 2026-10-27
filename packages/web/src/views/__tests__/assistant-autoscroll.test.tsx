@@ -64,7 +64,12 @@ function fakeLayout(el: HTMLElement): { height: number; top: () => number; scrol
     configurable: true,
     get: () => layout.scrollTop,
     set: (v: number) => {
-      layout.scrollTop = Math.max(0, Math.min(v, layout.height - BOX));
+      const next = Math.max(0, Math.min(v, layout.height - BOX));
+      if (next === layout.scrollTop) return;
+      layout.scrollTop = next;
+      // As a browser does: a programmatic scroll also fires a scroll event,
+      // asynchronously (TASK-2834 reads it to tell its own moves from the reader's).
+      setTimeout(() => fireEvent.scroll(el), 0);
     },
   });
   return {
@@ -146,5 +151,47 @@ describe("the thread follows the conversation (TASK-2811)", () => {
     feed?.push("delta", { text: " two" });
     await waitFor(() => expect(screen.getByTestId("assistant-live").textContent).toContain("one two"));
     await waitFor(() => expect(layout.top()).toBe(2400 - BOX));
+  });
+});
+
+describe("the follow glides instead of jumping (TASK-2834)", () => {
+  /** Let the async scroll events of programmatic moves land. */
+  const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 20));
+
+  it("AC-1: the thread scrolls smoothly, unless the reader asked for reduced motion", async () => {
+    await openChat();
+    const cls = screen.getByTestId("assistant-thread").className.split(/\s+/);
+    expect(cls).toContain("scroll-smooth");
+    expect(cls).toContain("motion-reduce:scroll-auto");
+  });
+
+  it("AC-2: a downward move far from the bottom while following (a smooth scroll in flight) keeps following", async () => {
+    const layout = await openChat();
+    layout.height = 2000;
+    await send();
+    await waitFor(() => expect(layout.top()).toBe(1500));
+    await settle();
+
+    // A big chunk lands; mid-animation the thread is at 1800 of a 3500 bottom.
+    layout.height = 4000;
+    layout.scrollTo(1800); // moved down from 1500, 1700 px from the bottom
+    feed?.push("delta", { text: "big chunk" });
+    await waitFor(() => expect(screen.getByTestId("assistant-live").textContent).toContain("big chunk"));
+    await waitFor(() => expect(layout.top()).toBe(4000 - BOX));
+  });
+
+  it("AC-3: an upward move to more than 80 px from the bottom while following stops following", async () => {
+    const layout = await openChat();
+    layout.height = 2000;
+    await send();
+    await waitFor(() => expect(layout.top()).toBe(1500));
+    await settle();
+
+    layout.scrollTo(1200); // moved up, 300 px from the bottom
+    layout.height = 2600;
+    feed?.push("delta", { text: "while reading" });
+    await waitFor(() => expect(screen.getByTestId("assistant-live").textContent).toContain("while reading"));
+    await settle();
+    expect(layout.top()).toBe(1200);
   });
 });

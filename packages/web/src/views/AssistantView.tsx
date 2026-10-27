@@ -205,6 +205,10 @@ export function AssistantView(): React.JSX.Element {
   // turns/live, because a mermaid diagram grows the reply after React rendered.
   const threadRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
+  // TASK-2834 — the thread scrolls smoothly (`scroll-smooth`), so a follow
+  // passes through positions far from the bottom when a big chunk lands. A
+  // downward move while following is that animation, not the reader leaving.
+  const lastTopRef = useRef(0);
 
   useEffect(() => {
     const el = threadRef.current;
@@ -442,9 +446,12 @@ export function AssistantView(): React.JSX.Element {
             data-testid="assistant-thread"
             onScroll={(e) => {
               const el = e.currentTarget;
+              const movedDown = el.scrollTop >= lastTopRef.current;
+              lastTopRef.current = el.scrollTop;
+              if (pinnedRef.current && movedDown) return;
               pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_SLACK;
             }}
-            className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3"
+            className="flex-1 min-h-0 overflow-y-auto scroll-smooth motion-reduce:scroll-auto flex flex-col gap-3"
           >
             {turns.length === 0 && !error && !live && (
               <EmptyState
