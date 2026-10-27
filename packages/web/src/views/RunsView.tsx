@@ -932,7 +932,20 @@ function TestReportTab({ report }: { report: RunReport }): React.JSX.Element {
     <>
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         <Tile label="Unit + integration" testId="report-tile-suite">
-          {s.suite ? (
+          {s.suites && s.suites.length > 1 ? (
+            // A goal across repos: one line per repo, since one total hid the others.
+            <span className="block space-y-0.5">
+              {s.suites.map((w) => (
+                <span key={w.workspaceId} data-testid="report-suite-row" className="block">
+                  <span className="text-xs text-zinc-500">{w.workspaceId}</span>{" "}
+                  <span className="font-medium tabular-nums">{w.passed}</span>{" "}
+                  <span className="text-xs text-zinc-500">
+                    passed · {w.skipped} skipped · {w.failed} failed
+                  </span>
+                </span>
+              ))}
+            </span>
+          ) : s.suite ? (
             <span>
               <span className="text-lg font-medium tabular-nums">{s.suite.passed}</span>{" "}
               <span className="text-xs text-zinc-500">
