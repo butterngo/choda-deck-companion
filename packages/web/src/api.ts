@@ -2529,6 +2529,8 @@ export interface RunReportSummary {
   goal: string;
   generatedAt: string;
   suite: { passed: number; skipped: number; failed: number } | null;
+  /** TASK-2637 — one suite per repo; absent on a report written before it. */
+  suites?: { workspaceId: string; passed: number; skipped: number; failed: number }[];
   testsAdded: number;
   unreadableCommits: string[];
   ac: RunCoverage;

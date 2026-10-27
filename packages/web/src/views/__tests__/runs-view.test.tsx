@@ -673,6 +673,31 @@ describe("RunsView test report", () => {
     expect((await screen.findByTestId("report-tile-suite")).textContent).toContain("827");
   });
 
+  it("TASK-2637: a summary with two suites shows both workspace ids and both passed counts in the first tile", async () => {
+    serveReport(
+      withSummary({
+        suites: [
+          { workspaceId: "choda-deck-companion", passed: 1243, skipped: 0, failed: 0 },
+          { workspaceId: "main", passed: 2800, skipped: 56, failed: 0 },
+        ],
+      }),
+    );
+    await openTab();
+    const tile = await screen.findByTestId("report-tile-suite");
+    expect(screen.getAllByTestId("report-suite-row")).toHaveLength(2);
+    for (const text of ["choda-deck-companion", "1243", "main", "2800"]) expect(tile.textContent).toContain(text);
+    // The single total (827) gives way to the per-repo lines.
+    expect(tile.textContent).not.toContain("827");
+  });
+
+  it("TASK-2637: a summary without suites renders the tile as before", async () => {
+    serveReport(withSummary({}));
+    await openTab();
+    const tile = await screen.findByTestId("report-tile-suite");
+    expect(tile.textContent).toContain("827");
+    expect(screen.queryAllByTestId("report-suite-row")).toHaveLength(0);
+  });
+
   it("AC-4: six smoke checks with one failure show 5/6 in the smoke tile", async () => {
     serveReport(withSummary({ smoke: SIX }));
     await openTab();
