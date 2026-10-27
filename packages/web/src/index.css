@@ -65,6 +65,24 @@
        has no dark override, so parity is what "no visual change" means here. */
     --ring: 37 99 235;
   }
+
+  /* TASK-2773 — native controls follow the app's theme, not the OS's. The theme
+     is the `.dark` class (hooks/use-theme.ts), which Chromium cannot see, so a
+     <select>'s popup list stayed light while its options inherited
+     dark:text-zinc-100: white text on a white list. `color-scheme` tells the
+     browser which scheme to draw select popups, scrollbars and date pickers in;
+     the `option` colours cover a popup that ignores it. */
+  :root {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+  }
+  .dark option {
+    background-color: rgb(24 24 27); /* zinc-900 */
+    color: rgb(244 244 245); /* zinc-100 */
+  }
+
   html,
   body {
     font-family: var(--font-body);
