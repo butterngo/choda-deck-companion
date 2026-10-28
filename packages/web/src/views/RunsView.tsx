@@ -647,6 +647,15 @@ function RunCard({ run }: { run: Run }): React.JSX.Element {
           <i className={`ti ${pill.icon}`} aria-hidden="true" />
           {pill.label}
         </span>
+        {run.waiting && (
+          <span
+            data-testid="run-waiting"
+            className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+          >
+            <i className="ti ti-hand-stop" aria-hidden="true" />
+            Waiting on you since {hhmm(run.waiting.since)}
+          </span>
+        )}
         <span className="ml-auto text-xs text-zinc-400">{when(run.lastActivityAt)}</span>
         <FeatureLine feature={run.feature} />
       </button>

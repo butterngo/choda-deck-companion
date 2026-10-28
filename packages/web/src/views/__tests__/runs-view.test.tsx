@@ -925,3 +925,31 @@ describe("RunsView deploy checklist", () => {
     expect(await screen.findByRole("tab", { name: "Waiting on you (3)" })).toBeTruthy();
   });
 });
+
+// TASK-2858 — the run card says when the run's Claude Code session waits on Butter.
+describe("Run waiting badge", () => {
+  const SINCE = "2026-10-28T09:05:00Z";
+  const localHhmm = new Date(SINCE).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+
+  it("AC-1: a waiting run shows 'Waiting on you since' with the local HH:MM", async () => {
+    serve({ runs: [run({ goal: goal("TASK-1"), waiting: { sessionId: "s1", since: SINCE } })], otherNotices: [] } as RunsPayload);
+    mount();
+    const card = await screen.findByTestId("run-TASK-1");
+    expect(within(card).getByTestId("run-waiting").textContent).toBe(`Waiting on you since ${localHhmm}`);
+  });
+
+  it("AC-2: a run with waiting null shows no 'Waiting on you' text", async () => {
+    serve({ runs: [run({ goal: goal("TASK-1"), waiting: null })], otherNotices: [] } as RunsPayload);
+    mount();
+    const card = await screen.findByTestId("run-TASK-1");
+    expect(within(card).queryByText(/Waiting on you/)).toBeNull();
+  });
+
+  it("AC-3: a run from an older adapter (no waiting field) renders without the badge", async () => {
+    serve({ runs: [run({ goal: goal("TASK-1") })], otherNotices: [] } as RunsPayload);
+    mount();
+    const card = await screen.findByTestId("run-TASK-1");
+    expect(card.textContent).toContain("Goal TASK-1");
+    expect(within(card).queryByTestId("run-waiting")).toBeNull();
+  });
+});

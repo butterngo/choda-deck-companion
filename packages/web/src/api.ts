@@ -2444,6 +2444,16 @@ export interface Run {
    * from an older adapter; null when the goal has no checklist file.
    */
   deploy?: RunDeploy | null;
+  /**
+   * TASK-2858 — the run's Claude Code session is waiting on Butter (adapter
+   * TASK-2857). Absent from an older adapter; null when nothing waits.
+   */
+  waiting?: RunWaiting | null;
+}
+
+export interface RunWaiting {
+  sessionId: string;
+  since: string;
 }
 
 export type DeployPhase = "before" | "deploy" | "after";
