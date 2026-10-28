@@ -39,6 +39,8 @@ import { addedTestCases, parseSuiteLine } from "../lib/run-tests";
 import { FileDiff } from "../components/FileDiff";
 import type { HealthView } from "../hooks/use-health";
 import { useRuns } from "../hooks/use-runs";
+import { useAgents, useProcesses } from "../hooks/use-live";
+import { AdapterRouteMissingError, ProcessListTimeoutError } from "../api";
 import { ErrorState } from "../components/state/ErrorState";
 import { EmptyState } from "../components/state/EmptyState";
 import { Skeleton } from "../components/state/Skeleton";
@@ -1161,6 +1163,101 @@ function Chip({
   );
 }
 
+/** Why a live read failed, in words a reader can act on. */
+function liveFailure(error: Error): string {
+  if (error instanceof ProcessListTimeoutError) return "Process list timed out";
+  if (error instanceof AdapterRouteMissingError) return "This companion's adapter is older than the Live view — update the app";
+  return "Couldn't read it right now";
+}
+
+/**
+ * TASK-2861 — what is running now: the Claude Code agents, and for each
+ * workspace with a running run its processes, listening ports and the ports its
+ * .NET projects declare. A failed read stays inside this section, so the run
+ * cards below always render.
+ */
+function LiveSection({ workspaceIds }: { workspaceIds: string[] }): React.JSX.Element {
+  const agents = useAgents();
+  const processes = useProcesses(workspaceIds);
+  return (
+    <section aria-label="Live" data-testid="live-section" className="flex flex-col gap-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+      {/* h3, not h2: the h2s on this screen are the project groups. */}
+      <h3 className="flex items-center gap-2 text-[15px] font-medium">
+        <i className="ti ti-activity text-zinc-400" aria-hidden="true" />
+        Live
+      </h3>
+      {agents.error ? (
+        <p className="text-[13px] text-rose-700 dark:text-rose-400">Agents: {liveFailure(agents.error)}</p>
+      ) : !agents.data ? (
+        <p className="text-[13px] text-zinc-400">Loading agents…</p>
+      ) : agents.data.agents.length === 0 ? (
+        <p className="text-[13px] text-zinc-400">No Claude Code session is running.</p>
+      ) : (
+        <ul className="flex flex-col gap-1 text-[13px]">
+          {agents.data.agents.map((a) => (
+            <li key={a.sessionId} data-testid={`live-agent-${a.sessionId}`} className="flex flex-wrap items-center gap-x-3">
+              <span className="font-medium">{a.name}</span>
+              <span
+                className={
+                  a.status === "waiting"
+                    ? "rounded-full bg-amber-100 px-2 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                    : "rounded-full bg-zinc-100 px-2 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                }
+              >
+                {a.status}
+              </span>
+              {a.lastTool && <span className="text-xs text-zinc-400">last tool {a.lastTool}</span>}
+              {a.subagents > 0 && <span className="text-xs text-zinc-400">{a.subagents} subagents</span>}
+              {a.workspaceId && <span className="ml-auto text-[11.5px] text-zinc-400">{a.workspaceId}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {processes.map((p) => (
+        <div key={p.workspaceId} data-testid={`live-processes-${p.workspaceId}`} className="flex flex-col gap-1 text-[13px]">
+          <h4 className="text-xs font-medium text-zinc-500">{p.workspaceId}</h4>
+          {p.error ? (
+            <p className="text-rose-700 dark:text-rose-400">{liveFailure(p.error)}</p>
+          ) : !p.data ? (
+            <p className="text-zinc-400">Loading processes…</p>
+          ) : (
+            <>
+              {p.data.expectedPorts.length > 0 && (
+                <ul className="flex flex-wrap gap-1.5">
+                  {p.data.expectedPorts.map((e) => (
+                    <li
+                      key={e.port}
+                      data-testid={`expected-port-${e.port}`}
+                      data-listening={e.listening ? "true" : "false"}
+                      className={`rounded px-1.5 font-mono text-xs ${
+                        e.listening
+                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
+                          : "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300"
+                      }`}
+                    >
+                      {e.port} {e.listening ? "listening" : "not listening"}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <ul className="flex flex-col gap-0.5">
+                {p.data.processes.map((pr) => (
+                  <li key={pr.pid} className="flex flex-wrap gap-x-3 font-mono text-[11.5px]">
+                    <span>{pr.pid}</span>
+                    <span>{pr.name}</span>
+                    <span className="text-zinc-400">{pr.memoryMb} MB</span>
+                    {pr.ports.length > 0 && <span>:{pr.ports.join(", :")}</span>}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      ))}
+    </section>
+  );
+}
+
 export function RunsView(): React.JSX.Element {
   const health = useOutletContext<HealthView | undefined>();
   const { data, isLoading, isError } = useRuns();
@@ -1194,8 +1291,19 @@ export function RunsView(): React.JSX.Element {
       p.runs.push(r);
     }
 
+    // TASK-2861 — the workspaces a running run works in, read from its notices.
+    const liveWorkspaces = [
+      ...new Set(
+        data.runs
+          .filter((r) => r.state === "running")
+          .flatMap((r) => r.notices.map((n) => n.workspaceId))
+          .filter((w): w is string => Boolean(w)),
+      ),
+    ];
+
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto pb-6">
+        <LiveSection workspaceIds={liveWorkspaces} />
         <div role="group" aria-label="Filter runs" className="flex flex-wrap gap-1.5">
           <Chip active={filter === "all"} label="All" count={counts.all} onClick={() => setFilter("all")} />
           <Chip active={filter === "running"} label="Running" count={counts.running} onClick={() => setFilter("running")} />

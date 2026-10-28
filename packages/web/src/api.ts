@@ -2882,3 +2882,89 @@ export async function sendAssistantMessage(
     handlers,
   );
 }
+
+// TASK-2861 — the Runs screen's Live section: GET /agents (adapter TASK-2855)
+// and GET /processes (TASK-2856). Both are local reads polled while the screen
+// is open. A router-default 404 means the adapter predates the route (gotcha:
+// a new adapter route is invisible to the shipped companion), told apart from
+// the route's own `unknown workspace` 404 by the body.
+
+export interface LiveAgent {
+  sessionId: string;
+  pid: number;
+  name: string;
+  cwd: string;
+  workspaceId: string | null;
+  kind: string;
+  status: string;
+  since: string | null;
+  lastActivityAt: string | null;
+  lastTool: string | null;
+  subagents: number;
+}
+
+export interface AgentsPayload {
+  agents: LiveAgent[];
+  unreadable: number;
+}
+
+export interface LiveProcess {
+  pid: number;
+  ppid: number;
+  name: string;
+  cmdline: string;
+  memoryMb: number;
+  ports: number[];
+}
+
+export interface ExpectedPort {
+  port: number;
+  project: string;
+  listening: boolean;
+}
+
+export interface ProcessesPayload {
+  processes: LiveProcess[];
+  expectedPorts: ExpectedPort[];
+}
+
+/** The adapter's own 5 s timer fired while listing processes (504). */
+export class ProcessListTimeoutError extends Error {
+  constructor() {
+    super("process list timed out");
+    this.name = "ProcessListTimeoutError";
+  }
+}
+
+async function liveError(res: Response, route: string, workspaceId?: string): Promise<Error> {
+  if (res.status === 504) return new ProcessListTimeoutError();
+  if (res.status === 404) {
+    let error = "";
+    try {
+      error = ((await res.json()) as { error?: string }).error ?? "";
+    } catch {
+      error = "";
+    }
+    if (error.startsWith("unknown workspace")) return new UnknownWorkspaceError(workspaceId ?? "");
+    return new AdapterRouteMissingError(route);
+  }
+  return new Error(`GET ${route} failed: ${res.status}`);
+}
+
+export async function fetchAgents(signal?: AbortSignal): Promise<AgentsPayload> {
+  const res = await fetch(`${API_BASE}/agents`, { signal });
+  if (!res.ok) throw await liveError(res, "/agents");
+  const body = (await res.json()) as Partial<AgentsPayload>;
+  if (!Array.isArray(body.agents)) throw new Error("unexpected /agents payload");
+  return body as AgentsPayload;
+}
+
+export async function fetchProcesses(workspaceId: string, signal?: AbortSignal): Promise<ProcessesPayload> {
+  const res = await fetch(`${API_BASE}/processes?workspaceId=${encodeURIComponent(workspaceId)}`, { signal });
+  if (!res.ok) throw await liveError(res, "/processes", workspaceId);
+  const body = (await res.json()) as Partial<ProcessesPayload>;
+  if (!Array.isArray(body.processes) || !Array.isArray(body.expectedPorts)) {
+    throw new Error("unexpected /processes payload");
+  }
+  return body as ProcessesPayload;
+}

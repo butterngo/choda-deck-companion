@@ -4,7 +4,7 @@
 // in decide-view.test.tsx.
 
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { HashRouter, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { HealthView } from "../../hooks/use-health";
@@ -951,5 +951,105 @@ describe("Run waiting badge", () => {
     const card = await screen.findByTestId("run-TASK-1");
     expect(card.textContent).toContain("Goal TASK-1");
     expect(within(card).queryByTestId("run-waiting")).toBeNull();
+  });
+});
+
+// TASK-2861 — the Live section: running agents, workspace processes, expected ports.
+describe("Live section", () => {
+  type Answer = { status: number; body: unknown };
+  let liveCalls: string[];
+
+  function serveLive(routes: { agents?: Answer; processes?: Answer }): void {
+    liveCalls = [];
+    const payload: RunsPayload = {
+      runs: [
+        run({
+          goal: goal("TASK-1"),
+          state: "running",
+          notices: [{ id: "INBOX-1", workspaceId: "main", kind: "started", title: "run started", content: "x", createdAt: "2026-10-28T09:00:00Z", status: "raw" }],
+        }),
+      ],
+      otherNotices: [],
+    };
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const json = (a: Answer) => new Response(JSON.stringify(a.body), { status: a.status, headers: { "content-type": "application/json" } });
+      if (url.includes("/agents")) {
+        liveCalls.push(url);
+        return json(routes.agents ?? { status: 200, body: { agents: [], unreadable: 0 } });
+      }
+      if (url.includes("/processes")) {
+        liveCalls.push(url);
+        return json(routes.processes ?? { status: 200, body: { processes: [], expectedPorts: [] } });
+      }
+      return json({ status: 200, body: payload });
+    });
+  }
+
+  const agent = (sessionId: string, name: string, status: string) => ({
+    sessionId, pid: 1, name, cwd: "C:/dev/x", workspaceId: "main", kind: "interactive", status,
+    since: null, lastActivityAt: null, lastTool: null, subagents: 0,
+  });
+
+  it("AC-1: a waiting and a busy agent both render, each next to its status", async () => {
+    serveLive({ agents: { status: 200, body: { agents: [agent("a", "alpha-agent", "waiting"), agent("b", "beta-agent", "busy")], unreadable: 0 } } });
+    mount();
+    const a = await screen.findByTestId("live-agent-a");
+    const b = await screen.findByTestId("live-agent-b");
+    expect(within(a).getByText("alpha-agent")).toBeTruthy();
+    expect(within(a).getByText("waiting")).toBeTruthy();
+    expect(within(b).getByText("beta-agent")).toBeTruthy();
+    expect(within(b).getByText("busy")).toBeTruthy();
+  });
+
+  it("AC-2: an expected port renders not listening, then listening", async () => {
+    serveLive({ processes: { status: 200, body: { processes: [], expectedPorts: [{ port: 5267, project: "Api", listening: false }] } } });
+    mount();
+    const off = await screen.findByTestId("expected-port-5267");
+    expect(off.getAttribute("data-listening")).toBe("false");
+    expect(off.textContent).toBe("5267 not listening");
+    cleanup();
+    serveLive({ processes: { status: 200, body: { processes: [], expectedPorts: [{ port: 5267, project: "Api", listening: true }] } } });
+    mount();
+    const on = await screen.findByTestId("expected-port-5267");
+    expect(on.getAttribute("data-listening")).toBe("true");
+    expect(on.textContent).toBe("5267 listening");
+  });
+
+  it("AC-3: a 504 from /processes says 'Process list timed out' while the run cards still render", async () => {
+    serveLive({ processes: { status: 504, body: { error: "process list timed out" } } });
+    mount();
+    const box = await screen.findByTestId("live-processes-main");
+    await waitFor(() => expect(box.textContent).toContain("Process list timed out"));
+    expect(screen.getByTestId("run-TASK-1")).toBeTruthy();
+  });
+
+  it("AC-4: leaving the Runs screen stops polling", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      serveLive({});
+      const { unmount } = (() => {
+        const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+        return render(
+          <QueryClientProvider client={client}>
+            <MemoryRouter initialEntries={["/runs"]}>
+              <Routes>
+                <Route path="/runs" element={<RunsView />} />
+              </Routes>
+            </MemoryRouter>
+          </QueryClientProvider>,
+        );
+      })();
+      await screen.findByTestId("live-processes-main");
+      await waitFor(() => expect(liveCalls.length).toBeGreaterThanOrEqual(2));
+      await vi.advanceTimersByTimeAsync(15_000);
+      await waitFor(() => expect(liveCalls.length).toBeGreaterThanOrEqual(4));
+      unmount();
+      const before = liveCalls.length;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(liveCalls.length).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
