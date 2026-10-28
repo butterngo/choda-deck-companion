@@ -31,6 +31,22 @@ function loadMermaid(): Promise<typeof import("mermaid")> {
   return mermaidModule;
 }
 
+function htmlIsDark(): boolean {
+  return document.documentElement.classList.contains("dark");
+}
+
+/** Tracks the `.dark` class the shell sets on <html> (use-theme.ts), not
+    prefers-color-scheme: an explicit Light/Dark choice must win over the OS. */
+function useHtmlDark(): boolean {
+  const [dark, setDark] = useState(htmlIsDark);
+  useEffect(() => {
+    const observer = new MutationObserver(() => setDark(htmlIsDark()));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+  return dark;
+}
+
 export function MermaidBlock({
   code,
   edit,
@@ -43,6 +59,7 @@ export function MermaidBlock({
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const idRef = useRef(`mermaid-${(seq += 1)}`);
+  const dark = useHtmlDark();
 
   useEffect(() => {
     let cancelled = false;
@@ -51,9 +68,10 @@ export function MermaidBlock({
         const mermaid = (await loadMermaid()).default;
         mermaid.initialize({
           startOnLoad: false,
-          // The docs pane follows the OS theme; `neutral` reads acceptably in
-          // both, and mermaid cannot re-theme an already-rendered SVG anyway.
-          theme: "neutral",
+          // `neutral` in dark mode draws message labels and arrows in dark grey
+          // on the dark page — unreadable. mermaid cannot re-theme a rendered
+          // SVG, so a theme switch re-renders (`dark` is an effect dependency).
+          theme: dark ? "dark" : "neutral",
           securityLevel: "strict",
         });
         const { svg: rendered } = await mermaid.render(idRef.current, code);
@@ -65,7 +83,7 @@ export function MermaidBlock({
     return () => {
       cancelled = true;
     };
-  }, [code]);
+  }, [code, dark]);
 
   /** The Edit affordance, on the picture itself. Always visible rather than
       revealed on hover: a control nobody can find is the defect this exists to
