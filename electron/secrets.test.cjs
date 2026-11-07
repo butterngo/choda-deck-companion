@@ -157,4 +157,64 @@ describe("secrets handlers", () => {
     expect(await h.copy("nope", "t.txt", "a")).toEqual({ ok: false, reason: "unknown workspace" });
     expect(await h.copy("deck", "t.txt", "b")).toEqual({ ok: false, reason: "key not found" });
   });
+
+  it("saves a pasted value as <value>\\n, creating the folder when absent", async () => {
+    const cwd = path.join(root, "fresh"); // no sensitive_information/ yet
+    fs.mkdirSync(cwd, { recursive: true });
+    const h = handlers([{ id: "fresh", cwd }]);
+    expect(await h.save("fresh", "test-api.token", "token", "tok-value")).toEqual({ ok: true });
+    const written = fs.readFileSync(path.join(cwd, "sensitive_information", "test-api.token"), "utf8");
+    expect(written).toBe("tok-value\n");
+    // A value pasted with trailing newlines is normalised to exactly one.
+    await h.save("fresh", "c.cookie", "cookie", "a=1; b=2\n\n");
+    expect(fs.readFileSync(path.join(cwd, "sensitive_information", "c.cookie"), "utf8")).toBe("a=1; b=2\n");
+  });
+
+  it("adds sensitive_information/ to .gitignore exactly once", async () => {
+    const cwd = path.join(root, "fresh");
+    fs.mkdirSync(cwd, { recursive: true });
+    const h = handlers([{ id: "fresh", cwd }]);
+    await h.save("fresh", "a.token", "token", "v1");
+    await h.save("fresh", "b.token", "token", "v2");
+    const gi = fs.readFileSync(path.join(cwd, ".gitignore"), "utf8");
+    const hits = gi.split(/\r?\n/).filter((l) => l.trim().replace(/^\/+|\/+$/g, "") === "sensitive_information");
+    expect(hits).toHaveLength(1);
+  });
+
+  it("does not re-add a .gitignore line that is already present", async () => {
+    const cwd = path.join(root, "fresh");
+    fs.mkdirSync(cwd, { recursive: true });
+    fs.writeFileSync(path.join(cwd, ".gitignore"), "node_modules\n/sensitive_information\n");
+    const h = handlers([{ id: "fresh", cwd }]);
+    await h.save("fresh", "a.token", "token", "v");
+    const gi = fs.readFileSync(path.join(cwd, ".gitignore"), "utf8");
+    const hits = gi.split(/\r?\n/).filter((l) => l.trim().replace(/^\/+|\/+$/g, "") === "sensitive_information");
+    expect(hits).toHaveLength(1);
+  });
+
+  it("refuses to save a bad name, a traversal path, an unknown workspace or an empty value", async () => {
+    const cwd = makeWs("deck", {});
+    const h = handlers([{ id: "deck", cwd }]);
+    for (const bad of ["../x.token", "sub/x.token", "..", "C:\\x.token", "", "notes.txt", "x.pem"]) {
+      expect((await h.save("deck", bad, "token", "v")).ok).toBe(false);
+    }
+    // Nothing escaped the folder.
+    expect(fs.existsSync(path.join(root, "x.token"))).toBe(false);
+    expect((await h.save("nope", "a.token", "token", "v")).ok).toBe(false);
+    expect((await h.save("deck", "a.token", "token", "   ")).ok).toBe(false);
+    // An archived workspace is not in the active set.
+    const arch = handlers([{ id: "deck", cwd, archivedAt: "2026-01-01" }]);
+    expect((await arch.save("deck", "a.token", "token", "v")).ok).toBe(false);
+  });
+
+  it("removes a file inside the folder and refuses traversal or a missing file", async () => {
+    const cwd = makeWs("deck", { "a.token": "v" });
+    fs.writeFileSync(path.join(cwd, "outside.txt"), "x");
+    const h = handlers([{ id: "deck", cwd }]);
+    expect(await h.remove("deck", "a.token")).toEqual({ ok: true });
+    expect(fs.existsSync(path.join(cwd, "sensitive_information", "a.token"))).toBe(false);
+    expect((await h.remove("deck", "../outside.txt")).ok).toBe(false);
+    expect(fs.existsSync(path.join(cwd, "outside.txt"))).toBe(true);
+    expect(await h.remove("deck", "gone.token")).toEqual({ ok: false, reason: "not found" });
+  });
 });

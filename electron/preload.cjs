@@ -83,6 +83,32 @@ contextBridge.exposeInMainWorld("choda", {
     ipcRenderer.invoke("choda:reveal-secret", workspaceId, file, key),
 
   /**
+   * Write a credential the user pasted into a workspace's
+   * `sensitive_information/<file>`. The value is written to disk by the main
+   * process and never reaches any synced store. The main process creates the
+   * folder and the .gitignore entry, and refuses a name that is not a bare
+   * `*.token` / `*.cookie` or a workspace outside the active set.
+   *
+   * @param {string} workspaceId
+   * @param {string} file bare `*.token` / `*.cookie` name
+   * @param {"token" | "cookie"} kind
+   * @param {string} value
+   * @returns {Promise<{ ok: boolean, reason?: string }>}
+   */
+  saveSecret: (workspaceId, file, kind, value) =>
+    ipcRenderer.invoke("choda:save-secret", workspaceId, file, kind, value),
+
+  /**
+   * Delete one credential file from a workspace's `sensitive_information/`.
+   *
+   * @param {string} workspaceId
+   * @param {string} file bare file name
+   * @returns {Promise<{ ok: boolean, reason?: string }>}
+   */
+  deleteSecret: (workspaceId, file) =>
+    ipcRenderer.invoke("choda:delete-secret", workspaceId, file),
+
+  /**
    * TASK-2482 — make the title bar and window background follow the theme
    * chosen in the sidebar foot. Main accepts exactly "system", "light" or
    * "dark" and refuses anything else.

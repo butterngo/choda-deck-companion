@@ -248,6 +248,12 @@ if (!app.requestSingleInstanceLock()) {
       ipcMain.handle("choda:reveal-secret", (_event, workspaceId, file, key) =>
         secrets.reveal(workspaceId, file, key)
       );
+      ipcMain.handle("choda:save-secret", (_event, workspaceId, file, kind, value) =>
+        secrets.save(workspaceId, file, kind, value)
+      );
+      ipcMain.handle("choda:delete-secret", (_event, workspaceId, file) =>
+        secrets.remove(workspaceId, file)
+      );
       // TASK-2482 — the renderer names one of three modes; theme.cjs refuses the rest.
       ipcMain.handle("choda:set-theme", (_event, mode) => theme.set(mode));
       ipcMain.on("choda:get-theme", (event) => {
