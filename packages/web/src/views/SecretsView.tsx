@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { EmptyState } from "../components/state/EmptyState";
 import { ErrorState } from "../components/state/ErrorState";
 import { Skeleton } from "../components/state/Skeleton";
+import { useWorkspaces } from "../hooks/use-workspaces";
 
 export interface SecretEntry {
   workspaceId: string;
@@ -47,6 +48,13 @@ interface SecretsBridge {
     file: string,
     key: string
   ) => Promise<{ ok: boolean; reason?: string; value?: string }>;
+  saveSecret: (
+    workspaceId: string,
+    file: string,
+    kind: "token" | "cookie",
+    value: string
+  ) => Promise<{ ok: boolean; reason?: string }>;
+  deleteSecret: (workspaceId: string, file: string) => Promise<{ ok: boolean; reason?: string }>;
 }
 
 /** The packaged app's bridge; absent in the browser shell. */
@@ -56,7 +64,9 @@ function bridge(): SecretsBridge | null {
   return typeof c?.listSecretFiles === "function" &&
     typeof c.listSecrets === "function" &&
     typeof c.copySecret === "function" &&
-    typeof c.revealSecret === "function"
+    typeof c.revealSecret === "function" &&
+    typeof c.saveSecret === "function" &&
+    typeof c.deleteSecret === "function"
     ? (c as SecretsBridge)
     : null;
 }
@@ -87,7 +97,7 @@ function matches(e: SecretEntry, q: string): boolean {
 }
 
 function displayName(e: SecretEntry): string {
-  return e.file.replace(/\.txt$/i, "");
+  return e.file.replace(/\.(txt|token|cookie)$/i, "");
 }
 
 function readPins(): string[] {
@@ -119,6 +129,8 @@ function SecretRow({
   onTogglePin,
   onToggleReveal,
   onCopy,
+  onSaveEdit,
+  onDelete,
 }: {
   entry: SecretEntry;
   showWorkspace: boolean;
@@ -127,8 +139,13 @@ function SecretRow({
   onTogglePin: () => void;
   onToggleReveal: () => void;
   onCopy: () => Promise<boolean>;
+  onSaveEdit: (value: string) => Promise<boolean>;
+  onDelete: () => Promise<boolean>;
 }): React.JSX.Element {
   const [copied, setCopied] = useState(false);
+  // "edit" opens an empty overwrite field; "confirm" is the two-step delete.
+  const [mode, setMode] = useState<"idle" | "edit" | "confirm">("idle");
+  const [editValue, setEditValue] = useState("");
   const name = displayName(entry);
   const what = entry.key ? `${name} ${entry.key}` : name;
   const iconBtn =
@@ -208,7 +225,91 @@ function SecretRow({
         >
           <i className={`ti ${pinned ? "ti-pinned-filled" : "ti-pin"}`} aria-hidden="true" />
         </button>
+        <button
+          type="button"
+          aria-label={`Edit ${what}`}
+          title="Replace the value"
+          onClick={() => {
+            setMode((m) => (m === "edit" ? "idle" : "edit"));
+            setEditValue("");
+          }}
+          className={`${iconBtn} ${mode === "edit" ? "text-blue-600 dark:text-blue-400" : ""}`}
+        >
+          <i className="ti ti-pencil" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          aria-label={`Delete ${what}`}
+          title="Delete this file"
+          onClick={() => setMode((m) => (m === "confirm" ? "idle" : "confirm"))}
+          className={`${iconBtn} ${mode === "confirm" ? "text-rose-600 dark:text-rose-400" : ""}`}
+        >
+          <i className="ti ti-trash" aria-hidden="true" />
+        </button>
       </div>
+      {mode === "edit" && (
+        <div className="col-span-full flex flex-col gap-2 rounded-md border border-dashed border-blue-400 dark:border-blue-500/60 bg-zinc-50 dark:bg-zinc-900 p-2.5">
+          <label className="text-[11px] text-zinc-500 dark:text-zinc-400">
+            Overwrite <code className="font-mono">sensitive_information/{entry.file}</code> — paste the new value
+          </label>
+          <textarea
+            aria-label={`New value for ${what}`}
+            value={editValue}
+            spellCheck={false}
+            onChange={(ev) => setEditValue(ev.target.value)}
+            className="w-full min-h-[64px] resize-y rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 p-2 font-mono text-xs"
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setMode("idle")}
+              className="h-7 rounded-md border border-zinc-200 dark:border-zinc-700 px-2.5 text-xs"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={editValue.trim() === ""}
+              onClick={() => {
+                void onSaveEdit(editValue).then((ok) => {
+                  if (ok) setMode("idle");
+                });
+              }}
+              className="h-7 rounded-md border border-blue-600 bg-blue-600 px-2.5 text-xs text-white disabled:opacity-50"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      )}
+      {mode === "confirm" && (
+        <div className="col-span-full flex items-center justify-between gap-3 rounded-md border border-rose-300 dark:border-rose-500/50 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 text-xs">
+          <span className="text-rose-800 dark:text-rose-300">
+            Delete <code className="font-mono">{entry.file}</code> from disk?
+          </span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setMode("idle")}
+              className="h-7 rounded-md border border-zinc-200 dark:border-zinc-700 px-2.5"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              aria-label={`Confirm delete ${what}`}
+              onClick={() => {
+                void onDelete().then((ok) => {
+                  if (!ok) setMode("idle");
+                });
+              }}
+              className="h-7 rounded-md border border-rose-600 bg-rose-600 px-2.5 text-white"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
       {revealed && (
         // Full width, every line, wrapped — a whole-file entry (e.g. a few
         // "PAM: url user/pass" lines) must read like the Files tab, not as one
@@ -251,6 +352,20 @@ export function SecretsView(): React.JSX.Element {
   const searchRef = useRef<HTMLInputElement>(null);
   // Groups already asked for, so a re-render or a search keystroke never reads twice.
   const requested = useRef(new Set<string>());
+
+  // Add a new credential. The workspace list is every workspace (GET /workspaces),
+  // not only the ones that already have a sensitive_information/ folder — so a
+  // fresh repo can take its first secret.
+  const { workspaces: allWorkspaces } = useWorkspaces();
+  const [addOpen, setAddOpen] = useState(false);
+  const [addKind, setAddKind] = useState<"token" | "cookie">("token");
+  const [addWs, setAddWs] = useState("");
+  const [addName, setAddName] = useState("");
+  const [addValue, setAddValue] = useState("");
+  useEffect(() => {
+    const first = allWorkspaces[0];
+    if (addWs === "" && first) setAddWs(first.id);
+  }, [addWs, allWorkspaces]);
 
   // `b` is window.choda, fixed for the page's lifetime.
   const load = useCallback(() => {
@@ -383,6 +498,109 @@ export function SecretsView(): React.JSX.Element {
     return () => clearTimeout(t);
   }, [notice]);
 
+  // After a write, update local state in place — the new row shows at once, with
+  // no listSecretFiles round-trip that would blank the screen.
+  const applyWritten = (wsId: string, wsLabel: string, file: string): void => {
+    setWorkspaces((prev) => {
+      if (!prev) return prev;
+      const existing = prev.find((w) => w.workspaceId === wsId);
+      if (!existing) return [...prev, { workspaceId: wsId, workspaceLabel: wsLabel, files: [file] }];
+      if (existing.files.includes(file)) return prev;
+      return prev.map((w) =>
+        w.workspaceId === wsId ? { ...w, files: [...w.files, file].sort() } : w
+      );
+    });
+    setGroups((prev) => {
+      const cur = prev[wsId];
+      const entry: SecretEntry = { workspaceId: wsId, workspaceLabel: wsLabel, file, key: "" };
+      if (!Array.isArray(cur)) {
+        requested.current.add(wsId); // our insert is the source of truth; don't re-read over it
+        return { ...prev, [wsId]: [entry] };
+      }
+      if (cur.some((e) => e.file === file && e.key === "")) return prev;
+      return { ...prev, [wsId]: [...cur, entry] };
+    });
+    setExpanded((prev) => new Set(prev).add(wsId));
+  };
+
+  const saveNew = async (): Promise<void> => {
+    if (!b) return;
+    const base = addName.trim().replace(/\.(token|cookie)$/i, "");
+    if (base === "" || addWs === "" || addValue.trim() === "") {
+      setNotice({ text: "Pick a workspace, a name and paste a value.", tone: "error" });
+      return;
+    }
+    const file = `${base}.${addKind}`;
+    const wsLabel = allWorkspaces.find((w) => w.id === addWs)?.label ?? addWs;
+    let r: { ok: boolean; reason?: string };
+    try {
+      r = await b.saveSecret(addWs, file, addKind, addValue);
+    } catch {
+      r = { ok: false, reason: "save failed" };
+    }
+    if (!r.ok) {
+      setNotice({ text: `Could not save ${file}: ${r.reason ?? "unknown error"}`, tone: "error" });
+      return;
+    }
+    applyWritten(addWs, wsLabel, file);
+    setNotice({ text: `Saved ${file} to ${wsLabel}`, tone: "ok" });
+    setAddValue("");
+    setAddName("");
+    setAddOpen(false);
+  };
+
+  const saveEdit = async (entry: SecretEntry, value: string): Promise<boolean> => {
+    if (!b) return false;
+    const kind = /\.cookie$/i.test(entry.file) ? "cookie" : "token";
+    let r: { ok: boolean; reason?: string };
+    try {
+      r = await b.saveSecret(entry.workspaceId, entry.file, kind, value);
+    } catch {
+      r = { ok: false, reason: "save failed" };
+    }
+    if (!r.ok) {
+      setNotice({ text: `Could not update ${displayName(entry)}: ${r.reason ?? "unknown error"}`, tone: "error" });
+      return false;
+    }
+    setNotice({ text: `Updated ${displayName(entry)}`, tone: "ok" });
+    return true;
+  };
+
+  const deleteEntry = async (entry: SecretEntry): Promise<boolean> => {
+    if (!b) return false;
+    let r: { ok: boolean; reason?: string };
+    try {
+      r = await b.deleteSecret(entry.workspaceId, entry.file);
+    } catch {
+      r = { ok: false, reason: "delete failed" };
+    }
+    if (!r.ok) {
+      setNotice({ text: `Could not delete ${displayName(entry)}: ${r.reason ?? "unknown error"}`, tone: "error" });
+      return false;
+    }
+    setGroups((prev) => {
+      const cur = prev[entry.workspaceId];
+      if (!Array.isArray(cur)) return prev;
+      return { ...prev, [entry.workspaceId]: cur.filter((e) => e.file !== entry.file) };
+    });
+    setWorkspaces(
+      (prev) =>
+        prev &&
+        prev.map((w) =>
+          w.workspaceId === entry.workspaceId
+            ? { ...w, files: w.files.filter((f) => f !== entry.file) }
+            : w
+        )
+    );
+    setPins((prev) => {
+      const next = prev.filter((id) => !id.startsWith(`${entry.workspaceId}|${entry.file}|`));
+      writePins(next);
+      return next;
+    });
+    setNotice({ text: `Deleted ${displayName(entry)}`, tone: "ok" });
+    return true;
+  };
+
   const labels = new Map((workspaces ?? []).map((w) => [w.workspaceId, w.workspaceLabel]));
   const pinned = pins
     .map((id) => entryFromId(id, labels))
@@ -408,6 +626,8 @@ export function SecretsView(): React.JSX.Element {
         onTogglePin={() => togglePin(id)}
         onToggleReveal={() => toggleReveal(e)}
         onCopy={() => copy(e)}
+        onSaveEdit={(value) => saveEdit(e, value)}
+        onDelete={() => deleteEntry(e)}
       />
     );
   }
@@ -544,6 +764,120 @@ export function SecretsView(): React.JSX.Element {
             <i className="ti ti-refresh" aria-hidden="true" />
             Reload
           </button>
+        </div>
+      )}
+      {b && (
+        <div className="mb-4 rounded-lg border border-zinc-200 dark:border-zinc-800">
+          <button
+            type="button"
+            aria-expanded={addOpen}
+            onClick={() => setAddOpen((o) => !o)}
+            className="flex w-full items-center gap-2 px-3 py-2.5 text-sm font-medium"
+          >
+            <i className="ti ti-plus text-blue-600 dark:text-blue-400" aria-hidden="true" />
+            Add a token or cookie
+            <i
+              className={`ti ti-chevron-down ml-auto text-zinc-400 transition-transform ${addOpen ? "" : "-rotate-90"}`}
+              aria-hidden="true"
+            />
+          </button>
+          {addOpen && (
+            <div className="flex flex-col gap-3 border-t border-zinc-200 dark:border-zinc-800 px-3 py-3">
+              <div role="group" aria-label="Type" className="inline-flex w-max overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-700">
+                {(["token", "cookie"] as const).map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    aria-pressed={addKind === k}
+                    onClick={() => setAddKind(k)}
+                    className={[
+                      "px-3 py-1.5 text-sm capitalize",
+                      addKind === k
+                        ? "bg-blue-600 text-white"
+                        : "bg-white dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400",
+                    ].join(" ")}
+                  >
+                    {k}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <label className="flex flex-col gap-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                  Workspace
+                  <select
+                    aria-label="Workspace"
+                    value={addWs}
+                    onChange={(ev) => setAddWs(ev.target.value)}
+                    className="h-8 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 text-sm text-zinc-900 dark:text-zinc-100"
+                  >
+                    {allWorkspaces.length === 0 && <option value="">No workspaces</option>}
+                    {allWorkspaces.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.label} ({w.projectId})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-1 flex-col gap-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                  Name
+                  <input
+                    aria-label="Name"
+                    value={addName}
+                    spellCheck={false}
+                    placeholder="test-api"
+                    onChange={(ev) => setAddName(ev.target.value)}
+                    className="h-8 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 text-sm"
+                  />
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-zinc-400">
+                <span className="rounded bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5">
+                  sent as{" "}
+                  <span className="text-zinc-700 dark:text-zinc-200">
+                    {addKind === "cookie" ? "Cookie: …" : "Authorization: Bearer …"}
+                  </span>
+                </span>
+                <span className="break-all">
+                  {(allWorkspaces.find((w) => w.id === addWs)?.label ?? (addWs || "…"))}
+                  /sensitive_information/
+                  {(addName.trim().replace(/\.(token|cookie)$/i, "") || "…")}.{addKind}
+                </span>
+              </div>
+              <textarea
+                aria-label="Value"
+                value={addValue}
+                spellCheck={false}
+                onChange={(ev) => setAddValue(ev.target.value)}
+                placeholder={
+                  addKind === "cookie"
+                    ? "paste the whole Cookie: value from DevTools"
+                    : "paste the access token"
+                }
+                className="min-h-[72px] w-full resize-y rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 p-2 font-mono text-xs"
+              />
+              <p className="flex items-start gap-2 rounded-md bg-zinc-50 dark:bg-zinc-800/50 px-2.5 py-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+                <i className="ti ti-shield-lock mt-0.5 text-blue-600 dark:text-blue-400" aria-hidden="true" />
+                Written to the gitignored file on disk only — never the synced database, never off this machine.
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAddOpen(false)}
+                  className="h-8 rounded-md border border-zinc-200 dark:border-zinc-700 px-3 text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void saveNew()}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-blue-600 bg-blue-600 px-3 text-sm text-white"
+                >
+                  <i className="ti ti-check" aria-hidden="true" />
+                  Save
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
       {body()}
