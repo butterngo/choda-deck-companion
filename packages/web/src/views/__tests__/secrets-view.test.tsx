@@ -6,6 +6,21 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, within, fireEvent, act } from "@testing-library/react";
 import { SecretsView, type SecretEntry, type WorkspaceFiles } from "../SecretsView";
 
+// The Add panel's workspace list comes from useWorkspaces (GET /workspaces) —
+// every workspace, including "fresh" which has no secrets yet. Mocking the hook
+// keeps react-query out of the test, as the component gets its list from here.
+vi.mock("../../hooks/use-workspaces", () => ({
+  useWorkspaces: () => ({
+    workspaces: [
+      { id: "deck", label: "choda-deck", projectId: "choda-deck", cwd: "C:/dev/choda-deck" },
+      { id: "cms", label: "headless-cms", projectId: "headless-cms", cwd: "C:/x" },
+      { id: "fresh", label: "fresh-repo", projectId: "scratch", cwd: "C:/fresh" },
+    ],
+    isLoading: false,
+    isError: false,
+  }),
+}));
+
 const WORKSPACES: WorkspaceFiles[] = [
   { workspaceId: "deck", workspaceLabel: "choda-deck", files: ["azure-foundry.txt", "sync-password.txt"] },
   { workspaceId: "cms", workspaceLabel: "headless-cms", files: ["github-pat.txt"] },
@@ -28,6 +43,8 @@ function stubBridge(over: Record<string, unknown> = {}) {
       ok: true,
       value: "PAM: https://host user/s3cr3t\nRancher: https://r user/pw2",
     })),
+    saveSecret: vi.fn(async () => ({ ok: true })),
+    deleteSecret: vi.fn(async () => ({ ok: true })),
     ...over,
   };
   vi.stubGlobal("choda", api);
@@ -152,5 +169,84 @@ describe("SecretsView", () => {
     await openGroup("choda-deck");
     fireEvent.click(screen.getByRole("button", { name: "Copy sync-password" }));
     await screen.findByText("Could not copy sync-password: not found");
+  });
+
+  async function openAdd(): Promise<void> {
+    fireEvent.click(await screen.findByRole("button", { name: /Add a token or cookie/ }));
+  }
+
+  it("saves a .token for Token and a .cookie for Cookie, from the base name", async () => {
+    const api = stubBridge();
+    render(<SecretsView />);
+    await screen.findByRole("region", { name: "choda-deck secrets" });
+
+    await openAdd();
+    fireEvent.click(screen.getByRole("button", { name: "cookie" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "seller-session" } });
+    fireEvent.change(screen.getByLabelText("Value"), { target: { value: "a=1; b=2" } });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Save" })));
+    expect(api.saveSecret).toHaveBeenLastCalledWith("deck", "seller-session.cookie", "cookie", "a=1; b=2");
+
+    await openAdd();
+    fireEvent.click(screen.getByRole("button", { name: "token" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "test-api" } });
+    fireEvent.change(screen.getByLabelText("Value"), { target: { value: "tok" } });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Save" })));
+    expect(api.saveSecret).toHaveBeenLastCalledWith("deck", "test-api.token", "token", "tok");
+  });
+
+  it("offers every workspace in Add, including one with no secrets", async () => {
+    stubBridge();
+    render(<SecretsView />);
+    await openAdd();
+    const select = screen.getByLabelText("Workspace");
+    expect(within(select).getByRole("option", { name: /fresh-repo/ })).toBeTruthy();
+  });
+
+  it("shows the new row after a save, without re-listing the files", async () => {
+    const api = stubBridge();
+    render(<SecretsView />);
+    await screen.findByRole("region", { name: "choda-deck secrets" });
+    await openAdd();
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "new-api" } });
+    fireEvent.change(screen.getByLabelText("Value"), { target: { value: "abc" } });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Save" })));
+    expect(api.saveSecret).toHaveBeenCalled();
+    expect(api.listSecretFiles).toHaveBeenCalledTimes(1); // no full reload
+    expect(await screen.findByText("new-api")).toBeTruthy();
+  });
+
+  it("edits a row through an empty field and never shows the old value", async () => {
+    const api = stubBridge();
+    render(<SecretsView />);
+    await openGroup("choda-deck");
+    fireEvent.click(screen.getByRole("button", { name: "Edit sync-password" }));
+    const field = screen.getByLabelText("New value for sync-password") as HTMLTextAreaElement;
+    expect(field.value).toBe("");
+    expect(screen.queryByText(/s3cr3t/)).toBeNull(); // the old value was never fetched
+    fireEvent.change(field, { target: { value: "new-pw" } });
+    const editor = field.closest("div") as HTMLElement;
+    await act(async () => fireEvent.click(within(editor).getByRole("button", { name: "Save" })));
+    expect(api.saveSecret).toHaveBeenCalledWith("deck", "sync-password.txt", "token", "new-pw");
+  });
+
+  it("deletes only after an in-page confirm", async () => {
+    const api = stubBridge();
+    render(<SecretsView />);
+    await openGroup("choda-deck");
+    fireEvent.click(screen.getByRole("button", { name: "Delete sync-password" }));
+    expect(api.deleteSecret).not.toHaveBeenCalled();
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "Confirm delete sync-password" }))
+    );
+    expect(api.deleteSecret).toHaveBeenCalledWith("deck", "sync-password.txt");
+  });
+
+  it("keeps every secret value out of the DOM until reveal", async () => {
+    stubBridge();
+    render(<SecretsView />);
+    await openGroup("choda-deck");
+    expect(screen.queryByTestId("secret-value")).toBeNull();
+    expect(screen.queryByText(/s3cr3t/)).toBeNull();
   });
 });
