@@ -43,7 +43,7 @@ describe("preload bridge", () => {
   it("exposes exactly its fixed functions under window.choda", () => {
     const { exposed } = loadPreload();
     expect(Object.keys(exposed)).toEqual(["choda"]);
-    expect(Object.keys(exposed.choda).sort()).toEqual(["copySecret", "getTheme", "listSecretFiles", "listSecrets", "openFolder", "openHtml", "revealSecret", "setTheme"]);
+    expect(Object.keys(exposed.choda).sort()).toEqual(["copySecret", "deleteSecret", "getTheme", "listSecretFiles", "listSecrets", "openFolder", "openHtml", "revealSecret", "saveSecret", "setTheme"]);
     for (const fn of Object.values(exposed.choda)) expect(typeof fn).toBe("function");
   });
 
@@ -55,6 +55,8 @@ describe("preload bridge", () => {
     await exposed.choda.listSecrets("ws");
     await exposed.choda.copySecret("ws", "t.txt", "key");
     await exposed.choda.revealSecret("ws", "t.txt", "key");
+    await exposed.choda.saveSecret("ws", "t.token", "token", "v");
+    await exposed.choda.deleteSecret("ws", "t.token");
     await exposed.choda.setTheme("dark");
     expect(exposed.choda.getTheme()).toBe("dark");
     expect(invoked).toEqual([
@@ -64,6 +66,8 @@ describe("preload bridge", () => {
       ["choda:list-secrets", "ws"],
       ["choda:copy-secret", "ws", "t.txt", "key"],
       ["choda:reveal-secret", "ws", "t.txt", "key"],
+      ["choda:save-secret", "ws", "t.token", "token", "v"],
+      ["choda:delete-secret", "ws", "t.token"],
       ["choda:set-theme", "dark"],
       ["sync", "choda:get-theme"],
     ]);

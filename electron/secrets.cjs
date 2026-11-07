@@ -67,6 +67,10 @@ function createSecretsHandlers({
   readdirSync = fs.readdirSync,
   readFileSync = fs.readFileSync,
   statSync = fs.statSync,
+  writeFileSync = fs.writeFileSync,
+  mkdirSync = fs.mkdirSync,
+  unlinkSync = fs.unlinkSync,
+  appendFileSync = fs.appendFileSync,
   setTimer = (fn, ms) => setTimeout(fn, ms).unref?.(),
 }) {
   /** Small regular files in a workspace's secrets dir, or [] when it has none. */
@@ -221,7 +225,95 @@ function createSecretsHandlers({
     return resolve(workspaceId, file, key);
   }
 
-  return { listFiles, listEntries, copy, reveal };
+  /**
+   * The secrets dir of an ACTIVE workspace, with the file resolved inside it and
+   * checked for traversal — the one place the write paths agree on a target, so
+   * save and remove cannot drift apart. `requireExt` additionally restricts the
+   * name to a `*.token` / `*.cookie` basename (save only).
+   *
+   * @returns {Promise<{ ok: true, dir: string, target: string } | { ok: false, reason: string }>}
+   */
+  async function targetFor(workspaceId, file, requireExt) {
+    if (typeof workspaceId !== "string" || workspaceId.trim() === "") {
+      return { ok: false, reason: "invalid workspace" };
+    }
+    if (typeof file !== "string" || file === "" || path.basename(file) !== file || file === "..") {
+      return { ok: false, reason: "invalid file" };
+    }
+    if (requireExt && !/^[A-Za-z0-9._-]+\.(token|cookie)$/.test(file)) {
+      return { ok: false, reason: "name must end in .token or .cookie" };
+    }
+    let ws;
+    try {
+      ws = (await activeWorkspaces()).find((w) => w.id === workspaceId);
+    } catch {
+      return { ok: false, reason: "adapter unreachable" };
+    }
+    if (!ws) return { ok: false, reason: "unknown workspace" };
+    const dir = path.resolve(ws.cwd, DIR_NAME);
+    const target = path.resolve(dir, file);
+    if (!isInside(dir, target) || target === dir) return { ok: false, reason: "outside the folder" };
+    return { ok: true, dir, target };
+  }
+
+  /** Add `sensitive_information/` to `<cwd>/.gitignore` once, never twice. */
+  function ensureGitignore(cwd) {
+    const gi = path.join(cwd, ".gitignore");
+    let text = "";
+    try {
+      text = readFileSync(gi, "utf8");
+    } catch {
+      text = "";
+    }
+    const matched = text.split(/\r?\n/).some((raw) => {
+      const l = raw.trim().replace(/^\/+/, "").replace(/\/+$/, "");
+      return l === DIR_NAME;
+    });
+    if (matched) return;
+    const prefix = text !== "" && !text.endsWith("\n") ? "\n" : "";
+    appendFileSync(gi, `${prefix}${DIR_NAME}/\n`, "utf8");
+  }
+
+  /**
+   * Write a credential the user pasted into `<cwd>/sensitive_information/<file>`.
+   * The value crosses the bridge only here and in reveal; it is written to disk,
+   * never to any synced store. Creates the folder and the .gitignore entry.
+   *
+   * @returns {Promise<{ ok: true } | { ok: false, reason: string }>}
+   */
+  async function save(workspaceId, file, kind, value) {
+    if (typeof value !== "string" || value.trim() === "") {
+      return { ok: false, reason: "empty value" };
+    }
+    const t = await targetFor(workspaceId, file, true);
+    if (!t.ok) return t;
+    try {
+      mkdirSync(t.dir, { recursive: true });
+      writeFileSync(t.target, `${value.replace(/[\r\n]+$/, "")}\n`, "utf8");
+      ensureGitignore(path.dirname(t.dir));
+    } catch {
+      return { ok: false, reason: "write failed" };
+    }
+    return { ok: true };
+  }
+
+  /**
+   * Delete one credential file, only from inside a workspace's secrets dir.
+   *
+   * @returns {Promise<{ ok: true } | { ok: false, reason: string }>}
+   */
+  async function remove(workspaceId, file) {
+    const t = await targetFor(workspaceId, file, false);
+    if (!t.ok) return t;
+    try {
+      unlinkSync(t.target);
+    } catch {
+      return { ok: false, reason: "not found" };
+    }
+    return { ok: true };
+  }
+
+  return { listFiles, listEntries, copy, reveal, save, remove };
 }
 
 /**
